@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com;"/>
+  <title>Sonara</title>
+  <link rel="stylesheet" href="css/app.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400&family=Instrument+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     TOP BAR
+══════════════════════════════════════════════════════════ -->
+<div class="topbar" id="topbar">
+  <div class="tb-drag"><!-- draggable region --></div>
+  <div class="tb-logo">
+    <span class="logo-mark">Sonara</span>
+    <span class="logo-tag">Audiobook Player</span>
+  </div>
+  <div class="tb-center" id="tbCenter">
+    <!-- populated with book title when reading -->
+  </div>
+  <div class="tb-right">
+    <button class="tb-btn" id="btnAddBook" title="Add Book (PDF/EPUB)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Book
+    </button>
+    <div class="claude-pill" id="claudePill" title="Claude AI Settings">
+      <div class="cp-dot" id="cpDot"></div>
+      <span class="cp-label" id="cpLabel">Claude AI</span>
+    </div>
+    <button class="tb-icon-btn" id="btnSettings" title="Settings">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     3-PANEL LAYOUT
+══════════════════════════════════════════════════════════ -->
+<div class="layout">
+
+  <!-- ── LEFT: LIBRARY ── -->
+  <aside class="panel-left" id="panelLeft">
+    <div class="panel-header">
+      <span class="panel-label">Library</span>
+      <div class="lib-stats-mini" id="libStatsMini">
+        <span class="lsm-item" id="lsmTotal">0 books</span>
+        <span class="lsm-sep">·</span>
+        <span class="lsm-item reading" id="lsmReading">0 reading</span>
+      </div>
+    </div>
+
+    <!-- Add book drop zone (when library empty) -->
+    <div class="lib-empty-state" id="libEmpty">
+      <div class="les-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="1.3"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      </div>
+      <p class="les-text">No books yet.<br>Add a PDF or EPUB to get started.</p>
+      <button class="les-btn" onclick="App.addBook()">+ Add Book</button>
+    </div>
+
+    <!-- Book list -->
+    <div class="book-list" id="bookList"></div>
+
+    <!-- Library footer -->
+    <div class="lib-footer">
+      <button class="lf-add-btn" onclick="App.addBook()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Book
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── CENTER: READER ── -->
+  <main class="panel-center" id="panelCenter">
+
+    <!-- Welcome / empty state -->
+    <div class="reader-welcome" id="readerWelcome">
+      <div class="rw-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="1"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+      </div>
+      <h2 class="rw-title">Select a book to begin</h2>
+      <p class="rw-sub">Choose a book from your library or add a new PDF/EPUB file.<br>Your reading progress is saved automatically.</p>
+    </div>
+
+    <!-- Chapter title bar -->
+    <div class="chapter-titlebar" id="chapterTitlebar" style="display:none">
+      <div class="ctb-left">
+        <span class="ctb-num" id="ctbNum">01</span>
+        <span class="ctb-title" id="ctbTitle">Chapter Title</span>
+      </div>
+      <div class="ctb-right">
+        <span class="ctb-progress" id="ctbProgress">0% complete</span>
+        <div class="ctb-bar"><div class="ctb-bar-fill" id="ctbBarFill"></div></div>
+      </div>
+    </div>
+
+    <!-- Reading text area -->
+    <div class="reader-text-wrap" id="readerTextWrap" style="display:none">
+      <div class="reader-text" id="readerText">
+        <!-- Word spans injected by JS -->
+      </div>
+    </div>
+
+    <!-- Generating overlay -->
+    <div class="generating-overlay" id="generatingOverlay" style="display:none">
+      <div class="gen-spinner"></div>
+      <div class="gen-label" id="genLabel">Processing…</div>
+      <div class="gen-sub" id="genSub">Please wait</div>
+      <div class="gen-prog-wrap">
+        <div class="gen-prog-fill" id="genProgFill" style="width:0%"></div>
+      </div>
+      <div class="gen-steps" id="genSteps">
+        <span class="gs" id="gs-extract">Extract</span>
+        <span class="gs-arrow">→</span>
+        <span class="gs" id="gs-clean">Clean</span>
+        <span class="gs-arrow">→</span>
+        <span class="gs" id="gs-ai">AI</span>
+        <span class="gs-arrow">→</span>
+        <span class="gs" id="gs-tts">Voice</span>
+        <span class="gs-arrow">→</span>
+        <span class="gs" id="gs-done">Ready</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── RIGHT: CONTROLS ── -->
+  <aside class="panel-right" id="panelRight">
+
+    <!-- VOICE SECTION -->
+    <div class="rp-section">
+      <div class="rp-section-header">
+        <span class="rp-section-label">Voice</span>
+        <button class="prev-sel-btn" id="previewSelBtn" onclick="Reader.previewSelectedVoice()">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Preview
+        </button>
+      </div>
+      <div class="voice-sel-bar" id="voiceSelBar">
+        <div class="vsb-dot"></div>
+        <div class="vsb-name" id="vsbName">Loading…</div>
+        <div class="vsb-lang" id="vsbLang"></div>
+      </div>
+      <div class="voice-search-row">
+        <input type="text" class="voice-srch" id="voiceSearch" placeholder="Search voices…" oninput="Reader.filterVoices()"/>
+        <select class="voice-lang" id="langFilter" onchange="Reader.filterVoices()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="voice-list-wrap" id="voiceListWrap">
+        <div id="voiceList"><div class="voice-loading">Loading voices…</div></div>
+      </div>
+      <div class="voice-tip">💡 More voices: Settings → Accessibility → Spoken Content</div>
+    </div>
+
+    <!-- PLAYBACK SETTINGS -->
+    <div class="rp-section">
+      <div class="rp-section-header">
+        <span class="rp-section-label">Playback</span>
+      </div>
+      <div class="ctrl-row">
+        <label class="ctrl-label">Speed</label>
+        <input type="range" class="ctrl-range" id="speedSlider" min="0.5" max="2.5" step="0.05" value="1.0"
+          oninput="Reader.onSpeedChange(this.value)"/>
+        <span class="ctrl-val" id="speedVal">1.0×</span>
+      </div>
+      <div class="ctrl-row">
+        <label class="ctrl-label">Pitch</label>
+        <input type="range" class="ctrl-range" id="pitchSlider" min="0.5" max="2.0" step="0.1" value="1.0"
+          oninput="Reader.onPitchChange(this.value)"/>
+        <span class="ctrl-val" id="pitchVal">1.0</span>
+      </div>
+      <div class="ctrl-row">
+        <label class="ctrl-label">AI Style</label>
+        <select class="ctrl-select" id="narrateStyle">
+          <option value="natural" selected>Natural Flow</option>
+          <option value="dramatic">Dramatic</option>
+          <option value="academic">Academic</option>
+          <option value="casual">Casual</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- CHAPTERS / SECTIONS -->
+    <div class="rp-section rp-section-chapters">
+      <div class="rp-section-header">
+        <span class="rp-section-label" id="chaptersLabel">Chapters</span>
+        <span class="rp-section-count" id="chaptersCount">0</span>
+      </div>
+      <div class="chapters-list" id="chaptersList">
+        <div class="chapters-empty">Open a book to see chapters</div>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     BOTTOM PLAYER BAR
+══════════════════════════════════════════════════════════ -->
+<div class="player-bar" id="playerBar">
+  <!-- Waveform -->
+  <div class="pb-wave-wrap">
+    <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <!-- Controls -->
+  <div class="pb-controls">
+    <button class="pb-btn" onclick="Reader.skipChunk(-1)" title="Previous section">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+    </button>
+    <button class="pb-play-btn" id="pbPlayBtn" onclick="Reader.togglePlay()">
+      <svg id="pbPlayIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+    </button>
+    <button class="pb-btn" onclick="Reader.skipChunk(1)" title="Next section">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+    </button>
+  </div>
+
+  <!-- Seeker -->
+  <div class="pb-seeker-wrap">
+    <span class="pb-time" id="pbTimeCur">0:00</span>
+    <input type="range" class="pb-seeker" id="pbSeeker" min="0" max="100" value="0"
+      oninput="Reader.seekAudio(this.value)"/>
+    <span class="pb-time" id="pbTimeTotal">0:00</span>
+  </div>
+
+  <!-- Right info -->
+  <div class="pb-right">
+    <button class="pb-bookmark-btn" id="pbBookmarkBtn" onclick="Reader.saveBookmark()" title="Save progress & bookmark">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Save</span>
+    </button>
+    <span class="pb-chapter-label" id="pbChapterLabel">—</span>
+    <span class="pb-speed-pill" onclick="Reader.cycleSpeed()">
+      <span id="pbSpeedLabel">1.0×</span>
+    </span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════════════════════ -->
+
+<!-- Claude AI Modal -->
+<div class="modal-overlay" id="modalClaude">
+  <div class="modal">
+    <div class="modal-close" onclick="UI.closeModal('modalClaude')">✕</div>
+    <h2 class="modal-title">Claude AI Enhancement</h2>
+    <p class="modal-sub">Optionally add your Anthropic API key. Claude will clean and smooth narration text before reading. Works perfectly without it.</p>
+    <input type="password" class="modal-input" id="claudeKeyInput" placeholder="sk-ant-api03-…"/>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalClaude')">Cancel</button>
+      <button class="modal-btn-primary" onclick="UI.saveClaudeKey()">Save Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="modalSettings">
+  <div class="modal modal-wide">
+    <div class="modal-close" onclick="UI.closeModal('modalSettings')">✕</div>
+    <h2 class="modal-title">Settings</h2>
+    <div class="settings-grid">
+      <div class="sg-item">
+        <label class="sg-label">Font Size (Reader)</label>
+        <select class="sg-select" id="settingFontSize">
+          <option value="15">Small (15px)</option>
+          <option value="17" selected>Medium (17px)</option>
+          <option value="20">Large (20px)</option>
+          <option value="23">X-Large (23px)</option>
+        </select>
+      </div>
+      <div class="sg-item">
+        <label class="sg-label">Auto-save interval</label>
+        <select class="sg-select" id="settingAutoSave">
+          <option value="5">Every 5 sections</option>
+          <option value="10" selected>Every 10 sections</option>
+          <option value="20">Every 20 sections</option>
+        </select>
+      </div>
+      <div class="sg-item">
+        <label class="sg-label">App Version</label>
+        <span class="sg-value" id="settingVersion">1.0.0</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalSettings')">Close</button>
+      <button class="modal-btn-primary" onclick="UI.saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resume / New dialog -->
+<div class="modal-overlay" id="modalResume">
+  <div class="modal">
+    <div class="modal-close" onclick="UI.closeModal('modalResume')">✕</div>
+    <h2 class="modal-title" id="resumeTitle">Resume Reading?</h2>
+    <p class="modal-sub" id="resumeSub">You were at 42% — Chapter 5</p>
+    <div class="resume-progress">
+      <div class="rp-bar"><div class="rp-bar-fill" id="resumeBarFill"></div></div>
+      <span class="rp-pct" id="resumePct">42%</span>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" id="btnStartOver">Start Over</button>
+      <button class="modal-btn-primary" id="btnResume">Resume</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- Scripts -->
+<script src="js/parser.js"></script>
+<script src="js/reader.js"></script>
+<script src="js/library.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

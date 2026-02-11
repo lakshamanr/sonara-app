@@ -1,0 +1,74 @@
+{
+  "name": "sonara",
+  "version": "1.0.0",
+  "description": "PDF & EPUB Audiobook Player with library and progress tracking",
+  "main": "main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux"
+  },
+  "build": {
+    "appId": "com.sonara.audiobook",
+    "productName": "Sonara",
+    "copyright": "Copyright © 2025 Sonara",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "database/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.books",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "keywords": [
+    "audiobook",
+    "epub",
+    "pdf",
+    "tts",
+    "electron"
+  ],
+  "author": "Sonara",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.6.0"
+  }
+}
