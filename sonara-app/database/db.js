@@ -43,6 +43,86 @@ function init(userDataPath) {
     );
   `);
 
+  // ── SCHEMA V2 MIGRATION ─────────────────────────────────────
+  // Adds: collections, book_collections, expanded book format, cover_path, author, duration_seconds
+  const migrated = db.prepare("SELECT value FROM settings WHERE key = 'schema_v2'").get();
+  if (!migrated) {
+    console.log('[DB] Running schema v2 migration...');
+    db.pragma('foreign_keys = OFF');
+
+    db.exec(`
+      ALTER TABLE books RENAME TO books_old;
+
+      CREATE TABLE books (
+        id              TEXT PRIMARY KEY,
+        title           TEXT NOT NULL,
+        author          TEXT DEFAULT NULL,
+        format          TEXT NOT NULL CHECK(format IN ('pdf','epub','mp3','m4b','m4a','ogg')),
+        file_path       TEXT NOT NULL,
+        file_name       TEXT NOT NULL,
+        file_size       INTEGER NOT NULL,
+        cover_path      TEXT DEFAULT NULL,
+        total_chunks    INTEGER DEFAULT 0,
+        total_seconds   INTEGER DEFAULT 0,
+        duration_seconds REAL DEFAULT 0,
+        status          TEXT DEFAULT 'unstarted' CHECK(status IN ('unstarted','reading','done')),
+        added_at        INTEGER NOT NULL,
+        last_read       INTEGER
+      );
+
+      INSERT INTO books (id, title, format, file_path, file_name, file_size,
+                         total_chunks, total_seconds, status, added_at, last_read)
+      SELECT id, title, format, file_path, file_name, file_size,
+             total_chunks, total_seconds, status, added_at, last_read
+      FROM books_old;
+
+      DROP TABLE books_old;
+
+      CREATE TABLE IF NOT EXISTS collections (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL UNIQUE,
+        color       TEXT DEFAULT '#c8a96e',
+        sort_order  INTEGER DEFAULT 0,
+        created_at  INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS book_collections (
+        book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        added_at      INTEGER NOT NULL,
+        PRIMARY KEY (book_id, collection_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_bc_collection ON book_collections(collection_id);
+      CREATE INDEX IF NOT EXISTS idx_bc_book ON book_collections(book_id);
+    `);
+
+    db.pragma('foreign_keys = ON');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v2', '\"true\"')").run();
+    console.log('[DB] Schema v2 migration complete');
+  } else {
+    // Ensure collections tables exist (fresh installs after migration flag)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS collections (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL UNIQUE,
+        color       TEXT DEFAULT '#c8a96e',
+        sort_order  INTEGER DEFAULT 0,
+        created_at  INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS book_collections (
+        book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        added_at      INTEGER NOT NULL,
+        PRIMARY KEY (book_id, collection_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_bc_collection ON book_collections(collection_id);
+      CREATE INDEX IF NOT EXISTS idx_bc_book ON book_collections(book_id);
+    `);
+  }
+
   return db;
 }
 
@@ -77,9 +157,9 @@ function addBook(book) {
   try {
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO books
-        (id, title, format, file_path, file_name, file_size, total_chunks, total_seconds, status, added_at, last_read)
+        (id, title, author, format, file_path, file_name, file_size, cover_path, total_chunks, total_seconds, duration_seconds, status, added_at, last_read)
       VALUES
-        (@id, @title, @format, @file_path, @file_name, @file_size, @total_chunks, @total_seconds, @status, @added_at, @last_read)
+        (@id, @title, @author, @format, @file_path, @file_name, @file_size, @cover_path, @total_chunks, @total_seconds, @duration_seconds, @status, @added_at, @last_read)
     `);
     const result = stmt.run(book);
     console.log('Database addBook result:', result.changes, 'rows affected');
@@ -91,7 +171,7 @@ function addBook(book) {
 }
 
 function updateBook(id, fields) {
-  const allowed = ['title','status','total_chunks','total_seconds','last_read'];
+  const allowed = ['title','author','status','total_chunks','total_seconds','duration_seconds','cover_path','last_read'];
   const sets = Object.keys(fields).filter(k => allowed.includes(k)).map(k => `${k} = @${k}`).join(', ');
   if (!sets) return;
   db.prepare(`UPDATE books SET ${sets} WHERE id = @id`).run({ ...fields, id });
@@ -134,7 +214,7 @@ function saveProgress(data) {
 
   db.prepare(`UPDATE books SET status = ?, last_read = ? WHERE id = ?`)
     .run(status, now, data.book_id);
-    
+
   console.log('[DB] Progress saved successfully');
 }
 
@@ -147,6 +227,76 @@ function getProgress(bookId) {
 function resetProgress(bookId) {
   db.prepare('DELETE FROM progress WHERE book_id = ?').run(bookId);
   db.prepare(`UPDATE books SET status = 'unstarted', last_read = NULL WHERE id = ?`).run(bookId);
+}
+
+// ── COLLECTIONS ──────────────────────────────────────────────────────────
+
+function getAllCollections() {
+  return db.prepare(`
+    SELECT c.*, COUNT(bc.book_id) as book_count
+    FROM collections c
+    LEFT JOIN book_collections bc ON bc.collection_id = c.id
+    GROUP BY c.id
+    ORDER BY c.sort_order, c.name
+  `).all();
+}
+
+function getCollection(id) {
+  return db.prepare('SELECT * FROM collections WHERE id = ?').get(id);
+}
+
+function createCollection(name, color) {
+  const now = Date.now();
+  const result = db.prepare(
+    'INSERT INTO collections (name, color, created_at) VALUES (?, ?, ?)'
+  ).run(name, color || '#c8a96e', now);
+  return { id: result.lastInsertRowid, name, color: color || '#c8a96e', created_at: now };
+}
+
+function updateCollection(id, fields) {
+  const allowed = ['name', 'color', 'sort_order'];
+  const sets = Object.keys(fields)
+    .filter(k => allowed.includes(k))
+    .map(k => `${k} = @${k}`)
+    .join(', ');
+  if (!sets) return;
+  db.prepare(`UPDATE collections SET ${sets} WHERE id = @id`).run({ ...fields, id });
+}
+
+function deleteCollection(id) {
+  db.prepare('DELETE FROM collections WHERE id = ?').run(id);
+}
+
+function addBookToCollection(bookId, collectionId) {
+  db.prepare(
+    'INSERT OR IGNORE INTO book_collections (book_id, collection_id, added_at) VALUES (?, ?, ?)'
+  ).run(bookId, collectionId, Date.now());
+}
+
+function removeBookFromCollection(bookId, collectionId) {
+  db.prepare(
+    'DELETE FROM book_collections WHERE book_id = ? AND collection_id = ?'
+  ).run(bookId, collectionId);
+}
+
+function getBookCollections(bookId) {
+  return db.prepare(`
+    SELECT c.* FROM collections c
+    JOIN book_collections bc ON bc.collection_id = c.id
+    WHERE bc.book_id = ?
+    ORDER BY c.name
+  `).all(bookId);
+}
+
+function getCollectionBooks(collectionId) {
+  return db.prepare(`
+    SELECT b.*, p.chunk_index, p.word_index, p.elapsed_seconds, p.percent
+    FROM books b
+    LEFT JOIN progress p ON p.book_id = b.id
+    JOIN book_collections bc ON bc.book_id = b.id
+    WHERE bc.collection_id = ?
+    ORDER BY COALESCE(b.last_read, b.added_at) DESC
+  `).all(collectionId);
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────
@@ -176,5 +326,7 @@ module.exports = {
   init,
   getAllBooks, getBook, addBook, updateBook, deleteBook, bookExists,
   getProgress, saveProgress, resetProgress,
+  getAllCollections, getCollection, createCollection, updateCollection, deleteCollection,
+  addBookToCollection, removeBookFromCollection, getBookCollections, getCollectionBooks,
   getSetting, setSetting, getAllSettings
 };

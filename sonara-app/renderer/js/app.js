@@ -184,34 +184,66 @@ function _setGenProgress(pct, label, sub) {
 }
 
 // ── APP ───────────────────────────────────────────────────
+const AUDIO_FORMATS = ['mp3', 'm4b', 'm4a', 'ogg'];
+
 const App = (() => {
   let currentBookId   = null;
   let pendingBookData = null;   // file metadata before save
   let isGenerating    = false;
 
+  // ── NAVIGATION ─────────────────────────────────────────────
+  function showLibrary() {
+    document.body.classList.add('mode-library');
+    document.body.classList.remove('mode-reader');
+    document.getElementById('btnLibraryToggle').innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+      '<rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Library';
+    Library.onShow();
+  }
+
+  function showReader() {
+    document.body.classList.remove('mode-library');
+    document.body.classList.add('mode-reader');
+    document.getElementById('btnLibraryToggle').innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>' +
+      '<rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Library';
+  }
+
   async function init() {
     console.log('[App] Initializing...');
-    
+
+    // Start in library mode
+    document.body.classList.add('mode-library');
+
     // Ensure overlay is hidden on startup
     const overlay = document.getElementById('generatingOverlay');
     if (overlay) {
       overlay.style.display = 'none';
       console.log('[App] Overlay hidden on init');
     }
-    
+
     // Ensure welcome screen is visible
     const welcome = document.getElementById('readerWelcome');
     if (welcome) {
       welcome.style.display = 'flex';
       console.log('[App] Welcome screen visible');
     }
-    
+
     // Wire buttons
     document.getElementById('btnAddBook').addEventListener('click',    addBook);
     document.getElementById('btnSettings').addEventListener('click',   UI.openSettingsModal);
     document.getElementById('claudePill').addEventListener('click',    UI.openClaudeModal);
     document.getElementById('btnResume').addEventListener('click',     UI.resumeBook);
     document.getElementById('btnStartOver').addEventListener('click',  UI.startFromBeginning);
+    document.getElementById('btnLibraryToggle').addEventListener('click', () => {
+      if (document.body.classList.contains('mode-library') && currentBookId) {
+        showReader();
+      } else {
+        showLibrary();
+      }
+    });
 
     // Load saved settings
     const fontSize = await window.sonara.settings.get('fontSize', '17');
@@ -284,7 +316,7 @@ const App = (() => {
       }
     }
 
-    UI.toast('Welcome to Sonara 🎧', 'success', 2500);
+    UI.toast('Welcome to Sonara', 'success', 2500);
   }
 
   // ── ADD BOOK ─────────────────────────────────────────────
@@ -326,14 +358,18 @@ const App = (() => {
 
       pendingBookData = {
         id,
-        title:      fileInfo.name.replace(/\.(pdf|epub)$/i, ''),
+        title:      fileInfo.name.replace(/\.(pdf|epub|mp3|m4b|m4a|ogg)$/i, '').replace(/[-_]/g, ' '),
         format:     fileInfo.format,
         sourcePath: fileInfo.path,
         fileName:   fileInfo.name,
         fileSize:   fileInfo.size
       };
 
-      await _processFile(id, fileInfo);
+      if (AUDIO_FORMATS.includes(fileInfo.format)) {
+        await _processAudioFile(id, fileInfo);
+      } else {
+        await _processFile(id, fileInfo);
+      }
     } catch (err) {
       console.error('[App] Error in addBook:', err);
       UI.toast('Failed to add book: ' + err.message, 'error');
@@ -370,8 +406,8 @@ const App = (() => {
       return;
     }
 
-    console.log('[App] Different book, will re-parse. Starting _processFile...');
-    
+    console.log('[App] Different book, loading...');
+
     // Load file & parse
     pendingBookData = {
       id,
@@ -382,7 +418,22 @@ const App = (() => {
       fileSize:   book.file_size
     };
 
-    await _processFile(id, { path: book.file_path, name: book.file_name, size: book.file_size, format: book.format });
+    if (AUDIO_FORMATS.includes(book.format)) {
+      await _openAudioBook(book);
+    } else {
+      await _processFile(id, { path: book.file_path, name: book.file_name, size: book.file_size, format: book.format });
+    }
+  }
+
+  // ── OPEN AUDIOBOOK (already in library) ────────────────────
+  async function _openAudioBook(book) {
+    currentBookId = book.id;
+    const progress = await window.sonara.progress.get(book.id);
+    Reader.loadAudioBook(book, progress);
+    await window.sonara.settings.set('lastBookId', book.id);
+    Library.setActiveCard(book.id);
+    showReader();
+    pendingBookData = null;
   }
 
   // ── PROCESS FILE ─────────────────────────────────────────
@@ -512,6 +563,22 @@ const App = (() => {
       _setGenProgress(100, 'Ready!', '');
       await _sleep(150);
 
+      // 6b. Extract cover image
+      try {
+        let coverData = null;
+        if (fileInfo.format === 'epub') {
+          coverData = await Parser.extractEPUBCover(base64);
+        } else if (fileInfo.format === 'pdf') {
+          coverData = await Parser.extractPDFCover(base64);
+        }
+        if (coverData) {
+          await window.sonara.cover.save({ bookId: id, base64: coverData.base64, mediaType: coverData.mediaType });
+          console.log('[App] Cover image saved');
+        }
+      } catch (coverErr) {
+        console.log('[App] Cover extraction skipped:', coverErr.message);
+      }
+
       // 7. Load into reader
       console.log('[App] ========== LOADING INTO READER ==========');
       console.log('[App] bookId:', id);
@@ -539,9 +606,10 @@ const App = (() => {
       // Hide overlay, show reader
       console.log('[App] Hiding overlay');
       overlay.style.display = 'none';
+      showReader();
 
       console.log('[App] Processing complete!');
-      UI.toast('🎧 ' + pendingBookData.title + ' — press ▶ to listen!', 'success');
+      UI.toast(pendingBookData.title + ' — press play to listen!', 'success');
 
     } catch (err) {
       console.error('[App] Error processing file:', err);
@@ -554,6 +622,74 @@ const App = (() => {
       pendingBookData = null;
       console.log('[App] Process complete, isGenerating:', isGenerating);
     }
+  }
+
+  // ── PROCESS AUDIO FILE ────────────────────────────────────
+  async function _processAudioFile(id, fileInfo) {
+    console.log('[App] Processing audio file:', fileInfo.name);
+    if (isGenerating) return;
+    isGenerating = true;
+
+    const overlay = document.getElementById('generatingOverlay');
+    overlay.style.display = 'flex';
+    document.getElementById('readerWelcome').style.display = 'none';
+
+    _setGenStep('extract', 'active'); _setGenProgress(10, 'Importing audiobook...', fileInfo.name);
+
+    try {
+      // 1. Save to library (copies the file)
+      const bookRecord = {
+        id,
+        title:       pendingBookData.title,
+        format:      fileInfo.format,
+        sourcePath:  fileInfo.path,
+        fileName:    fileInfo.name,
+        fileSize:    fileInfo.size,
+        totalChunks: 1,
+        totalSeconds: 0
+      };
+      const saved = await window.sonara.library.addBook(bookRecord);
+      _setGenProgress(40, 'Reading audio metadata...', '');
+
+      // 2. Get duration from the copied file
+      const duration = await _getAudioDuration(saved.file_path);
+      await window.sonara.library.updateBook(id, {
+        duration_seconds: duration,
+        total_seconds: Math.round(duration)
+      });
+
+      _setGenStep('extract', 'done'); _setGenStep('done', 'active');
+      _setGenProgress(100, 'Ready!', '');
+      await _sleep(200);
+
+      // 3. Update library and stay in library view
+      currentBookId = id;
+      overlay.style.display = 'none';
+      await Library.load();
+      showLibrary();
+      UI.toast(pendingBookData.title + ' added to library!', 'success');
+
+    } catch (err) {
+      console.error('[App] Error importing audio:', err);
+      overlay.style.display = 'none';
+      UI.toast('Error: ' + err.message, 'error');
+    } finally {
+      isGenerating = false;
+      pendingBookData = null;
+    }
+  }
+
+  function _getAudioDuration(filePath) {
+    return new Promise((resolve) => {
+      const audio = new Audio('file:///' + filePath.replace(/\\/g, '/'));
+      audio.addEventListener('loadedmetadata', () => {
+        resolve(audio.duration || 0);
+        audio.src = '';
+      });
+      audio.addEventListener('error', () => resolve(0));
+      // Timeout fallback
+      setTimeout(() => resolve(0), 5000);
+    });
   }
 
   function clearCurrentBook() {
@@ -572,6 +708,7 @@ const App = (() => {
 
   return {
     init, addBook, openBook, clearCurrentBook,
+    showLibrary, showReader,
     get currentBookId() { return currentBookId; }
   };
 })();

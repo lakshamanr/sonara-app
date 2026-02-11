@@ -26,7 +26,8 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 app.commandLine.appendSwitch('disk-cache-size', '1');
 
 let mainWindow;
-let booksDir;  // where we copy user files
+let booksDir;   // where we copy user files
+let coversDir;  // where we save extracted cover images
 
 // ─────────────────────────────────────────────────────────────
 //  APP BOOTSTRAP
@@ -34,10 +35,13 @@ let booksDir;  // where we copy user files
 app.whenReady().then(() => {
   try {
     const userData = app.getPath('userData');
-    booksDir = path.join(userData, 'books');
+    booksDir  = path.join(userData, 'books');
+    coversDir = path.join(userData, 'covers');
     console.log('User data path:', userData);
     console.log('Books directory:', booksDir);
+    console.log('Covers directory:', coversDir);
     fs.mkdirSync(booksDir, { recursive: true });
+    fs.mkdirSync(coversDir, { recursive: true });
 
     db.init(userData);
     console.log('Database initialized');
@@ -67,6 +71,7 @@ function createWindow() {
     height: Math.min(900,  height - 40),
     minWidth:  900,
     minHeight: 600,
+    icon: path.join(__dirname, 'logo', 'logo.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#0c0c0f',
     show: false,
@@ -209,11 +214,11 @@ ipcMain.handle('dialog:openFile', async () => {
   try {
     console.log('[Main] Opening file dialog...');
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select a PDF or EPUB file',
+      title: 'Select a book or audiobook file',
       filters: [
-        { name: 'Books', extensions: ['pdf', 'epub'] },
-        { name: 'PDF',   extensions: ['pdf'] },
-        { name: 'EPUB',  extensions: ['epub'] }
+        { name: 'All Supported', extensions: ['pdf', 'epub', 'mp3', 'm4b', 'm4a', 'ogg'] },
+        { name: 'Books',         extensions: ['pdf', 'epub'] },
+        { name: 'Audiobooks',    extensions: ['mp3', 'm4b', 'm4a', 'ogg'] }
       ],
       properties: ['openFile']
     });
@@ -285,6 +290,64 @@ ipcMain.handle('tts:getVoices', async () => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
+//  IPC — COLLECTIONS
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('collections:getAll', () => db.getAllCollections());
+
+ipcMain.handle('collections:get', (_, id) => db.getCollection(id));
+
+ipcMain.handle('collections:create', (_, name, color) => db.createCollection(name, color));
+
+ipcMain.handle('collections:update', (_, id, fields) => {
+  db.updateCollection(id, fields);
+  return db.getCollection(id);
+});
+
+ipcMain.handle('collections:delete', (_, id) => {
+  db.deleteCollection(id);
+  return { success: true };
+});
+
+ipcMain.handle('collections:addBook', (_, bookId, collectionId) => {
+  db.addBookToCollection(bookId, collectionId);
+  return { success: true };
+});
+
+ipcMain.handle('collections:removeBook', (_, bookId, collectionId) => {
+  db.removeBookFromCollection(bookId, collectionId);
+  return { success: true };
+});
+
+ipcMain.handle('collections:getBookCollections', (_, bookId) => {
+  return db.getBookCollections(bookId);
+});
+
+ipcMain.handle('collections:getBooks', (_, collectionId) => {
+  return db.getCollectionBooks(collectionId);
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — COVERS
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('cover:save', async (_, { bookId, base64, mediaType }) => {
+  const ext = mediaType.includes('png') ? '.png' : '.jpg';
+  const coverPath = path.join(coversDir, bookId + ext);
+  const buffer = Buffer.from(base64, 'base64');
+  fs.writeFileSync(coverPath, buffer);
+  db.updateBook(bookId, { cover_path: coverPath });
+  return coverPath;
+});
+
+ipcMain.handle('cover:getPath', (_, bookId) => {
+  const book = db.getBook(bookId);
+  if (book?.cover_path && fs.existsSync(book.cover_path)) return book.cover_path;
+  return null;
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — EDGE TTS (Natural Neural Voices)
+// ─────────────────────────────────────────────────────────────
 ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
   try {
     const rate = edgeTTS.speedToRate(speed || 1.0);

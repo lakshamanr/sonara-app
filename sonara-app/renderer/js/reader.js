@@ -25,6 +25,11 @@ const Reader = (() => {
   let autoSaveEvery  = 10;      // save every N chunks
   let saveTimer      = null;
 
+  // Audiobook mode state
+  let audioMode      = false;
+  let audioElement   = null;
+  let audioBookData  = null;
+
   // ── VOICES ───────────────────────────────────────────────
   function initVoices() {
     console.log('[Reader] ========== Initializing voices ==========');
@@ -545,10 +550,12 @@ const Reader = (() => {
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
 
-    // Show the reader
+    // Show the text reader, hide audio reader
     document.getElementById('readerWelcome').style.display   = 'none';
+    document.getElementById('readerAudio').style.display     = 'none';
     document.getElementById('chapterTitlebar').style.display = 'flex';
     document.getElementById('readerTextWrap').style.display  = 'flex';
+    audioMode = false;
   }
 
   // ── WORD HIGHLIGHT (onboundary) ───────────────────────────
@@ -605,7 +612,11 @@ const Reader = (() => {
 
   // ── PLAYBACK ─────────────────────────────────────────────
   function togglePlay() {
-    console.log('[Reader] togglePlay called, isPlaying:', isPlaying);
+    console.log('[Reader] togglePlay called, isPlaying:', isPlaying, 'audioMode:', audioMode);
+    if (audioMode) {
+      _toggleAudioPlay();
+      return;
+    }
     isPlaying ? _pause() : _play();
   }
 
@@ -656,6 +667,12 @@ const Reader = (() => {
 
   function stop() {
     isPlaying = false;
+    if (audioMode && audioElement) {
+      audioElement.pause();
+      audioElement.src = '';
+      audioMode = false;
+      audioBookData = null;
+    }
     speechSynthesis.cancel();
     CloudTTS.stop();
     _stopTimer();
@@ -763,6 +780,10 @@ const Reader = (() => {
   }
 
   function skipChunk(dir) {
+    if (audioMode && audioElement) {
+      audioElement.currentTime = Math.max(0, Math.min(audioElement.duration || 0, audioElement.currentTime + (dir * 30)));
+      return;
+    }
     const next = Math.max(0, Math.min(chunks.length - 1, currentChunk + dir));
     currentChunk = next;
     elapsedTime  = Math.round((next / chunks.length) * totalDuration);
@@ -786,6 +807,11 @@ const Reader = (() => {
   }
 
   function seekAudio(val) {
+    if (audioMode && audioElement) {
+      const ratio = val / 100;
+      audioElement.currentTime = ratio * (audioElement.duration || 0);
+      return;
+    }
     const ratio  = val / 100;
     elapsedTime  = Math.round(ratio * totalDuration);
     const target = Math.floor(ratio * chunks.length);
@@ -809,6 +835,10 @@ const Reader = (() => {
     document.getElementById('speedVal').textContent = speed.toFixed(2) + '×';
     document.getElementById('pbSpeedLabel').textContent = speed.toFixed(1) + '×';
     window.sonara?.settings.set('speed', speed);
+    if (audioMode && audioElement) {
+      audioElement.playbackRate = speed;
+      return;
+    }
     // Recalculate total duration
     const words = chunks.reduce((s, c) => s + c.text.split(/\s+/).length, 0);
     totalDuration = Math.round((words / (150 * speed)) * 60);
@@ -1066,11 +1096,134 @@ const Reader = (() => {
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // ── AUDIOBOOK MODE ──────────────────────────────────────────
+
+  function loadAudioBook(bookData, resumeData) {
+    console.log('[Reader] Loading audiobook:', bookData.title);
+    audioMode = true;
+    audioBookData = bookData;
+    bookId = bookData.id;
+    chunks = [];
+
+    // Hide text reader, show audio reader
+    document.getElementById('readerWelcome').style.display   = 'none';
+    document.getElementById('chapterTitlebar').style.display  = 'none';
+    document.getElementById('readerTextWrap').style.display   = 'none';
+    document.getElementById('readerAudio').style.display      = 'flex';
+
+    // Set up audio element
+    audioElement = document.getElementById('audioPlayer');
+    audioElement.src = 'file:///' + bookData.file_path.replace(/\\/g, '/');
+    audioElement.playbackRate = speed;
+
+    // Set title
+    document.getElementById('rasTitle').textContent = bookData.title;
+    document.getElementById('rasAuthor').textContent = bookData.author || '';
+
+    // Cover
+    const coverEl = document.getElementById('rasCover');
+    if (bookData.cover_path) {
+      coverEl.innerHTML = '<img src="file:///' + bookData.cover_path.replace(/\\/g, '/') + '" alt="" />';
+    } else {
+      let hash = 0;
+      for (let i = 0; i < bookData.title.length; i++) {
+        hash = ((hash << 5) - hash) + bookData.title.charCodeAt(i);
+        hash |= 0;
+      }
+      const hue1 = Math.abs(hash) % 360;
+      const hue2 = (hue1 + 40) % 360;
+      coverEl.innerHTML = '<div class="lc-cover-placeholder" style="background:linear-gradient(135deg,hsl(' + hue1 + ',25%,15%),hsl(' + hue2 + ',30%,22%))">' +
+        '<span class="lc-cover-letter">' + (bookData.title[0] || '?').toUpperCase() + '</span></div>';
+    }
+
+    // Resume position
+    if (resumeData?.elapsed_seconds > 0) {
+      audioElement.currentTime = resumeData.elapsed_seconds;
+    }
+
+    // Wire up events
+    audioElement.removeEventListener('timeupdate', _onAudioTimeUpdate);
+    audioElement.addEventListener('timeupdate', _onAudioTimeUpdate);
+
+    audioElement.removeEventListener('loadedmetadata', _onAudioMeta);
+    audioElement.addEventListener('loadedmetadata', _onAudioMeta);
+
+    audioElement.removeEventListener('ended', _onAudioEnded);
+    audioElement.addEventListener('ended', _onAudioEnded);
+
+    // Update topbar
+    document.getElementById('tbCenter').textContent = bookData.title;
+
+    // Chapter list (single entry for audiobook)
+    document.getElementById('chaptersLabel').textContent = 'Audiobook';
+    document.getElementById('chaptersCount').textContent = '1';
+    document.getElementById('chaptersList').innerHTML =
+      '<div class="chapter-item active"><span class="ci-name">' + _escHtml(bookData.title) + '</span></div>';
+  }
+
+  function _onAudioMeta() {
+    if (!audioElement) return;
+    totalDuration = audioElement.duration || 0;
+    document.getElementById('pbTimeTotal').textContent = _fmt(Math.floor(totalDuration));
+    document.getElementById('rasTime').textContent =
+      _fmt(Math.floor(audioElement.currentTime)) + ' / ' + _fmt(Math.floor(totalDuration));
+  }
+
+  function _onAudioTimeUpdate() {
+    if (!audioElement) return;
+    elapsedTime = Math.floor(audioElement.currentTime);
+    document.getElementById('pbTimeCur').textContent = _fmt(elapsedTime);
+    document.getElementById('rasTime').textContent =
+      _fmt(elapsedTime) + ' / ' + _fmt(Math.floor(audioElement.duration || 0));
+
+    const pct = audioElement.duration > 0
+      ? (audioElement.currentTime / audioElement.duration) * 100 : 0;
+    document.getElementById('pbSeeker').value = pct;
+  }
+
+  function _onAudioEnded() {
+    isPlaying = false;
+    _updatePlayIcon(false);
+    _saveAudioProgress(true);
+    UI.toast('Audiobook complete!', 'success');
+  }
+
+  function _toggleAudioPlay() {
+    if (!audioElement) return;
+    if (audioElement.paused) {
+      audioElement.play();
+      isPlaying = true;
+      _updatePlayIcon(true);
+      _startTimer();
+    } else {
+      audioElement.pause();
+      isPlaying = false;
+      _updatePlayIcon(false);
+      _stopTimer();
+      _saveAudioProgress();
+    }
+  }
+
+  function _saveAudioProgress(finished = false) {
+    if (!bookId || !audioElement) return;
+    const percent = finished ? 100 : Math.round(
+      (audioElement.currentTime / (audioElement.duration || 1)) * 100
+    );
+    window.sonara?.progress.save({
+      book_id: bookId,
+      chunk_index: 0,
+      word_index: 0,
+      elapsed_seconds: Math.floor(audioElement.currentTime),
+      percent
+    });
+    Library.refreshCard(bookId, percent, finished ? 'done' : percent > 0 ? 'reading' : 'unstarted');
+  }
+
   // ── PUBLIC API ────────────────────────────────────────────
   return {
     initVoices, refreshVoices, filterVoices, renderVoiceList,
     selectVoice, previewVoice, previewSelectedVoice,
-    loadBook,
+    loadBook, loadAudioBook,
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio,
     cycleSpeed, onSpeedChange, onPitchChange,
     applySettings,

@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob:;"/>
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob: file:; img-src 'self' data: blob: file:;"/>
   <title>Sonara</title>
   <link rel="stylesheet" href="css/app.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400&family=Instrument+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
@@ -17,9 +17,17 @@
 <div class="topbar" id="topbar">
   <div class="tb-drag"><!-- draggable region --></div>
   <div class="tb-logo">
+    <img class="logo-icon" src="../main/logo/logo.png" alt="Sonara" />
     <span class="logo-mark">Sonara</span>
     <span class="logo-tag">Audiobook Player</span>
   </div>
+  <button class="tb-btn tb-library-btn" id="btnLibraryToggle" title="Library">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+    </svg>
+    Library
+  </button>
   <div class="tb-center" id="tbCenter">
     <!-- populated with book title when reading -->
   </div>
@@ -35,6 +43,114 @@
     <button class="tb-icon-btn" id="btnSettings" title="Settings">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     FULL-SCREEN LIBRARY VIEW
+══════════════════════════════════════════════════════════ -->
+<div id="libraryView" class="library-view">
+
+  <!-- Collections Sidebar -->
+  <aside class="lib-sidebar" id="libSidebar">
+    <div class="lib-sidebar-header">
+      <span class="lib-sidebar-title">Collections</span>
+      <button class="lib-sidebar-add" id="btnNewCollection" title="New Collection">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="lib-sidebar-list" id="collectionList">
+      <div class="collection-item active" data-collection="all" id="colAll">
+        <svg class="col-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+        </svg>
+        <span class="col-name">All Books</span>
+        <span class="col-count" id="colAllCount">0</span>
+      </div>
+      <div class="collection-item" data-collection="recent">
+        <svg class="col-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="col-name">Recently Added</span>
+        <span class="col-count" id="colRecentCount">0</span>
+      </div>
+      <div class="collection-item" data-collection="reading">
+        <svg class="col-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+        </svg>
+        <span class="col-name">In Progress</span>
+        <span class="col-count" id="colReadingCount">0</span>
+      </div>
+      <div class="collection-divider"></div>
+      <div id="userCollections"></div>
+    </div>
+  </aside>
+
+  <!-- Main Library Content -->
+  <div class="lib-main" id="libMain">
+    <!-- Toolbar: search + filters + sort + add -->
+    <div class="lib-toolbar" id="libToolbar">
+      <div class="lib-search-wrap">
+        <svg class="lib-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="lib-search" id="libSearch" placeholder="Search your library..." />
+        <button class="lib-search-clear" id="libSearchClear" style="display:none">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="lib-format-tabs" id="libFormatTabs">
+        <button class="lib-tab active" data-format="all">All</button>
+        <button class="lib-tab" data-format="pdf">PDF</button>
+        <button class="lib-tab" data-format="epub">EPUB</button>
+        <button class="lib-tab" data-format="audio">Audiobook</button>
+      </div>
+      <div class="lib-toolbar-right">
+        <select class="lib-sort" id="libSort">
+          <option value="recent">Recently Read</option>
+          <option value="added">Date Added</option>
+          <option value="title">Title A-Z</option>
+          <option value="progress">Progress</option>
+        </select>
+        <button class="lib-add-btn" id="libAddBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Book
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="lib-stats-bar" id="libStatsBar">
+      <span class="lib-stats-text" id="libStatsText">0 books in library</span>
+    </div>
+
+    <!-- Book grid -->
+    <div class="lib-grid-wrap" id="libGridWrap">
+      <div class="lib-grid" id="libGrid"></div>
+
+      <!-- Empty state -->
+      <div class="lib-empty-hero" id="libEmptyHero" style="display:none">
+        <div class="leh-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+          </svg>
+        </div>
+        <h2 class="leh-title">Your library is empty</h2>
+        <p class="leh-sub">Add a PDF, EPUB, or audiobook file to get started.</p>
+        <button class="leh-btn" id="libEmptyAddBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Your First Book
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -104,6 +220,19 @@
       <div class="reader-text" id="readerText">
         <!-- Word spans injected by JS -->
       </div>
+    </div>
+
+    <!-- Audio player mode (shown for audiobooks) -->
+    <div class="reader-audio" id="readerAudio" style="display:none">
+      <div class="ra-cover-wrap">
+        <div class="ra-cover" id="rasCover"></div>
+      </div>
+      <div class="ra-info">
+        <div class="ra-title" id="rasTitle">Audiobook Title</div>
+        <div class="ra-author" id="rasAuthor"></div>
+        <div class="ra-time" id="rasTime">0:00 / 0:00</div>
+      </div>
+      <audio id="audioPlayer" preload="metadata"></audio>
     </div>
 
     <!-- Generating overlay -->
@@ -327,6 +456,45 @@
     <div class="modal-actions">
       <button class="modal-btn-cancel" id="btnStartOver">Start Over</button>
       <button class="modal-btn-primary" id="btnResume">Resume</button>
+    </div>
+  </div>
+</div>
+
+<!-- Collection Modal (Create / Rename) -->
+<div class="modal-overlay" id="modalCollection">
+  <div class="modal">
+    <div class="modal-close" onclick="UI.closeModal('modalCollection')">&#x2715;</div>
+    <h2 class="modal-title" id="colModalTitle">New Collection</h2>
+    <p class="modal-sub">Give your collection a name</p>
+    <input type="text" class="modal-input" id="colNameInput" placeholder="e.g. Science Fiction, Work..." maxlength="40"/>
+    <div class="col-color-row">
+      <span class="col-color-label">Color</span>
+      <div class="col-color-swatches" id="colColorSwatches">
+        <div class="col-swatch active" data-color="#c8a96e" style="background:#c8a96e"></div>
+        <div class="col-swatch" data-color="#52c87a" style="background:#52c87a"></div>
+        <div class="col-swatch" data-color="#4a9eff" style="background:#4a9eff"></div>
+        <div class="col-swatch" data-color="#a87de0" style="background:#a87de0"></div>
+        <div class="col-swatch" data-color="#e05252" style="background:#e05252"></div>
+        <div class="col-swatch" data-color="#e0a852" style="background:#e0a852"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalCollection')">Cancel</button>
+      <button class="modal-btn-primary" id="colModalSave">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign to Collection Modal -->
+<div class="modal-overlay" id="modalAssignCollection">
+  <div class="modal">
+    <div class="modal-close" onclick="UI.closeModal('modalAssignCollection')">&#x2715;</div>
+    <h2 class="modal-title">Add to Collection</h2>
+    <p class="modal-sub" id="assignColSub">Select collections for this book</p>
+    <div class="assign-col-list" id="assignColList"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalAssignCollection')">Close</button>
+      <button class="modal-btn-primary" id="assignColSave">Save</button>
     </div>
   </div>
 </div>

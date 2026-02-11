@@ -147,6 +147,106 @@ const Parser = (() => {
     return raw;
   }
 
+  // ── COVER EXTRACTION ────────────────────────────────────
+
+  async function extractEPUBCover(base64Data) {
+    try {
+      await loadJSZipScript();
+      const binary = atob(base64Data);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const zip = await JSZip.loadAsync(bytes.buffer);
+
+      // 1. Read container.xml -> OPF
+      const containerXml = await zip.file('META-INF/container.xml')?.async('text');
+      if (!containerXml) return null;
+      const opfPath = containerXml.match(/full-path="([^"]+\.opf)"/i)?.[1];
+      if (!opfPath) return null;
+
+      const opfText = await zip.file(opfPath)?.async('text');
+      if (!opfText) return null;
+      const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+      const parser = new DOMParser();
+      const opfDoc = parser.parseFromString(opfText, 'application/xml');
+
+      // 2. Look for cover in metadata -> meta[@name="cover"]
+      let coverId = null;
+      const coverMeta = opfDoc.querySelector('meta[name="cover"]');
+      if (coverMeta) coverId = coverMeta.getAttribute('content');
+
+      // 3. Check for item with properties="cover-image" (EPUB3)
+      if (!coverId) {
+        const coverItem = opfDoc.querySelector('manifest item[properties~="cover-image"]');
+        if (coverItem) coverId = coverItem.getAttribute('id');
+      }
+
+      // 4. Fallback: look for manifest items with "cover" in id or href
+      if (!coverId) {
+        const items = opfDoc.querySelectorAll('manifest item');
+        for (const item of items) {
+          const id   = item.getAttribute('id') || '';
+          const href = item.getAttribute('href') || '';
+          const type = item.getAttribute('media-type') || '';
+          if (type.startsWith('image/') && (id.toLowerCase().includes('cover') || href.toLowerCase().includes('cover'))) {
+            coverId = id;
+            break;
+          }
+        }
+      }
+
+      if (!coverId) return null;
+
+      // 5. Resolve to file path and extract
+      const item = opfDoc.querySelector('manifest item[id="' + coverId + '"]');
+      if (!item) return null;
+      const href      = item.getAttribute('href');
+      const mediaType = item.getAttribute('media-type') || 'image/jpeg';
+      const fullPath  = href.startsWith('/') ? href.slice(1) : opfDir + href;
+
+      const imgData = await zip.file(fullPath)?.async('base64')
+                   || await zip.file(decodeURIComponent(fullPath))?.async('base64');
+      if (!imgData) return null;
+
+      console.log('[Parser] EPUB cover extracted, mediaType:', mediaType);
+      return { base64: imgData, mediaType };
+    } catch (err) {
+      console.error('[Parser] Error extracting EPUB cover:', err);
+      return null;
+    }
+  }
+
+  async function extractPDFCover(base64Data) {
+    try {
+      await loadPDFScript();
+      const binary = atob(base64Data);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const pdf  = await pdfjsLib.getDocument({ data: bytes }).promise;
+      const page = await pdf.getPage(1);
+
+      // Render at reasonable size for a cover thumbnail (max 300px wide)
+      const viewport = page.getViewport({ scale: 1.0 });
+      const scale    = Math.min(300 / viewport.width, 450 / viewport.height);
+      const scaled   = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = scaled.width;
+      canvas.height = scaled.height;
+      const ctx = canvas.getContext('2d');
+
+      await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const base64  = dataUrl.split(',')[1];
+      console.log('[Parser] PDF cover extracted from first page');
+      return { base64, mediaType: 'image/jpeg' };
+    } catch (err) {
+      console.error('[Parser] Error extracting PDF cover:', err);
+      return null;
+    }
+  }
+
   // ── PUBLIC ───────────────────────────────────────────────
-  return { parsePDF, parseEPUB };
+  return { parsePDF, parseEPUB, extractEPUBCover, extractPDFCover };
 })();

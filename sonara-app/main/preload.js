@@ -46,6 +46,25 @@ contextBridge.exposeInMainWorld('sonara', {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // ── COLLECTIONS ─────────────────────────────────────────
+  collections: {
+    getAll:             ()           => ipcRenderer.invoke('collections:getAll'),
+    get:                (id)         => ipcRenderer.invoke('collections:get', id),
+    create:             (name, col)  => ipcRenderer.invoke('collections:create', name, col),
+    update:             (id, f)      => ipcRenderer.invoke('collections:update', id, f),
+    delete:             (id)         => ipcRenderer.invoke('collections:delete', id),
+    addBook:            (bId, cId)   => ipcRenderer.invoke('collections:addBook', bId, cId),
+    removeBook:         (bId, cId)   => ipcRenderer.invoke('collections:removeBook', bId, cId),
+    getBookCollections: (bId)        => ipcRenderer.invoke('collections:getBookCollections', bId),
+    getBooks:           (cId)        => ipcRenderer.invoke('collections:getBooks', cId),
+  },
+
+  // ── COVERS ─────────────────────────────────────────────
+  cover: {
+    save:    (data) => ipcRenderer.invoke('cover:save', data),
+    getPath: (bId)  => ipcRenderer.invoke('cover:getPath', bId),
+  },
+
   // ── EDGE TTS (Natural Neural Voices) ───────────────────
   tts: {
     getVoices:   ()     => ipcRenderer.invoke('tts:getVoices'),
