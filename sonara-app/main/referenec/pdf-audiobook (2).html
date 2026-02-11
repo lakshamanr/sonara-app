@@ -306,9 +306,15 @@
         <div id="voiceList"><div class="voice-empty">Loading available voices…</div></div>
       </div>
 
-      <div style="margin-top:10px;font-size:11px;color:var(--text-muted);">
-        💡 <strong style="color:var(--text-dim)">Tip:</strong> More voices available at
-        <strong style="color:var(--text-dim)">Settings → Accessibility → Spoken Content → Voices</strong> on your device.
+      <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:11px;color:var(--text-muted);">
+          💡 <strong style="color:var(--text-dim)">Tip:</strong> More voices at
+          <strong style="color:var(--text-dim)">Settings → Accessibility → Spoken Content</strong>
+        </div>
+        <button class="upload-btn" style="padding:5px 12px;font-size:11px;" onclick="refreshVoices()">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh Voices
+        </button>
       </div>
     </div>
 
@@ -433,6 +439,67 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ══════════════════════════════════════════════════════════════════
+//  CLOUD TTS — Microsoft Edge Neural Voices (same as Electron app)
+//  Provides 30+ high-quality cloud voices when system has few
+// ══════════════════════════════════════════════════════════════════
+const CloudTTS = (() => {
+  const CLOUD_VOICES = [
+    // US English - Neural Voices
+    { name: 'Microsoft Aria [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-AriaNeural' },
+    { name: 'Microsoft Guy [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-GuyNeural' },
+    { name: 'Microsoft Jenny [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-JennyNeural' },
+    { name: 'Microsoft Davis [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-DavisNeural' },
+    { name: 'Microsoft Amber [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-AmberNeural' },
+    { name: 'Microsoft Ana [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-AnaNeural' },
+    { name: 'Microsoft Ashley [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-AshleyNeural' },
+    { name: 'Microsoft Brandon [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-BrandonNeural' },
+    { name: 'Microsoft Christopher [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-ChristopherNeural' },
+    { name: 'Microsoft Cora [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-CoraNeural' },
+    { name: 'Microsoft Elizabeth [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-ElizabethNeural' },
+    { name: 'Microsoft Eric [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-EricNeural' },
+    { name: 'Microsoft Jacob [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-JacobNeural' },
+    { name: 'Microsoft Michelle [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-MichelleNeural' },
+    { name: 'Microsoft Monica [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-MonicaNeural' },
+    { name: 'Microsoft Nancy [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-NancyNeural' },
+    { name: 'Microsoft Roger [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-RogerNeural' },
+    { name: 'Microsoft Sara [Cloud]', lang: 'en-US', gender: 'Female', voice: 'en-US-SaraNeural' },
+    { name: 'Microsoft Steffan [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-SteffanNeural' },
+    { name: 'Microsoft Tony [Cloud]', lang: 'en-US', gender: 'Male', voice: 'en-US-TonyNeural' },
+    // UK English
+    { name: 'Microsoft Libby [Cloud]', lang: 'en-GB', gender: 'Female', voice: 'en-GB-LibbyNeural' },
+    { name: 'Microsoft Ryan [Cloud]', lang: 'en-GB', gender: 'Male', voice: 'en-GB-RyanNeural' },
+    { name: 'Microsoft Sonia [Cloud]', lang: 'en-GB', gender: 'Female', voice: 'en-GB-SoniaNeural' },
+    { name: 'Microsoft Maisie [Cloud]', lang: 'en-GB', gender: 'Female', voice: 'en-GB-MaisieNeural' },
+    { name: 'Microsoft Thomas [Cloud]', lang: 'en-GB', gender: 'Male', voice: 'en-GB-ThomasNeural' },
+    // Australian English
+    { name: 'Microsoft Natasha [Cloud]', lang: 'en-AU', gender: 'Female', voice: 'en-AU-NatashaNeural' },
+    { name: 'Microsoft William [Cloud]', lang: 'en-AU', gender: 'Male', voice: 'en-AU-WilliamNeural' },
+    // Canadian English
+    { name: 'Microsoft Clara [Cloud]', lang: 'en-CA', gender: 'Female', voice: 'en-CA-ClaraNeural' },
+    { name: 'Microsoft Liam [Cloud]', lang: 'en-CA', gender: 'Male', voice: 'en-CA-LiamNeural' },
+    // Indian English
+    { name: 'Microsoft Neerja [Cloud]', lang: 'en-IN', gender: 'Female', voice: 'en-IN-NeerjaNeural' },
+    { name: 'Microsoft Prabhat [Cloud]', lang: 'en-IN', gender: 'Male', voice: 'en-IN-PrabhatNeural' },
+    // Irish English
+    { name: 'Microsoft Emily [Cloud]', lang: 'en-IE', gender: 'Female', voice: 'en-IE-EmilyNeural' },
+    { name: 'Microsoft Connor [Cloud]', lang: 'en-IE', gender: 'Male', voice: 'en-IE-ConnorNeural' }
+  ];
+
+  function shouldEnable(systemVoiceCount) { return systemVoiceCount < 5; }
+
+  function getVoices() {
+    return CLOUD_VOICES.map(v => ({
+      name: v.name, lang: v.lang, localService: false,
+      voiceURI: v.voice, default: false, _cloudVoice: true
+    }));
+  }
+
+  function isCloudVoice(voice) { return voice && voice._cloudVoice === true; }
+
+  return { shouldEnable, getVoices, isCloudVoice };
+})();
+
 // ── STATE ─────────────────────────────────────────────────────────────
 let pdfFile=null, pdfText='', pdfPages=0, pdfTitle='Document';
 let audioChunks=[], currentChunk=0;
@@ -443,41 +510,143 @@ let timerInterval=null, waveAnim=null;
 let voiceList=[], chosenVoice=null;
 let isGenerating=false;
 let previewUtterance=null;
+let _voiceLoadCount=0, _maxVoices=0;
 
 // ── INIT ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
   initFileUpload();
   initApiKey();
-  // Load voices with retry (some browsers async)
-  loadAndRenderVoices();
-  if(speechSynthesis.onvoiceschanged!==undefined){
-    speechSynthesis.onvoiceschanged=loadAndRenderVoices;
-  }
-  // Extra retry after 1s for Firefox/Safari
-  setTimeout(loadAndRenderVoices,1000);
+  initVoices();
 });
 
-// ── VOICE LOADING & RENDERING ─────────────────────────────────────────
-function loadAndRenderVoices(){
-  const v=speechSynthesis.getVoices();
-  if(v.length===0) return;
-  voiceList=v;
-  populateLangFilter();
-  renderVoiceList();
-  if(!chosenVoice) setDefaultVoice();
+// ══════════════════════════════════════════════════════════════════
+//  VOICE SYSTEM — Matches Electron app (reader.js) exactly
+// ══════════════════════════════════════════════════════════════════
+
+function initVoices(){
+  console.log('[Sonara] ========== Initializing voices ==========');
+
+  const load = () => {
+    const v = speechSynthesis.getVoices();
+    _voiceLoadCount++;
+
+    if(v.length > _maxVoices){
+      _maxVoices = v.length;
+      const localCount = v.filter(x => x.localService).length;
+      const cloudCount = v.length - localCount;
+      console.log('[Sonara] Voices loaded (attempt #'+_voiceLoadCount+'):', v.length,
+        '('+localCount+' local, '+cloudCount+' cloud)');
+    }
+
+    if(!v.length) return;
+
+    // Merge system voices with cloud voices if system has few
+    voiceList = v;
+    if(CloudTTS.shouldEnable(v.length)){
+      const cloudVoices = CloudTTS.getVoices();
+      console.log('[Sonara] Adding', cloudVoices.length, 'cloud TTS voices (system only has', v.length, ')');
+      voiceList = [...v, ...cloudVoices];
+    }
+
+    populateLangFilter();
+    renderVoiceList();
+    if(!chosenVoice) setDefaultVoice();
+    else updateSelectedBar();
+  };
+
+  // 1. Initial load
+  load();
+
+  // 2. onvoiceschanged listener
+  if(speechSynthesis.onvoiceschanged !== undefined){
+    speechSynthesis.onvoiceschanged = () => {
+      console.log('[Sonara] onvoiceschanged event fired');
+      load();
+    };
+  }
+
+  // 3. Force trigger with dummy utterances (helps Chrome/Electron)
+  for(let i=0; i<3; i++){
+    setTimeout(() => {
+      const dummy = new SpeechSynthesisUtterance('');
+      speechSynthesis.speak(dummy);
+      speechSynthesis.cancel();
+    }, i * 100);
+  }
+
+  // 4. Extended retry schedule (same as Electron app — up to 10s)
+  const retrySchedule = [200, 500, 800, 1000, 1500, 2000, 3000, 5000, 7000, 10000];
+  retrySchedule.forEach(delay => {
+    setTimeout(() => { load(); }, delay);
+  });
+
+  console.log('[Sonara] Voice loading initiated with', retrySchedule.length, 'retry attempts');
+}
+
+function refreshVoices(){
+  console.log('[Sonara] Manual voice refresh triggered');
+  const v = speechSynthesis.getVoices();
+
+  if(v.length || CloudTTS.shouldEnable(v.length)){
+    voiceList = v;
+    let cloudAdded = 0;
+    if(CloudTTS.shouldEnable(v.length)){
+      const cloudVoices = CloudTTS.getVoices();
+      cloudAdded = cloudVoices.length;
+      voiceList = [...v, ...cloudVoices];
+    }
+    const localCount = voiceList.filter(x => x.localService).length;
+    const cloudCount = voiceList.length - localCount;
+    populateLangFilter();
+    renderVoiceList();
+    if(!chosenVoice) setDefaultVoice();
+    showToast('Found '+voiceList.length+' voices ('+localCount+' local, '+cloudCount+' cloud)','success');
+  } else {
+    showToast('No voices found — try again in a moment','error');
+  }
 }
 
 function setDefaultVoice(){
-  // Pick best English voice by priority
-  const priority=['Samantha','Google UK English Female','Google US English',
-    'Microsoft Zira','Karen','Moira','Tessa','Fiona','Victoria','Alex','Daniel'];
+  if(!voiceList.length) return;
+
+  // Priority list matches Electron app exactly
+  const priority = [
+    'Google UK English Female','Google US English',
+    'Microsoft Zira','Samantha','Karen','Moira','Tessa','Fiona',
+    'Victoria','Alex','Daniel','Google UK English Male',
+    'Microsoft David','Microsoft Mark'
+  ];
+
+  // Try priority names (exact or contains)
   for(const name of priority){
-    const v=voiceList.find(x=>x.name.includes(name));
-    if(v){chosenVoice=v; updateSelectedBar(); return;}
+    const v = voiceList.find(x => x.name === name || x.name.includes(name));
+    if(v){ chosenVoice=v; console.log('[Sonara] Default voice:', v.name, v.localService?'[Local]':'[Cloud]'); updateSelectedBar(); return; }
   }
-  // Fallback: first English voice
-  chosenVoice=voiceList.find(v=>v.lang.startsWith('en'))||voiceList[0];
+
+  // Fallback 1: any English cloud voice (often better quality)
+  const cloudEn = voiceList.find(v => v.lang.startsWith('en') && !v.localService);
+  if(cloudEn){ chosenVoice=cloudEn; updateSelectedBar(); return; }
+
+  // Fallback 2: any English local voice
+  const localEn = voiceList.find(v => v.lang.startsWith('en') && v.localService);
+  if(localEn){ chosenVoice=localEn; updateSelectedBar(); return; }
+
+  // Last resort
+  chosenVoice = voiceList[0];
   updateSelectedBar();
+}
+
+function _findFallbackVoice(targetLang){
+  // Find a system voice (not cloud) matching the target language
+  const systemVoices = speechSynthesis.getVoices().filter(v => v.localService);
+  let fb = systemVoices.find(v => v.lang === targetLang);
+  if(fb) return fb;
+  const prefix = targetLang.split('-')[0];
+  fb = systemVoices.find(v => v.lang.startsWith(prefix));
+  if(fb) return fb;
+  fb = systemVoices.find(v => v.lang.startsWith('en'));
+  if(fb) return fb;
+  return systemVoices[0] || null;
 }
 
 function populateLangFilter(){
@@ -485,7 +654,7 @@ function populateLangFilter(){
   const existing=new Set([...sel.options].map(o=>o.value));
   const langs=[...new Set(voiceList.map(v=>v.lang.split('-')[0].toUpperCase()))].sort();
   langs.forEach(l=>{
-    if(!existing.has(l)){
+    if(!existing.has(l) && l){
       const o=document.createElement('option');
       o.value=l; o.textContent=l;
       sel.appendChild(o);
@@ -493,14 +662,17 @@ function populateLangFilter(){
   });
 }
 
-function filterVoices(){
-  renderVoiceList();
-}
+function filterVoices(){ renderVoiceList(); }
 
 function renderVoiceList(){
   const search=document.getElementById('voiceSearch').value.toLowerCase();
   const lang=document.getElementById('langFilter').value.toUpperCase();
   const list=document.getElementById('voiceList');
+
+  if(!voiceList.length){
+    list.innerHTML='<div class="voice-empty">Loading voices…</div>';
+    return;
+  }
 
   let filtered=voiceList.filter(v=>{
     const matchSearch=!search||v.name.toLowerCase().includes(search)||v.lang.toLowerCase().includes(search);
@@ -508,7 +680,6 @@ function renderVoiceList(){
     return matchSearch&&matchLang;
   });
 
-  // Sort: English first, then alphabetical
   filtered.sort((a,b)=>{
     const ae=a.lang.startsWith('en')?0:1;
     const be=b.lang.startsWith('en')?0:1;
@@ -516,7 +687,7 @@ function renderVoiceList(){
     return a.name.localeCompare(b.name);
   });
 
-  if(filtered.length===0){
+  if(!filtered.length){
     list.innerHTML='<div class="voice-empty">No voices match your search.</div>';
     return;
   }
@@ -524,20 +695,24 @@ function renderVoiceList(){
   list.innerHTML=filtered.map((v,i)=>{
     const isEn=v.lang.startsWith('en');
     const isLocal=v.localService;
+    const isCloud=CloudTTS.isCloudVoice(v);
     const isSelected=chosenVoice&&chosenVoice.name===v.name;
-    const langCode=v.lang;
+    const badgeClass=isLocal?'badge-local':'badge-remote';
+    const badgeLabel=isLocal?'LOCAL':'CLOUD';
+    const eName=v.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const safeName=v.name.replace(/'/g,"\\'");
     return `
-      <div class="voice-item${isSelected?' selected':''}" id="vi-${i}" onclick="selectVoice('${v.name.replace(/'/g,"\\'")}')">
+      <div class="voice-item${isSelected?' selected':''}" data-voice-name="${eName}" onclick="selectVoice('${safeName}')">
         <div class="vi-radio"></div>
         <div class="vi-info">
-          <div class="vi-name">${v.name}</div>
-          <div class="vi-lang">${langCode}</div>
+          <div class="vi-name">${eName}</div>
+          <div class="vi-lang">${v.lang}</div>
         </div>
         <div class="vi-badges">
           ${isEn?'<span class="vi-badge badge-en">EN</span>':''}
-          <span class="vi-badge ${isLocal?'badge-local':'badge-remote'}">${isLocal?'LOCAL':'CLOUD'}</span>
+          <span class="vi-badge ${badgeClass}" title="${isCloud?'Neural cloud voice — uses system fallback':'Offline voice — works without internet'}">${badgeLabel}</span>
         </div>
-        <button class="vi-play-btn" id="vbtn-${i}" onclick="event.stopPropagation();previewVoice('${v.name.replace(/'/g,"\\'")}','vbtn-${i}')" title="Preview">
+        <button class="vi-play-btn" onclick="event.stopPropagation();previewVoice('${safeName}',this)" title="Preview">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
       </div>`;
@@ -546,9 +721,9 @@ function renderVoiceList(){
 
 function selectVoice(name){
   const v=voiceList.find(x=>x.name===name);
-  if(!v) return;
+  if(!v){ showToast('Voice not found','error'); return; }
   chosenVoice=v;
-  renderVoiceList(); // re-render to update selected state
+  renderVoiceList();
   updateSelectedBar();
   // If currently playing, switch voice live
   if(isPlaying){
@@ -556,43 +731,56 @@ function selectVoice(name){
     speakChunk(currentChunk);
   }
   showToast('Voice: '+v.name,'success');
-  // Update player voice display
   document.getElementById('ptVoiceName').textContent=v.name+' · '+v.lang;
 }
 
 function updateSelectedBar(){
   if(!chosenVoice) return;
   document.getElementById('svName').textContent=chosenVoice.name;
-  document.getElementById('svMeta').textContent=chosenVoice.lang+(chosenVoice.localService?' · Local':' · Cloud');
+  const isCloud=CloudTTS.isCloudVoice(chosenVoice);
+  document.getElementById('svMeta').textContent=chosenVoice.lang+(chosenVoice.localService?' · Local':isCloud?' · Cloud Neural':' · Cloud');
   document.getElementById('ptVoiceName').textContent=chosenVoice.name+' · '+chosenVoice.lang;
 }
 
 function previewSelectedVoice(){
-  if(!chosenVoice) return;
-  previewVoiceObj(chosenVoice,'previewBtn');
+  if(!chosenVoice){ showToast('Select a voice first','error'); return; }
+  previewVoice(chosenVoice.name, document.getElementById('previewBtn'));
 }
 
-function previewVoice(name,btnId){
+function previewVoice(name, btnEl){
   const v=voiceList.find(x=>x.name===name);
-  if(!v) return;
-  previewVoiceObj(v,btnId);
-}
+  if(!v){ showToast('Voice not found','error'); return; }
 
-function previewVoiceObj(v,btnId){
-  // Stop any current preview
+  // Stop any current speech
   speechSynthesis.cancel();
-  const btn=document.getElementById(btnId);
-  if(btn) btn.classList.add('spinning');
+  if(btnEl) btnEl.classList.add('spinning');
 
-  const u=new SpeechSynthesisUtterance(
-    'Hello! My name is '+v.name.split(' ')[0]+'. I will be reading your document aloud.'
-  );
-  u.voice=v;
-  u.rate=parseFloat(document.getElementById('speedSlider').value);
-  u.pitch=parseFloat(document.getElementById('pitchSlider').value);
-  u.onend=()=>{if(btn){btn.classList.remove('spinning');}};
-  u.onerror=()=>{if(btn){btn.classList.remove('spinning');}};
-  speechSynthesis.speak(u);
+  // 100ms delay after cancel (same as Electron app)
+  setTimeout(()=>{
+    const previewText='Hello, my name is '+v.name.split(' ')[0]+'. I will read your book aloud with this voice.';
+    const u=new SpeechSynthesisUtterance(previewText);
+    u.rate=parseFloat(document.getElementById('speedSlider').value);
+    u.pitch=parseFloat(document.getElementById('pitchSlider').value);
+    u.volume=1.0;
+
+    // Cloud voice: use fallback system voice (same as Electron app)
+    if(CloudTTS.isCloudVoice(v)){
+      const fallback=_findFallbackVoice(v.lang);
+      if(fallback){
+        u.voice=fallback;
+        console.log('[Sonara] Preview cloud voice:', v.name, '→ fallback:', fallback.name);
+      }
+    } else {
+      u.voice=v;
+    }
+
+    u.onend=()=>{ if(btnEl) btnEl.classList.remove('spinning'); };
+    u.onerror=(e)=>{
+      if(btnEl) btnEl.classList.remove('spinning');
+      if(e.error!=='interrupted') showToast('Preview error: '+e.error,'error');
+    };
+    speechSynthesis.speak(u);
+  }, 100);
 }
 
 function scrollToVoicePicker(){
@@ -930,6 +1118,17 @@ function drawWaveform(){
 function togglePlay(){isPlaying?pauseAudio():playAudio();}
 
 function playAudio(){
+  if(!audioChunks.length){ showToast('Generate an audiobook first','error'); return; }
+  // Try to pick a voice if none selected
+  if(!chosenVoice && voiceList.length > 0) setDefaultVoice();
+  if(!chosenVoice){
+    showToast('Voices are loading, please wait…','');
+    setTimeout(()=>{
+      if(voiceList.length > 0){ setDefaultVoice(); playAudio(); }
+      else showToast('No voices available — check system settings','error');
+    }, 1000);
+    return;
+  }
   if(currentChunk>=audioChunks.length){currentChunk=0;elapsedTime=0;}
   isPlaying=true;updatePlayIcon(true);speakChunk(currentChunk);startTimer();
 }
@@ -942,11 +1141,28 @@ function speakChunk(idx){
   if(idx>=audioChunks.length){isPlaying=false;updatePlayIcon(false);stopTimer();showToast('Finished!','success');return;}
   speechSynthesis.cancel();
   currentChunk=idx;highlightChapter(idx);updateTranscript(idx);
+
+  // Ensure voice is available
+  if(!chosenVoice && voiceList.length > 0) setDefaultVoice();
+
   const u=new SpeechSynthesisUtterance(audioChunks[idx].text);
   u.rate=playbackSpeed;u.pitch=playbackPitch;u.volume=1.0;
-  if(chosenVoice)u.voice=chosenVoice;
+
+  // Handle cloud voices with fallback — same logic as Electron app
+  if(chosenVoice){
+    if(CloudTTS.isCloudVoice(chosenVoice)){
+      const fallback=_findFallbackVoice(chosenVoice.lang);
+      if(fallback){
+        u.voice=fallback;
+        console.log('[Sonara] Speaking with fallback:', fallback.name, 'for cloud voice:', chosenVoice.name);
+      }
+    } else {
+      u.voice=chosenVoice;
+    }
+  }
+
   u.onend=()=>{if(isPlaying)speakChunk(idx+1);};
-  u.onerror=e=>{if(e.error!=='interrupted')showToast('Speech error: '+e.error,'error');};
+  u.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')showToast('Speech error: '+e.error,'error');};
   currentUtterance=u;
   speechSynthesis.speak(u);
 }

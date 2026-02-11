@@ -4,7 +4,26 @@ const path  = require('path');
 const fs    = require('fs');
 const db    = require('../database/db');
 
+const edgeTTS = require('./edge-tts');
+
 const isDev = process.env.NODE_ENV === 'development';
+
+// ═══════════════════════════════════════════════════════════
+//  ENABLE CLOUD VOICES - MAXIMUM CHROMIUM ACCESS
+// ═══════════════════════════════════════════════════════════
+app.commandLine.appendSwitch('enable-speech-dispatcher');
+app.commandLine.appendSwitch('enable-features', 'SpeechSynthesis,NetworkService,NetworkServiceInProcess');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('enable-speech-input');
+app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+
+// Allow remote content for cloud voices
+app.commandLine.appendSwitch('disable-web-security');
+app.commandLine.appendSwitch('allow-running-insecure-content');
+
+// Suppress cache permission errors on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disk-cache-size', '1');
 
 let mainWindow;
 let booksDir;  // where we copy user files
@@ -55,7 +74,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // Enable web APIs including full speechSynthesis
+      webviewTag: false,
+      spellcheck: false
     }
   });
 
@@ -247,4 +269,35 @@ ipcMain.handle('app:getUserDataPath', () => app.getPath('userData'));
 
 ipcMain.handle('shell:openExternal', (_, url) => {
   shell.openExternal(url);
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — EDGE TTS (Natural Neural Voices)
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('tts:getVoices', async () => {
+  try {
+    const voices = await edgeTTS.getVoices();
+    console.log('[Main] Edge TTS voices:', voices.length);
+    return voices;
+  } catch (err) {
+    console.error('[Main] Error fetching Edge TTS voices:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
+  try {
+    const rate = edgeTTS.speedToRate(speed || 1.0);
+    const pitchHz = edgeTTS.pitchToHz(pitch || 1.0);
+    console.log('[Main] TTS synthesize:', voice, 'rate:', rate, 'pitch:', pitchHz, 'text length:', text.length);
+    const result = await edgeTTS.synthesize(text, voice, { rate, pitch: pitchHz });
+    console.log('[Main] TTS audio generated:', result.audio.length, 'bytes,', result.wordBoundaries.length, 'word boundaries');
+    return {
+      audio: result.audio.toString('base64'),
+      wordBoundaries: result.wordBoundaries
+    };
+  } catch (err) {
+    console.error('[Main] TTS synthesis error:', err);
+    throw err;
+  }
 });

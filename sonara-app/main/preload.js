@@ -44,5 +44,11 @@ contextBridge.exposeInMainWorld('sonara', {
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  },
+
+  // ── EDGE TTS (Natural Neural Voices) ───────────────────
+  tts: {
+    getVoices:   ()     => ipcRenderer.invoke('tts:getVoices'),
+    synthesize:  (opts) => ipcRenderer.invoke('tts:synthesize', opts),
   }
 });

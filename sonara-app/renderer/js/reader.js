@@ -27,30 +27,122 @@ const Reader = (() => {
 
   // ── VOICES ───────────────────────────────────────────────
   function initVoices() {
-    console.log('[Reader] Initializing voices...');
+    console.log('[Reader] ========== Initializing voices ==========');
+    let loadCount = 0;
+    let maxVoices = 0;
+
     const load = () => {
       const v = speechSynthesis.getVoices();
-      console.log('[Reader] Voices loaded:', v.length);
-      if (!v.length) return;
-      voiceList = v;
+      loadCount++;
+
+      if (v.length > maxVoices) {
+        maxVoices = v.length;
+        console.log('[Reader] ✓ System voices loaded! Attempt #' + loadCount + ':', v.length, 'voices');
+
+        const localCount = v.filter(voice => voice.localService).length;
+        const cloudCount = v.length - localCount;
+        console.log('[Reader] Breakdown:', localCount, 'local,', cloudCount, 'cloud/remote');
+      }
+
+      if (!v.length && loadCount < 5) {
+        return;
+      }
+
+      // Always merge with Edge TTS neural voices
+      _mergeVoices(v);
+    };
+
+    // Merge system voices with Edge TTS neural voices
+    const _mergeVoices = (systemVoices) => {
+      const cloudVoices = CloudTTS.getVoices();
+      // Cloud voices first (better quality), then system voices
+      if (cloudVoices.length > 0) {
+        voiceList = [...cloudVoices, ...systemVoices];
+        console.log('[Reader] ✓ Voice list:', cloudVoices.length, 'neural +', systemVoices.length, 'system =', voiceList.length, 'total');
+      } else {
+        voiceList = systemVoices;
+        console.log('[Reader] Using', systemVoices.length, 'system voices (neural voices loading...)');
+      }
+
       _populateLangFilter();
       renderVoiceList();
       if (!chosenVoice) _pickDefaultVoice();
-      else _updateVoiceBar(); // Update UI if voice already selected from settings
+      else _updateVoiceBar();
     };
-    
-    // Initial load
-    load();
-    
-    // Set up voice change listener (essential for Chrome/Edge where voices load async)
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-      speechSynthesis.onvoiceschanged = load;
+
+    // 1. Register word boundary callback for Edge TTS highlighting
+    if (CloudTTS && CloudTTS.onBoundary) {
+      CloudTTS.onBoundary((textOffset, textLength, wordText) => {
+        _highlightWord(textOffset);
+      });
     }
-    
-    // Retry after delays to catch late-loading voices (Safari, Firefox)
-    setTimeout(load, 500);
-    setTimeout(load, 1000);
-    setTimeout(load, 2000);
+
+    // 2. Load Edge TTS neural voices (async, from main process)
+    console.log('[Reader] Loading Edge TTS neural voices...');
+    if (CloudTTS && CloudTTS.loadVoices) {
+      CloudTTS.loadVoices().then((cloudVoices) => {
+        console.log('[Reader] ✓ Edge TTS loaded:', cloudVoices.length, 'neural voices');
+        // Re-merge with whatever system voices we have
+        const sysVoices = speechSynthesis.getVoices();
+        _mergeVoices(sysVoices);
+      }).catch(err => {
+        console.error('[Reader] Edge TTS load failed:', err);
+      });
+    }
+
+    // 3. Also load system voices as fallback
+    load();
+
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = () => {
+        console.log('[Reader] ✓ onvoiceschanged event fired');
+        load();
+      };
+    }
+
+    // 4. Force trigger with dummy utterances (helps Chrome/Electron)
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        const dummy = new SpeechSynthesisUtterance('');
+        speechSynthesis.speak(dummy);
+        speechSynthesis.cancel();
+      }, i * 100);
+    }
+
+    // 5. Retry schedule for system voices
+    const retrySchedule = [200, 500, 1000, 2000, 5000];
+    retrySchedule.forEach(delay => {
+      setTimeout(load, delay);
+    });
+  }
+  
+  async function refreshVoices() {
+    console.log('[Reader] Manual voice refresh triggered');
+    const v = speechSynthesis.getVoices();
+    console.log('[Reader] System voices:', v.length);
+
+    // Reload Edge TTS voices
+    let cloudVoices = CloudTTS.getVoices();
+    if (CloudTTS.loadVoices) {
+      try {
+        cloudVoices = await CloudTTS.loadVoices();
+        console.log('[Reader] ✓ Refreshed Edge TTS voices:', cloudVoices.length);
+      } catch (err) {
+        console.error('[Reader] Edge TTS refresh failed:', err);
+      }
+    }
+
+    // Merge: neural voices first, then system
+    voiceList = [...cloudVoices, ...v];
+
+    const neuralCount = cloudVoices.length;
+    const systemCount = v.length;
+
+    _populateLangFilter();
+    renderVoiceList();
+    if (!chosenVoice) _pickDefaultVoice();
+
+    UI.toast(`Found ${voiceList.length} voices (${neuralCount} natural, ${systemCount} system)`, 'success');
   }
 
   function _pickDefaultVoice() {
@@ -58,36 +150,87 @@ const Reader = (() => {
       console.log('[Reader] No voices available yet');
       return;
     }
-    
-    // Priority list matches reference HTML for best English voices
-    const priority = [
-      'Samantha', 'Google UK English Female', 'Google US English',
-      'Microsoft Zira', 'Karen', 'Moira', 'Tessa', 'Fiona', 'Victoria', 'Alex', 'Daniel'
+
+    // Priority: Edge TTS neural voices with best English voices first
+    const neuralPriority = [
+      'en-US-AriaNeural',           // Female, warm and natural
+      'en-US-JennyNeural',          // Female, friendly
+      'en-US-GuyNeural',            // Male, natural
+      'en-US-DavisNeural',          // Male, conversational
+      'en-GB-SoniaNeural',          // Female, British
+      'en-GB-RyanNeural',           // Male, British
+      'en-US-ChristopherNeural',    // Male, professional
+      'en-US-MichelleNeural',       // Female, clear
     ];
-    
-    // Try priority names first
-    for (const name of priority) {
-      const v = voiceList.find(x => x.name === name || x.name.includes(name));
-      if (v) { 
-        chosenVoice = v; 
-        console.log('[Reader] Default voice selected:', v.name);
-        _updateVoiceBar(); 
-        return; 
+
+    // Try neural voices first (best quality)
+    for (const shortName of neuralPriority) {
+      const v = voiceList.find(x => x._edgeVoice === shortName || x.shortName === shortName);
+      if (v) {
+        chosenVoice = v;
+        console.log('[Reader] Default neural voice selected:', v.name, '(' + shortName + ')');
+        _updateVoiceBar();
+        return;
       }
     }
-    
-    // Fallback: first English voice
-    const englishVoice = voiceList.find(v => v.lang.startsWith('en'));
-    if (englishVoice) {
-      chosenVoice = englishVoice;
-      console.log('[Reader] Default English voice selected:', englishVoice.name);
-    } else if (voiceList[0]) {
-      // Last resort: any voice
-      chosenVoice = voiceList[0];
-      console.log('[Reader] Default to first available voice:', voiceList[0].name);
+
+    // Fallback: Any English neural voice
+    const neuralEn = voiceList.find(v => v._cloudVoice && v.lang && v.lang.startsWith('en'));
+    if (neuralEn) {
+      chosenVoice = neuralEn;
+      console.log('[Reader] Default English neural voice:', neuralEn.name);
+      _updateVoiceBar();
+      return;
     }
-    
+
+    // Fallback: System voices
+    const systemPriority = [
+      'Google UK English Female', 'Google US English',
+      'Microsoft Zira', 'Samantha', 'Microsoft David'
+    ];
+    for (const name of systemPriority) {
+      const v = voiceList.find(x => x.name === name || x.name.includes(name));
+      if (v) {
+        chosenVoice = v;
+        console.log('[Reader] Default system voice:', v.name);
+        _updateVoiceBar();
+        return;
+      }
+    }
+
+    // Any English voice
+    const anyEn = voiceList.find(v => v.lang && v.lang.startsWith('en'));
+    if (anyEn) {
+      chosenVoice = anyEn;
+      _updateVoiceBar();
+      return;
+    }
+
+    // Last resort
+    chosenVoice = voiceList[0];
+    console.log('[Reader] Default to first voice:', voiceList[0].name);
     _updateVoiceBar();
+  }
+
+  function _findFallbackVoice(targetLang) {
+    // Find a system voice (not cloud) that matches the target language
+    const systemVoices = speechSynthesis.getVoices().filter(v => v.localService);
+    
+    // Try exact language match first (e.g., en-US)
+    let fallback = systemVoices.find(v => v.lang === targetLang);
+    if (fallback) return fallback;
+    
+    // Try language prefix match (e.g., en)
+    const langPrefix = targetLang.split('-')[0];
+    fallback = systemVoices.find(v => v.lang.startsWith(langPrefix));
+    if (fallback) return fallback;
+    
+    // Fallback to any English voice
+    fallback = systemVoices.find(v => v.lang.startsWith('en'));
+    if (fallback) return fallback;
+    
+    // Last resort: first system voice
+    return systemVoices[0] || null;
   }
 
   function _populateLangFilter() {
@@ -120,7 +263,8 @@ const Reader = (() => {
     
     if (!voiceList.length) {
       console.log('[Reader] No voices to render yet');
-      document.getElementById('voiceList').innerHTML = '<div class="voice-loading">Loading voices…</div>';
+      const el = document.getElementById('voiceList');
+      if (el) el.innerHTML = '<div class="voice-loading">Loading voices…</div>';
       return;
     }
     
@@ -131,9 +275,13 @@ const Reader = (() => {
         return matchSearch && matchLang;
       })
       .sort((a, b) => {
-        // English voices first, then alphabetical
-        const aIsEn = a.lang.startsWith('en') ? 0 : 1;
-        const bIsEn = b.lang.startsWith('en') ? 0 : 1;
+        // Natural (Edge TTS) voices first
+        const aNat = a._edgeVoice ? 0 : 1;
+        const bNat = b._edgeVoice ? 0 : 1;
+        if (aNat !== bNat) return aNat - bNat;
+        // English voices first within each group
+        const aIsEn = a.lang && a.lang.startsWith('en') ? 0 : 1;
+        const bIsEn = b.lang && b.lang.startsWith('en') ? 0 : 1;
         if (aIsEn !== bIsEn) return aIsEn - bIsEn;
         return a.name.localeCompare(b.name);
       });
@@ -146,23 +294,67 @@ const Reader = (() => {
       return; 
     }
 
+    // Render voice items WITHOUT inline onclick (CSP/frozen issue)
     el.innerHTML = filtered.map((v, i) => {
       const sel = chosenVoice && chosenVoice.name === v.name;
-      return `<div class="voice-item${sel ? ' selected' : ''}" onclick="Reader.selectVoice(${JSON.stringify(v.name)})">
+      const isNatural = !!v._edgeVoice;
+      const isCloud = !v.localService;
+      const serviceType = isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD');
+      const serviceBadge = isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote');
+      const tooltip = isNatural ? 'Microsoft Neural voice — high quality, natural sounding'
+        : (v.localService ? 'Offline voice — works without internet' : 'Online voice — requires internet');
+
+      return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isNatural ? 'natural' : (isCloud ? 'cloud' : 'local')}">
         <div class="vi-radio"></div>
         <div class="vi-info">
           <div class="vi-name">${_escHtml(v.name)}</div>
-          <div class="vi-lang">${_escHtml(v.lang)}</div>
+          <div class="vi-lang">${_escHtml(v.lang)}${v.gender ? ' · ' + _escHtml(v.gender) : ''}</div>
         </div>
         <div class="vi-badges">
-          ${v.lang.startsWith('en') ? '<span class="vi-badge badge-en">EN</span>' : ''}
-          <span class="vi-badge ${v.localService ? 'badge-local' : 'badge-remote'}">${v.localService ? 'LOCAL' : 'CLOUD'}</span>
+          ${v.lang && v.lang.startsWith('en') ? '<span class="vi-badge badge-en">EN</span>' : ''}
+          <span class="vi-badge ${serviceBadge}" title="${tooltip}">${serviceType}</span>
         </div>
-        <button class="vi-pbtn" onclick="event.stopPropagation();Reader.previewVoice(${JSON.stringify(v.name)})">
+        <button class="vi-pbtn" data-preview-voice="${_escHtml(v.name)}" title="Preview this voice">
           <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
       </div>`;
     }).join('');
+    
+    // Attach event listeners using event delegation
+    _attachVoiceListeners();
+  }
+  
+  function _attachVoiceListeners() {
+    const el = document.getElementById('voiceList');
+    if (!el) return;
+    
+    // Remove old listeners
+    const oldEl = el.cloneNode(true);
+    el.parentNode.replaceChild(oldEl, el);
+    const listEl = document.getElementById('voiceList');
+    
+    // Event delegation for voice item clicks
+    listEl.addEventListener('click', (e) => {
+      const item = e.target.closest('.voice-item');
+      if (item && !e.target.closest('.vi-pbtn')) {
+        const voiceName = item.getAttribute('data-voice-name');
+        if (voiceName) {
+          selectVoice(voiceName);
+        }
+      }
+    });
+    
+    // Event delegation for preview buttons
+    listEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.vi-pbtn');
+      if (btn) {
+        e.stopPropagation();
+        const voiceName = btn.getAttribute('data-preview-voice');
+        if (voiceName) {
+          previewVoice(voiceName);
+        }
+      }
+    });
   }
 
   function selectVoice(name) {
@@ -170,38 +362,58 @@ const Reader = (() => {
     const v = voiceList.find(x => x.name === name);
     if (!v) {
       console.error('[Reader] Voice not found:', name);
+      UI.toast('Voice not found', 'error');
       return;
     }
     
     chosenVoice = v;
+    console.log('[Reader] Voice selected:', v.name);
+    
+    // Update UI immediately
     renderVoiceList();
     _updateVoiceBar();
     
-    // Save to settings
-    window.sonara?.settings.set('voice', name);
-    console.log('[Reader] Voice saved to settings:', name);
+    // Save to settings globally (persists across all books)
+    window.sonara?.settings.set('voice', name).then(() => {
+      console.log('[Reader] ✓ Voice saved to global settings:', name);
+    }).catch(err => {
+      console.error('[Reader] Failed to save voice:', err);
+    });
     
     // If currently playing, switch voice live
-    if (isPlaying) { 
+    if (isPlaying) {
       console.log('[Reader] Switching voice during playback');
-      speechSynthesis.cancel(); 
-      _speakChunk(currentChunk); 
+      speechSynthesis.cancel();
+      CloudTTS.stop();
+      _speakChunk(currentChunk);
     }
     
-    UI.toast('Voice: ' + v.name, 'success');
+    // Show success toast with save confirmation
+    UI.toast('✓ Voice saved: ' + v.name, 'success', 2000);
   }
 
   function _updateVoiceBar() {
-    if (!chosenVoice) {
-      console.log('[Reader] No voice selected for UI update');
-      return;
-    }
-    
     const nameEl = document.getElementById('vsbName');
     const langEl = document.getElementById('vsbLang');
     
-    if (nameEl) nameEl.textContent = chosenVoice.name;
-    if (langEl) langEl.textContent = chosenVoice.lang + (chosenVoice.localService ? ' · Local' : ' · Cloud');
+    if (!chosenVoice) {
+      console.log('[Reader] No voice selected for UI update');
+      if (nameEl) nameEl.textContent = 'Loading…';
+      if (langEl) langEl.textContent = '';
+      return;
+    }
+    
+    if (nameEl) {
+      nameEl.textContent = chosenVoice.name;
+      // Add visual feedback that voice is saved
+      nameEl.style.color = '#c8a96e';
+      nameEl.style.fontWeight = '500';
+    }
+    
+    if (langEl) {
+      const voiceType = chosenVoice._edgeVoice ? ' · Natural' : (chosenVoice.localService ? ' · Local' : ' · Cloud');
+      langEl.textContent = chosenVoice.lang + voiceType;
+    }
     
     console.log('[Reader] Voice bar updated:', chosenVoice.name);
   }
@@ -214,32 +426,40 @@ const Reader = (() => {
       UI.toast('Voice not found', 'error');
       return;
     }
-    
+
     // Stop any current speech
     speechSynthesis.cancel();
-    
-    // Create preview utterance with same text as reference HTML
-    const previewText = 'Hello, my name is ' + v.name.split(' ')[0] + '. I will read your book aloud with this voice.';
-    const u = new SpeechSynthesisUtterance(previewText);
-    u.voice = v;
-    u.rate = speed; 
-    u.pitch = pitch;
-    u.volume = 1.0;
-    
-    u.onerror = (e) => {
-      console.error('[Reader] Preview error:', e);
-      UI.toast('Preview failed: ' + e.error, 'error');
-    };
-    
-    u.onstart = () => {
-      console.log('[Reader] Preview started');
-    };
-    
-    u.onend = () => {
-      console.log('[Reader] Preview complete');
-    };
-    
-    speechSynthesis.speak(u);
+    CloudTTS.stop();
+
+    setTimeout(() => {
+      // Use real Edge TTS for neural voices
+      if (v._cloudVoice && v._edgeVoice) {
+        console.log('[Reader] Preview with Edge TTS neural voice:', v._edgeVoice);
+        UI.toast('Generating natural voice preview...', '', 2000);
+        CloudTTS.preview(v, speed, pitch).then(() => {
+          console.log('[Reader] Neural preview complete');
+        }).catch(err => {
+          console.error('[Reader] Neural preview failed:', err);
+          UI.toast('Preview failed: ' + err.message, 'error');
+        });
+      } else {
+        // System voice — use SpeechSynthesis
+        const previewText = 'Hello, my name is ' + v.name.split(' ')[0] + '. I will read your book aloud with this voice.';
+        const u = new SpeechSynthesisUtterance(previewText);
+        u.voice = v;
+        u.rate = speed;
+        u.pitch = pitch;
+        u.volume = 1.0;
+        u.onerror = (e) => {
+          if (e.error !== 'interrupted') {
+            console.error('[Reader] Preview error:', e.error);
+            UI.toast('Preview failed: ' + e.error, 'error');
+          }
+        };
+        u.onend = () => console.log('[Reader] Preview complete');
+        speechSynthesis.speak(u);
+      }
+    }, 100);
   }
 
   function previewSelectedVoice() {
@@ -392,39 +612,36 @@ const Reader = (() => {
   function _play() {
     console.log('[Reader] Play button clicked. Chunks loaded:', chunks.length);
     if (!chunks.length) {
-      console.log('[Reader] No book loaded - cannot play');
       UI.toast('Please add a book first', 'error');
       return;
     }
-    
+
     // Try to pick a voice if none selected
     if (!chosenVoice && voiceList.length > 0) {
-      console.log('[Reader] No voice selected, picking default...');
       _pickDefaultVoice();
     }
-    
-    // If still no voice, wait for voices to load
+
     if (!chosenVoice) {
-      console.log('[Reader] No voice available yet, trying to load...');
-      UI.toast('Voices are loading, please wait a moment...', '');
-      
-      // Retry after 1 second
+      UI.toast('Voices are loading, please wait...', '');
       setTimeout(() => {
-        if (voiceList.length > 0) {
-          _pickDefaultVoice();
-          _play(); // Try again
-        } else {
-          UI.toast('No voices available. Please check your system settings.', 'error');
-        }
+        if (voiceList.length > 0) { _pickDefaultVoice(); _play(); }
+        else UI.toast('No voices available.', 'error');
       }, 1000);
       return;
     }
-    
+
     if (currentChunk >= chunks.length) { currentChunk = 0; elapsedTime = 0; }
     console.log('[Reader] Starting playback, chunk:', currentChunk, 'voice:', chosenVoice?.name);
     isPlaying = true;
     _updatePlayIcon(true);
-    _speakChunk(currentChunk);
+
+    // Resume if paused, otherwise start fresh
+    if (speechSynthesis.paused) {
+      speechSynthesis.resume();
+    } else {
+      CloudTTS.resume();
+      _speakChunk(currentChunk);
+    }
     _startTimer();
   }
 
@@ -432,6 +649,7 @@ const Reader = (() => {
     isPlaying = false;
     _updatePlayIcon(false);
     speechSynthesis.pause();
+    CloudTTS.pause();
     _stopTimer();
     _saveProgress();
   }
@@ -439,6 +657,7 @@ const Reader = (() => {
   function stop() {
     isPlaying = false;
     speechSynthesis.cancel();
+    CloudTTS.stop();
     _stopTimer();
     _updatePlayIcon(false);
     _clearWordHighlight();
@@ -451,11 +670,12 @@ const Reader = (() => {
       _updatePlayIcon(false);
       _stopTimer();
       _saveProgress(true);
-      UI.toast('🎉 Book complete!', 'success');
+      UI.toast('Book complete!', 'success');
       return;
     }
 
     speechSynthesis.cancel();
+    CloudTTS.stop();
     currentChunk = idx;
     console.log('[Reader] _speakChunk - Setting currentChunk to:', idx, 'of', chunks.length);
     _renderChunkText(idx);
@@ -472,31 +692,61 @@ const Reader = (() => {
 
     // Ensure we have a voice selected
     if (!chosenVoice && voiceList.length > 0) {
-      console.log('[Reader] No voice selected, picking default');
       _pickDefaultVoice();
     }
 
-    const u = new SpeechSynthesisUtterance(chunks[idx].text);
+    const chunkText = chunks[idx].text;
+
+    // ── EDGE TTS (Neural voice) ──
+    if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
+      console.log('[Reader] Speaking chunk', idx, 'with Edge TTS:', chosenVoice._edgeVoice);
+      CloudTTS.speak(
+        chunkText,
+        chosenVoice,
+        speed,
+        pitch,
+        () => {
+          // onEnd
+          console.log('[Reader] Chunk', idx, 'finished (Edge TTS). Moving to next.');
+          _saveProgress();
+          if (isPlaying) _speakChunk(idx + 1);
+        },
+        (err) => {
+          // onError — fall back to system voice
+          console.error('[Reader] Edge TTS error, falling back to system:', err);
+          _speakChunkWithSystem(idx);
+        }
+      );
+      return;
+    }
+
+    // ── SYSTEM VOICE (SpeechSynthesis) ──
+    _speakChunkWithSystem(idx);
+  }
+
+  function _speakChunkWithSystem(idx) {
+    const chunkText = chunks[idx].text;
+    const u = new SpeechSynthesisUtterance(chunkText);
     u.rate   = speed;
     u.pitch  = pitch;
     u.volume = 1.0;
-    
-    // Set voice - ensure it's valid
-    if (chosenVoice) {
+
+    if (chosenVoice && !chosenVoice._cloudVoice) {
       u.voice = chosenVoice;
-      console.log('[Reader] Speaking with voice:', chosenVoice.name);
+      console.log('[Reader] Speaking with system voice:', chosenVoice.name);
     } else {
-      console.warn('[Reader] No voice available - using system default');
+      // Fallback system voice for cloud voice failures
+      const fallback = _findFallbackVoice(chosenVoice?.lang || 'en-US');
+      if (fallback) u.voice = fallback;
+      console.log('[Reader] Speaking with fallback voice:', fallback?.name || 'default');
     }
 
-    // ── WORD BOUNDARY ──
     u.onboundary = (e) => {
       if (e.name === 'word') _highlightWord(e.charIndex);
     };
 
     u.onend = () => {
       console.log('[Reader] Chunk', idx, 'finished. Moving to next chunk.');
-      // Save progress when finishing a chunk
       _saveProgress();
       if (isPlaying) _speakChunk(idx + 1);
     };
@@ -551,7 +801,7 @@ const Reader = (() => {
     document.getElementById('speedSlider').value = speed;
     document.getElementById('speedVal').textContent = speed + '×';
     window.sonara?.settings.set('speed', speed);
-    if (isPlaying) { speechSynthesis.cancel(); _speakChunk(currentChunk); }
+    if (isPlaying) { speechSynthesis.cancel(); CloudTTS.stop(); _speakChunk(currentChunk); }
   }
 
   function onSpeedChange(val) {
@@ -675,4 +925,157 @@ const Reader = (() => {
   function _saveProgress(finished = false) {
     if (!bookId || !chunks.length) return;
     const percent = finished ? 100 : Math.round((currentChunk / chunks.length) * 100);
-    console.log('[Reader] Saving progress - bookId:', b
+    console.log('[Reader] Saving progress - bookId:', bookId, 'chunk:', currentChunk, 'percent:', percent + '%');
+    window.sonara?.progress.save({
+      book_id:         bookId,
+      chunk_index:     finished ? chunks.length - 1 : currentChunk,
+      word_index:      currentWordIdx,
+      elapsed_seconds: elapsedTime,
+      percent
+    });
+    // Refresh library card
+    Library.refreshCard(bookId, percent, finished ? 'done' : percent > 0 ? 'reading' : 'unstarted');
+  }
+
+  // ── APPLY SAVED SETTINGS ───────────────────────────────────
+  async function applySettings() {
+    if (!window.sonara) return;
+    console.log('[Reader] Applying saved settings...');
+    
+    const savedVoice = await window.sonara.settings.get('voice');
+    const savedSpeed = await window.sonara.settings.get('speed', 1.0);
+    const savedPitch = await window.sonara.settings.get('pitch', 1.0);
+
+    speed = parseFloat(savedSpeed) || 1.0;
+    pitch = parseFloat(savedPitch) || 1.0;
+
+    document.getElementById('speedSlider').value  = speed;
+    document.getElementById('speedVal').textContent = speed.toFixed(2) + '×';
+    document.getElementById('pbSpeedLabel').textContent = speed.toFixed(1) + '×';
+    document.getElementById('pitchSlider').value  = pitch;
+    document.getElementById('pitchVal').textContent = pitch.toFixed(1);
+    
+    console.log('[Reader] Speed:', speed, 'Pitch:', pitch);
+
+    // Try to restore saved voice (global setting - persists across all books)
+    if (savedVoice) {
+      console.log('[Reader] Restoring globally saved voice:', savedVoice);
+      
+      // If voices already loaded, select immediately
+      if (voiceList.length) {
+        const v = voiceList.find(x => x.name === savedVoice);
+        if (v) { 
+          chosenVoice = v; 
+          _updateVoiceBar(); 
+          renderVoiceList();
+          console.log('[Reader] ✓ Global voice restored:', v.name);
+        } else {
+          console.log('[Reader] Saved voice not found, will use default');
+          _pickDefaultVoice();
+        }
+      } else {
+        // Voices not loaded yet - retry after delays
+        console.log('[Reader] Voices not loaded yet, will retry voice restoration');
+        const tryRestore = async () => {
+          if (voiceList.length) {
+            const v = voiceList.find(x => x.name === savedVoice);
+            if (v) { 
+              chosenVoice = v; 
+              _updateVoiceBar(); 
+              renderVoiceList();
+              console.log('[Reader] ✓ Global voice restored (delayed):', v.name);
+            } else {
+              _pickDefaultVoice();
+            }
+          } else {
+            // Still no voices, pick default when available
+            if (!chosenVoice && voiceList.length) {
+              _pickDefaultVoice();
+            }
+          }
+        };
+        setTimeout(tryRestore, 1000);
+        setTimeout(tryRestore, 2000);
+      }
+    } else {
+      console.log('[Reader] No saved voice, will use default');
+      if (voiceList.length && !chosenVoice) {
+        _pickDefaultVoice();
+      }
+    }
+  }
+
+  // ── HELPERS ───────────────────────────────────────────────
+  function _fmt(s) {
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function _estimateDur(text) {
+    return _fmt(Math.round((text.split(/\s+/).length / 150) * 60));
+  }
+
+  function _updateSeekBar() {
+    const p = totalDuration > 0 ? (elapsedTime / totalDuration) * 100 : 0;
+    document.getElementById('pbSeeker').value = p;
+  }
+
+  function saveBookmark() {
+    if (!bookId || !chunks.length) {
+      UI.toast('No book loaded', 'error');
+      return;
+    }
+    
+    console.log('[Reader] Manual bookmark/save triggered');
+    console.log('[Reader] Current state - chunk:', currentChunk, 'of', chunks.length);
+    
+    // Save progress (same as auto-save)
+    _saveProgress();
+    
+    const percent = Math.round((currentChunk / chunks.length) * 100);
+    const chunkLabel = chunks[currentChunk]?.title || ('Section ' + (currentChunk + 1));
+    
+    console.log('[Reader] Bookmark saved successfully at', percent + '%');
+    UI.toast('📖 Progress saved at ' + percent + '% - ' + chunkLabel, 'success', 2500);
+    
+    // Visual feedback on the button
+    const btn = document.getElementById('pbBookmarkBtn');
+    if (btn) {
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>Saved!</span>';
+      btn.style.background = 'rgba(82, 200, 122, 0.2)';
+      btn.style.borderColor = 'rgba(82, 200, 122, 0.4)';
+      btn.style.color = '#52c87a';
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.style.background = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }, 1500);
+    }
+  }
+  
+  function _updatePlayIcon(playing) {
+    document.getElementById('pbPlayIcon').innerHTML = playing
+      ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'
+      : '<polygon points="5 3 19 12 5 21 5 3"/>';
+  }
+
+  function _escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── PUBLIC API ────────────────────────────────────────────
+  return {
+    initVoices, refreshVoices, filterVoices, renderVoiceList,
+    selectVoice, previewVoice, previewSelectedVoice,
+    loadBook,
+    togglePlay, stop, skipChunk, jumpToChunk, seekAudio,
+    cycleSpeed, onSpeedChange, onPitchChange,
+    applySettings,
+    saveProgress: _saveProgress,
+    saveBookmark,
+    getState: () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice })
+  };
+})();

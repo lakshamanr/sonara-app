@@ -1,0 +1,421 @@
+/* ══════════════════════════════════════════════════════════
+   EDGE-TTS.JS — Real Microsoft Edge Neural TTS Engine
+
+   Connects to Microsoft's free Edge TTS service via WebSocket.
+   Returns high-quality neural voice audio (MP3) — no API key needed.
+
+   Implements Sec-MS-GEC DRM token authentication as required by
+   Microsoft's service (based on rany2/edge-tts Python library).
+══════════════════════════════════════════════════════════ */
+'use strict';
+
+const crypto = require('crypto');
+const https  = require('https');
+
+// ── CONSTANTS ────────────────────────────────────────────
+const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+const BASE_URL = 'speech.platform.bing.com/consumer/speech/synthesize/readaloud';
+const WSS_BASE_URL = `wss://${BASE_URL}/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}`;
+const VOICE_LIST_URL = `https://${BASE_URL}/voices/list?trustedclienttoken=${TRUSTED_CLIENT_TOKEN}`;
+const OUTPUT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3';
+
+// Chromium version — must be kept up to date to avoid 403
+const CHROMIUM_FULL_VERSION = '143.0.3650.75';
+const CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split('.')[0];
+const SEC_MS_GEC_VERSION = `1-${CHROMIUM_FULL_VERSION}`;
+
+// Windows epoch offset (seconds between 1601-01-01 and 1970-01-01)
+const WIN_EPOCH = 11644473600;
+const S_TO_NS = 1e9;
+
+// Clock skew correction (adjusted if server returns different time)
+let clockSkewSeconds = 0;
+
+// ── DRM TOKEN GENERATION ─────────────────────────────────
+/**
+ * Generate the Sec-MS-GEC security token required by Microsoft's TTS service.
+ * Based on rany2/edge-tts DRM implementation.
+ */
+function generateSecMsGec() {
+  // Get current timestamp with clock skew correction
+  let ticks = (Date.now() / 1000) + clockSkewSeconds;
+
+  // Switch to Windows file time epoch (1601-01-01)
+  ticks += WIN_EPOCH;
+
+  // Round down to nearest 5 minutes (300 seconds)
+  ticks -= ticks % 300;
+
+  // Convert to 100-nanosecond intervals (Windows file time format)
+  ticks *= S_TO_NS / 100;
+
+  // Create hash input: ticks + trusted client token
+  const strToHash = `${ticks.toFixed(0)}${TRUSTED_CLIENT_TOKEN}`;
+
+  // SHA-256 hash → uppercase hex
+  return crypto.createHash('sha256').update(strToHash, 'ascii').digest('hex').toUpperCase();
+}
+
+/**
+ * Generate a random MUID for cookie header
+ */
+function generateMuid() {
+  return crypto.randomBytes(16).toString('hex').toUpperCase();
+}
+
+/**
+ * Generate a unique connection/request ID
+ */
+function generateConnectionId() {
+  return crypto.randomUUID().replace(/-/g, '');
+}
+
+// ── HEADERS ──────────────────────────────────────────────
+const BASE_HEADERS = {
+  'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/${CHROMIUM_MAJOR_VERSION}.0.0.0`,
+  'Accept-Encoding': 'gzip, deflate, br, zstd',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+function getWssHeaders() {
+  return {
+    ...BASE_HEADERS,
+    'Pragma': 'no-cache',
+    'Cache-Control': 'no-cache',
+    'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+    'Cookie': `muid=${generateMuid()};`,
+  };
+}
+
+const VOICE_HEADERS = {
+  ...BASE_HEADERS,
+  'Authority': 'speech.platform.bing.com',
+  'Sec-CH-UA': `" Not;A Brand";v="99", "Microsoft Edge";v="${CHROMIUM_MAJOR_VERSION}", "Chromium";v="${CHROMIUM_MAJOR_VERSION}"`,
+  'Sec-CH-UA-Mobile': '?0',
+  'Accept': '*/*',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Dest': 'empty',
+};
+
+// ── VOICE LIST CACHE ─────────────────────────────────────
+let cachedVoices = null;
+let cacheTime    = 0;
+const CACHE_TTL  = 3600000; // 1 hour
+
+/**
+ * Fetch available voices from Microsoft Edge TTS service
+ */
+async function getVoices() {
+  if (cachedVoices && (Date.now() - cacheTime) < CACHE_TTL) {
+    return cachedVoices;
+  }
+
+  return new Promise((resolve, reject) => {
+    https.get(VOICE_LIST_URL, {
+      headers: VOICE_HEADERS
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const voices = JSON.parse(data);
+          cachedVoices = voices.map(v => ({
+            name:         v.ShortName,
+            friendlyName: v.FriendlyName,
+            locale:       v.Locale,
+            lang:         v.Locale,
+            gender:       v.Gender,
+            voiceTag:     v.VoiceTag,
+            status:       v.Status
+          }));
+          cacheTime = Date.now();
+          console.log('[EdgeTTS] Fetched', cachedVoices.length, 'voices');
+          resolve(cachedVoices);
+        } catch (e) {
+          console.error('[EdgeTTS] Failed to parse voice list:', e.message);
+          console.error('[EdgeTTS] Response status:', res.statusCode);
+          console.error('[EdgeTTS] Response body (first 500 chars):', data.slice(0, 500));
+          reject(e);
+        }
+      });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+/**
+ * Escape text for XML/SSML
+ */
+function escapeXml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Generate date string for X-Timestamp header
+ */
+function dateToString() {
+  return new Date().toISOString();
+}
+
+/**
+ * Synthesize text to MP3 audio using Edge TTS
+ * @param {string} text - Text to synthesize
+ * @param {string} voice - Voice short name (e.g., 'en-US-AriaNeural')
+ * @param {object} options - { rate: '+0%', pitch: '+0Hz', volume: '+0%' }
+ * @returns {Promise<Buffer>} MP3 audio buffer
+ */
+async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
+  const rate   = options.rate   || '+0%';
+  const pitch  = options.pitch  || '+0Hz';
+  const volume = options.volume || '+0%';
+
+  return new Promise((resolve, reject) => {
+    let WebSocket;
+    try {
+      WebSocket = require('ws');
+    } catch {
+      reject(new Error('WebSocket not available. Install ws: npm install ws'));
+      return;
+    }
+
+    const connectionId = generateConnectionId();
+    const secMsGec = generateSecMsGec();
+
+    // Build full WebSocket URL with DRM tokens
+    const wssUrl = `${WSS_BASE_URL}&ConnectionId=${connectionId}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=${SEC_MS_GEC_VERSION}`;
+
+    const audioChunks = [];
+    const wordBoundaries = [];
+    let textSearchPos = 0;  // Running position for computing word text offsets
+    let resolved = false;
+
+    console.log('[EdgeTTS] Connecting to WebSocket...');
+    console.log('[EdgeTTS] Sec-MS-GEC:', secMsGec.slice(0, 16) + '...');
+
+    const ws = new WebSocket(wssUrl, {
+      headers: getWssHeaders(),
+      perMessageDeflate: true,
+    });
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ws.close();
+        reject(new Error('Edge TTS timeout after 30s'));
+      }
+    }, 30000);
+
+    ws.on('open', () => {
+      console.log('[EdgeTTS] WebSocket connected, sending config...');
+
+      // 1. Send speech config
+      const configMsg =
+        `X-Timestamp:${dateToString()}\r\n` +
+        `Content-Type:application/json; charset=utf-8\r\n` +
+        `Path:speech.config\r\n\r\n` +
+        JSON.stringify({
+          context: {
+            synthesis: {
+              audio: {
+                metadataoptions: {
+                  sentenceBoundaryEnabled: 'false',
+                  wordBoundaryEnabled: 'true'
+                },
+                outputFormat: OUTPUT_FORMAT
+              }
+            }
+          }
+        });
+      ws.send(configMsg);
+
+      // 2. Send SSML
+      const ssml =
+        `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
+        `<voice name='${escapeXml(voice)}'>` +
+        `<prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
+        `${escapeXml(text)}` +
+        `</prosody></voice></speak>`;
+
+      const ssmlMsg =
+        `X-RequestId:${connectionId}\r\n` +
+        `Content-Type:application/ssml+xml\r\n` +
+        `X-Timestamp:${dateToString()}\r\n` +
+        `Path:ssml\r\n\r\n` +
+        ssml;
+      ws.send(ssmlMsg);
+      console.log('[EdgeTTS] SSML sent, waiting for audio...');
+    });
+
+    ws.on('message', (data, isBinary) => {
+      // Text messages (turn.end, metadata, etc.)
+      if (!isBinary) {
+        const msg = typeof data === 'string' ? data : data.toString('utf8');
+
+        if (msg.includes('Path:turn.end')) {
+          clearTimeout(timeout);
+          resolved = true;
+          ws.close();
+          const totalBytes = audioChunks.reduce((sum, c) => sum + c.length, 0);
+          console.log('[EdgeTTS] Synthesis complete:', totalBytes, 'bytes,', wordBoundaries.length, 'word boundaries');
+          resolve({ audio: Buffer.concat(audioChunks), wordBoundaries });
+          return;
+        }
+
+        // Parse word boundary metadata
+        if (msg.includes('Path:audio.metadata')) {
+          try {
+            const jsonStr = msg.substring(msg.indexOf('{'));
+            const meta = JSON.parse(jsonStr);
+            if (meta.Metadata) {
+              for (const item of meta.Metadata) {
+                if (item.Type === 'WordBoundary' && item.Data) {
+                  const wordText = item.Data.text?.Text ?? '';
+                  const wordLen  = item.Data.text?.Length ?? wordText.length;
+
+                  // Compute textOffset by finding this word in the original text
+                  // starting from where the last word ended
+                  let computedOffset = text.indexOf(wordText, textSearchPos);
+                  if (computedOffset < 0) computedOffset = textSearchPos;
+                  textSearchPos = computedOffset + wordLen;
+
+                  wordBoundaries.push({
+                    audioOffset: item.Data.Offset / 1e7,
+                    duration: item.Data.Duration / 1e7,
+                    textOffset: computedOffset,
+                    textLength: wordLen,
+                    text: wordText
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            // Metadata parse failure is non-fatal
+          }
+        }
+        return;
+      }
+
+      // Binary message — extract audio data
+      // Format: [headerLen (2 bytes big-endian)] [header text] [audio bytes]
+      if (Buffer.isBuffer(data) && data.length > 2) {
+        const headerLen = data.readUInt16BE(0);
+        if (2 + headerLen < data.length) {
+          const header = data.slice(2, 2 + headerLen).toString('utf8');
+
+          if (header.includes('Path:audio')) {
+            const audioData = data.slice(2 + headerLen);
+            if (audioData.length > 0) {
+              audioChunks.push(audioData);
+            }
+          } else if (header.includes('Path:turn.end')) {
+            clearTimeout(timeout);
+            resolved = true;
+            ws.close();
+            resolve({ audio: Buffer.concat(audioChunks), wordBoundaries });
+          }
+        }
+      }
+    });
+
+    ws.on('error', (err) => {
+      clearTimeout(timeout);
+      console.error('[EdgeTTS] WebSocket error:', err.message);
+
+      // If we get a 403, try to adjust clock skew
+      if (err.message && err.message.includes('403')) {
+        console.error('[EdgeTTS] 403 Forbidden — possible clock skew or outdated Chromium version');
+      }
+
+      if (!resolved) {
+        resolved = true;
+        reject(err);
+      }
+    });
+
+    ws.on('close', (code, reason) => {
+      clearTimeout(timeout);
+      if (!resolved) {
+        resolved = true;
+        if (audioChunks.length > 0) {
+          resolve({ audio: Buffer.concat(audioChunks), wordBoundaries });
+        } else {
+          reject(new Error(`WebSocket closed (code: ${code}) without audio`));
+        }
+      }
+    });
+
+    ws.on('unexpected-response', (req, res) => {
+      clearTimeout(timeout);
+      console.error('[EdgeTTS] Unexpected response:', res.statusCode);
+
+      // Try clock skew correction from server Date header
+      const serverDate = res.headers['date'];
+      if (serverDate && res.statusCode === 403) {
+        try {
+          const serverTime = new Date(serverDate).getTime() / 1000;
+          const clientTime = Date.now() / 1000;
+          const skew = serverTime - clientTime;
+          if (Math.abs(skew) > 1) {
+            clockSkewSeconds += skew;
+            console.log('[EdgeTTS] Clock skew adjusted by', skew.toFixed(1), 'seconds');
+          }
+        } catch (e) {
+          console.error('[EdgeTTS] Failed to parse server date for skew correction');
+        }
+      }
+
+      if (!resolved) {
+        resolved = true;
+        reject(new Error(`Unexpected server response: ${res.statusCode}`));
+      }
+    });
+  });
+}
+
+/**
+ * Synthesize with automatic retry on 403 (clock skew correction)
+ */
+async function synthesizeWithRetry(text, voice, options, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await synthesize(text, voice, options);
+    } catch (err) {
+      const is403 = err.message && err.message.includes('403');
+      if (is403 && attempt < maxRetries) {
+        console.log(`[EdgeTTS] Retry ${attempt + 1}/${maxRetries} after 403...`);
+        // Clock skew was already adjusted in the unexpected-response handler
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * Convert a speed multiplier (1.0 = normal) to Edge TTS rate string
+ */
+function speedToRate(speed) {
+  const pct = Math.round((speed - 1) * 100);
+  return (pct >= 0 ? '+' : '') + pct + '%';
+}
+
+/**
+ * Convert a pitch value (1.0 = normal) to Edge TTS pitch string
+ */
+function pitchToHz(pitch) {
+  const hz = Math.round((pitch - 1) * 200);
+  return (hz >= 0 ? '+' : '') + hz + 'Hz';
+}
+
+module.exports = {
+  getVoices,
+  synthesize: synthesizeWithRetry,
+  speedToRate,
+  pitchToHz
+};

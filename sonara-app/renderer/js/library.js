@@ -125,6 +125,12 @@ const Library = (() => {
 
     await window.sonara.library.deleteBook(id);
 
+    // Clear auto-load if this was the last-opened book
+    const lastBookId = await window.sonara.settings.get('lastBookId', null);
+    if (lastBookId === id) {
+      await window.sonara.settings.set('lastBookId', '');
+    }
+
     // If currently open, reset player
     if (App.currentBookId === id) {
       App.clearCurrentBook();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com;"/>
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob:;"/>
   <title>Sonara</title>
   <link rel="stylesheet" href="css/app.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400&family=Instrument+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
@@ -57,7 +57,7 @@
     <!-- Add book drop zone (when library empty) -->
     <div class="lib-empty-state" id="libEmpty">
       <div class="les-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="1.3"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
       </div>
       <p class="les-text">No books yet.<br>Add a PDF or EPUB to get started.</p>
       <button class="les-btn" onclick="App.addBook()">+ Add Book</button>
@@ -81,7 +81,7 @@
     <!-- Welcome / empty state -->
     <div class="reader-welcome" id="readerWelcome">
       <div class="rw-icon">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="1"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
       </div>
       <h2 class="rw-title">Select a book to begin</h2>
       <p class="rw-sub">Choose a book from your library or add a new PDF/EPUB file.<br>Your reading progress is saved automatically.</p>
@@ -136,10 +136,16 @@
     <div class="rp-section">
       <div class="rp-section-header">
         <span class="rp-section-label">Voice</span>
-        <button class="prev-sel-btn" id="previewSelBtn" onclick="Reader.previewSelectedVoice()">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Preview
-        </button>
+        <div style="display:flex;gap:6px;">
+          <button class="prev-sel-btn" id="refreshVoicesBtn" onclick="Reader.refreshVoices()" title="Refresh voice list">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
+          <button class="prev-sel-btn" id="previewSelBtn" onclick="Reader.previewSelectedVoice()">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Preview
+          </button>
+        </div>
       </div>
       <div class="voice-sel-bar" id="voiceSelBar">
         <div class="vsb-dot"></div>
@@ -155,7 +161,7 @@
       <div class="voice-list-wrap" id="voiceListWrap">
         <div id="voiceList"><div class="voice-loading">Loading voices…</div></div>
       </div>
-      <div class="voice-tip">💡 More voices: Settings → Accessibility → Spoken Content</div>
+      <div class="voice-tip">Natural voices use Microsoft Neural TTS — no API key needed</div>
     </div>
 
     <!-- PLAYBACK SETTINGS -->
@@ -289,6 +295,14 @@
         </select>
       </div>
       <div class="sg-item">
+        <label class="sg-label">Theme</label>
+        <div class="theme-swatches" id="themeSwatches">
+          <div class="theme-swatch swatch-black active" data-theme="black" onclick="UI.setTheme('black')" title="Black"></div>
+          <div class="theme-swatch swatch-white" data-theme="white" onclick="UI.setTheme('white')" title="White"></div>
+          <div class="theme-swatch swatch-blue" data-theme="blue" onclick="UI.setTheme('blue')" title="Blue"></div>
+        </div>
+      </div>
+      <div class="sg-item">
         <label class="sg-label">App Version</label>
         <span class="sg-value" id="settingVersion">1.0.0</span>
       </div>
@@ -322,6 +336,7 @@
 
 <!-- Scripts -->
 <script src="js/parser.js"></script>
+<script src="js/cloudtts.js"></script>
 <script src="js/reader.js"></script>
 <script src="js/library.js"></script>
 <script src="js/app.js"></script>

@@ -65,10 +65,33 @@ const UI = (() => {
     return sessionStorage.getItem('sonara_claude_key') || '';
   }
 
+  // Theme
+  let currentTheme = 'black';
+
+  function setTheme(name) {
+    currentTheme = name;
+    document.body.classList.add('theme-transition');
+    document.documentElement.setAttribute('data-theme', name);
+    // Update swatch active states
+    document.querySelectorAll('.theme-swatch').forEach(s => {
+      s.classList.toggle('active', s.dataset.theme === name);
+    });
+    setTimeout(() => document.body.classList.remove('theme-transition'), 350);
+  }
+
+  async function applyTheme(name) {
+    setTheme(name);
+    await window.sonara.settings.set('theme', name);
+  }
+
   // Settings modal
   async function openSettingsModal() {
     const version = await window.sonara.app.getVersion();
     document.getElementById('settingVersion').textContent = version;
+    // Sync swatch to current theme
+    document.querySelectorAll('.theme-swatch').forEach(s => {
+      s.classList.toggle('active', s.dataset.theme === currentTheme);
+    });
     openModal('modalSettings');
   }
 
@@ -78,6 +101,7 @@ const UI = (() => {
     document.documentElement.style.setProperty('--font-reader', fontSize + 'px');
     await window.sonara.settings.set('fontSize', fontSize);
     await window.sonara.settings.set('autoSave', autoSave);
+    await window.sonara.settings.set('theme', currentTheme);
     closeModal('modalSettings');
     toast('Settings saved', 'success');
   }
@@ -113,6 +137,7 @@ const UI = (() => {
     toast, openModal, closeModal,
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
+    setTheme: applyTheme, _applyThemeVisual: setTheme,
     showResumeDialog, resumeBook, startFromBeginning
   };
 })();
@@ -196,6 +221,10 @@ const App = (() => {
     const autoSave = await window.sonara.settings.get('autoSave', 10);
     document.getElementById('settingAutoSave').value = autoSave;
 
+    // Load saved theme
+    const savedTheme = await window.sonara.settings.get('theme', 'black');
+    UI._applyThemeVisual(savedTheme);
+
     // Claude key
     const savedKey = await window.sonara.settings.get('claude_key', '');
     if (savedKey) {
@@ -226,6 +255,35 @@ const App = (() => {
     });
 
     console.log('[App] Initialization complete');
+
+    // Auto-load last opened book
+    const lastBookId = await window.sonara.settings.get('lastBookId', null);
+    if (lastBookId) {
+      console.log('[App] Auto-loading last book:', lastBookId);
+      try {
+        const book = await window.sonara.library.getBook(lastBookId);
+        if (book) {
+          const fileExists = await window.sonara.file.exists(book.file_path);
+          if (fileExists) {
+            setTimeout(() => {
+              openBook(lastBookId).catch(err => {
+                console.error('[App] Auto-load failed:', err);
+                UI.toast('Could not auto-load last book', 'error');
+              });
+            }, 100);
+          } else {
+            console.log('[App] Last book file missing, clearing lastBookId');
+            await window.sonara.settings.set('lastBookId', '');
+          }
+        } else {
+          console.log('[App] Last book not in library, clearing lastBookId');
+          await window.sonara.settings.set('lastBookId', '');
+        }
+      } catch (err) {
+        console.error('[App] Error checking last book:', err);
+      }
+    }
+
     UI.toast('Welcome to Sonara 🎧', 'success', 2500);
   }
 
@@ -396,20 +454,25 @@ const App = (() => {
       const speed       = parseFloat(document.getElementById('speedSlider').value) || 1.0;
       const totalSecs   = Math.round((words / (150 * speed)) * 60);
 
-      // 5. Save to library DB
-      const bookRecord = {
-        id,
-        title:       pendingBookData.title,
-        format:      fileInfo.format,
-        sourcePath:  fileInfo.path,
-        fileName:    fileInfo.name,
-        fileSize:    fileInfo.size,
-        totalChunks: chunks.length,
-        totalSeconds: totalSecs
-      };
-      console.log('[App] Saving book to library:', bookRecord);
-      const savedBook = await window.sonara.library.addBook(bookRecord);
-      console.log('[App] Book saved:', savedBook ? 'success' : 'failed');
+      // 5. Save to library DB (only insert new books; update existing to preserve progress)
+      const bookExists = await window.sonara.library.bookExists(id);
+      if (!bookExists) {
+        const bookRecord = {
+          id,
+          title:       pendingBookData.title,
+          format:      fileInfo.format,
+          sourcePath:  fileInfo.path,
+          fileName:    fileInfo.name,
+          fileSize:    fileInfo.size,
+          totalChunks: chunks.length,
+          totalSeconds: totalSecs
+        };
+        console.log('[App] New book, saving to library:', bookRecord);
+        await window.sonara.library.addBook(bookRecord);
+      } else {
+        console.log('[App] Book already exists, updating metadata only');
+        await window.sonara.library.updateBook(id, { total_chunks: chunks.length, total_seconds: totalSecs });
+      }
 
       _setGenStep('tts','done'); _setGenStep('done','active');
       _setGenProgress(94, 'Almost ready…', '');
@@ -464,6 +527,9 @@ const App = (() => {
       currentBookId = id;
       Reader.loadBook(chunks, id, resumeData);
 
+      // Save as last-opened book for auto-load on next startup
+      await window.sonara.settings.set('lastBookId', id);
+
       // Refresh library - ensure it updates
       console.log('[App] Refreshing library');
       await Library.load();
@@ -492,6 +558,7 @@ const App = (() => {
 
   function clearCurrentBook() {
     currentBookId = null;
+    window.sonara.settings.set('lastBookId', '');
     Reader.stop();
     document.getElementById('readerWelcome').style.display   = 'flex';
     document.getElementById('chapterTitlebar').style.display = 'none';

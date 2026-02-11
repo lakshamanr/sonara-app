@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"c:\\\\PersonalOneDrive\\\\OneDrive\\\\Sourcecode\\\\Tools\\\\sonara-app\\\\sonara-app\\\\main\\\\referenec\\\\pdf-audiobook \\(2\\).html\")",
+      "Bash(npx electron:*)",
+      "Bash(node_modules.binelectron --version)",
+      "Bash(npm install:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}
