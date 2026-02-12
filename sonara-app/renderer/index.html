@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob: file:; img-src 'self' data: blob: file:;"/>
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob: file:; img-src 'self' data: blob: file:; worker-src 'self' blob: https://cdnjs.cloudflare.com;"/>
   <title>Sonara</title>
   <link rel="stylesheet" href="css/app.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400&family=Instrument+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
@@ -215,10 +215,51 @@
       </div>
     </div>
 
-    <!-- Reading text area -->
+    <!-- Reading text area (EPUB / fallback) -->
     <div class="reader-text-wrap" id="readerTextWrap" style="display:none">
       <div class="reader-text" id="readerText">
         <!-- Word spans injected by JS -->
+      </div>
+    </div>
+
+    <!-- PDF Visual Viewer -->
+    <div class="reader-pdf-wrap" id="readerPdfWrap" style="display:none">
+      <div class="pdf-viewer" id="pdfViewer">
+        <div class="pdf-page-container" id="pdfPageContainer">
+          <canvas id="pdfCanvas"></canvas>
+          <div class="pdf-text-layer" id="pdfTextLayer"></div>
+          <!-- PDF Highlight Toolbar -->
+          <div class="pdf-highlight-toolbar" id="pdfHighlightToolbar">
+            <button class="hl-color-btn yellow" data-color="yellow" title="Yellow highlight"></button>
+            <button class="hl-color-btn green" data-color="green" title="Green highlight"></button>
+            <button class="hl-color-btn blue" data-color="blue" title="Blue highlight"></button>
+            <button class="hl-color-btn pink" data-color="pink" title="Pink highlight"></button>
+            <button class="hl-color-btn orange" data-color="orange" title="Orange highlight"></button>
+            <div class="hl-separator"></div>
+            <button class="hl-action-btn delete" id="hlDeleteBtn" title="Remove highlight">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="pdf-nav-bar" id="pdfNavBar">
+        <button class="pdf-nav-btn" id="pdfPrevPage" title="Previous page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="pdf-page-info" id="pdfPageInfo">Page 1 / 1</span>
+        <button class="pdf-nav-btn" id="pdfNextPage" title="Next page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div class="pdf-nav-sep"></div>
+        <button class="pdf-nav-btn" id="pdfZoomOut" title="Zoom out">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <span class="pdf-zoom-info" id="pdfZoomInfo">100%</span>
+        <button class="pdf-nav-btn" id="pdfZoomIn" title="Zoom in">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
       </div>
     </div>
 

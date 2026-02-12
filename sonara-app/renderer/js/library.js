@@ -45,9 +45,7 @@ const Library = (() => {
         _initialized = true;
       }
 
-      console.log('Library loaded:', books.length, 'books,', collections.length, 'collections');
     } catch (err) {
-      console.error('Error loading library:', err);
       books = [];
       renderGrid();
     }

@@ -47,7 +47,6 @@ function init(userDataPath) {
   // Adds: collections, book_collections, expanded book format, cover_path, author, duration_seconds
   const migrated = db.prepare("SELECT value FROM settings WHERE key = 'schema_v2'").get();
   if (!migrated) {
-    console.log('[DB] Running schema v2 migration...');
     db.pragma('foreign_keys = OFF');
 
     db.exec(`
@@ -99,7 +98,6 @@ function init(userDataPath) {
 
     db.pragma('foreign_keys = ON');
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v2', '\"true\"')").run();
-    console.log('[DB] Schema v2 migration complete');
   } else {
     // Ensure collections tables exist (fresh installs after migration flag)
     db.exec(`
@@ -123,6 +121,29 @@ function init(userDataPath) {
     `);
   }
 
+  // ── SCHEMA V3 FIX ──────────────────────────────────────────
+  // Fix: V2 migration broke progress table FK (SQLite updated it to
+  // reference books_old, which was then dropped). Recreate progress table.
+  const v3 = db.prepare("SELECT value FROM settings WHERE key = 'schema_v3'").get();
+  if (!v3) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS progress_new (
+        book_id         TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+        chunk_index     INTEGER DEFAULT 0,
+        word_index      INTEGER DEFAULT 0,
+        elapsed_seconds INTEGER DEFAULT 0,
+        percent         INTEGER DEFAULT 0,
+        updated_at      INTEGER NOT NULL
+      );
+      INSERT OR IGNORE INTO progress_new SELECT * FROM progress;
+      DROP TABLE IF EXISTS progress;
+      ALTER TABLE progress_new RENAME TO progress;
+    `);
+    db.pragma('foreign_keys = ON');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v3', '\"true\"')").run();
+  }
+
   return db;
 }
 
@@ -136,10 +157,8 @@ function getAllBooks() {
       LEFT JOIN progress p ON p.book_id = b.id
       ORDER BY COALESCE(b.last_read, b.added_at) DESC
     `).all();
-    console.log('getAllBooks returned', books.length, 'books');
     return books;
   } catch (err) {
-    console.error('Database error in getAllBooks:', err);
     return [];
   }
 }
@@ -161,11 +180,9 @@ function addBook(book) {
       VALUES
         (@id, @title, @author, @format, @file_path, @file_name, @file_size, @cover_path, @total_chunks, @total_seconds, @duration_seconds, @status, @added_at, @last_read)
     `);
-    const result = stmt.run(book);
-    console.log('Database addBook result:', result.changes, 'rows affected');
+    stmt.run(book);
     return book;
   } catch (err) {
-    console.error('Database error in addBook:', err);
     throw err;
   }
 }
@@ -194,13 +211,6 @@ function saveProgress(data) {
   const percent = data.percent || 0;
   const status = percent >= 98 ? 'done' : percent > 0 ? 'reading' : 'unstarted';
 
-  console.log('[DB] saveProgress called:', {
-    book_id: data.book_id,
-    chunk_index: data.chunk_index,
-    percent: percent,
-    status: status
-  });
-
   db.prepare(`
     INSERT INTO progress (book_id, chunk_index, word_index, elapsed_seconds, percent, updated_at)
     VALUES (@book_id, @chunk_index, @word_index, @elapsed_seconds, @percent, @updated_at)
@@ -214,14 +224,10 @@ function saveProgress(data) {
 
   db.prepare(`UPDATE books SET status = ?, last_read = ? WHERE id = ?`)
     .run(status, now, data.book_id);
-
-  console.log('[DB] Progress saved successfully');
 }
 
 function getProgress(bookId) {
-  const progress = db.prepare('SELECT * FROM progress WHERE book_id = ?').get(bookId);
-  console.log('[DB] getProgress for bookId:', bookId, '-> result:', progress);
-  return progress;
+  return db.prepare('SELECT * FROM progress WHERE book_id = ?').get(bookId);
 }
 
 function resetProgress(bookId) {

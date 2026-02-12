@@ -1,15 +1,13 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path  = require('path');
 const fs    = require('fs');
 const db    = require('../database/db');
 
 const edgeTTS = require('./edge-tts');
 
-const isDev = process.env.NODE_ENV === 'development';
-
 // ═══════════════════════════════════════════════════════════
-//  ENABLE CLOUD VOICES - MAXIMUM CHROMIUM ACCESS
+//  ENABLE CLOUD VOICES
 // ═══════════════════════════════════════════════════════════
 app.commandLine.appendSwitch('enable-speech-dispatcher');
 app.commandLine.appendSwitch('enable-features', 'SpeechSynthesis,NetworkService,NetworkServiceInProcess');
@@ -37,14 +35,10 @@ app.whenReady().then(() => {
     const userData = app.getPath('userData');
     booksDir  = path.join(userData, 'books');
     coversDir = path.join(userData, 'covers');
-    console.log('User data path:', userData);
-    console.log('Books directory:', booksDir);
-    console.log('Covers directory:', coversDir);
     fs.mkdirSync(booksDir, { recursive: true });
     fs.mkdirSync(coversDir, { recursive: true });
 
     db.init(userData);
-    console.log('Database initialized');
     createWindow();
 
     app.on('activate', () => {
@@ -88,10 +82,11 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  // Remove default menu for production
+  Menu.setApplicationMenu(null);
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // Always open DevTools to see console logs
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
   // Restore window bounds
@@ -123,31 +118,30 @@ ipcMain.handle('library:addBook', async (_, bookData) => {
 
     // Copy file to our managed folder if not already there
     if (bookData.sourcePath && fs.existsSync(bookData.sourcePath) && bookData.sourcePath !== destPath) {
-      console.log('Copying file from', bookData.sourcePath, 'to', destPath);
       fs.copyFileSync(bookData.sourcePath, destPath);
     }
 
     const book = {
-      id:            bookData.id,
-      title:         bookData.title,
-      format:        bookData.format,
-      file_path:     destPath,
-      file_name:     bookData.fileName,
-      file_size:     bookData.fileSize,
-      total_chunks:  bookData.totalChunks  || 0,
-      total_seconds: bookData.totalSeconds || 0,
-      status:        'unstarted',
-      added_at:      Date.now(),
-      last_read:     null
+      id:               bookData.id,
+      title:            bookData.title,
+      author:           bookData.author || null,
+      format:           bookData.format,
+      file_path:        destPath,
+      file_name:        bookData.fileName,
+      file_size:        bookData.fileSize,
+      cover_path:       bookData.coverPath || null,
+      total_chunks:     bookData.totalChunks  || 0,
+      total_seconds:    bookData.totalSeconds || 0,
+      duration_seconds: bookData.durationSeconds || 0,
+      status:           'unstarted',
+      added_at:         Date.now(),
+      last_read:        null
     };
 
-    console.log('Adding book to database:', book.id, book.title);
     db.addBook(book);
     const savedBook = db.getBook(book.id);
-    console.log('Book saved successfully:', savedBook?.id);
     return savedBook;
   } catch (err) {
-    console.error('Error adding book:', err);
     throw err;
   }
 });
@@ -174,19 +168,15 @@ ipcMain.handle('library:bookExists', (_, id) => {
 //  IPC — PROGRESS
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('progress:get', (_, bookId) => {
-  const progress = db.getProgress(bookId);
-  console.log('[Main] progress:get for bookId:', bookId, '-> progress:', progress);
-  return progress;
+  return db.getProgress(bookId);
 });
 
 ipcMain.handle('progress:save', (_, data) => {
-  console.log('[Main] progress:save - bookId:', data.book_id, 'chunk:', data.chunk_index, 'percent:', data.percent + '%');
   db.saveProgress(data);
   return { success: true };
 });
 
 ipcMain.handle('progress:reset', (_, bookId) => {
-  console.log('[Main] progress:reset for bookId:', bookId);
   db.resetProgress(bookId);
   return { success: true };
 });
@@ -212,7 +202,6 @@ ipcMain.handle('settings:getAll', () => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('dialog:openFile', async () => {
   try {
-    console.log('[Main] Opening file dialog...');
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Select a book or audiobook file',
       filters: [
@@ -223,11 +212,9 @@ ipcMain.handle('dialog:openFile', async () => {
       properties: ['openFile']
     });
     if (result.canceled || !result.filePaths.length) {
-      console.log('[Main] File dialog canceled');
       return null;
     }
     const filePath = result.filePaths[0];
-    console.log('[Main] File selected:', filePath);
     const stat = fs.statSync(filePath);
     const fileInfo = {
       path:     filePath,
@@ -235,29 +222,20 @@ ipcMain.handle('dialog:openFile', async () => {
       size:     stat.size,
       format:   path.extname(filePath).toLowerCase().slice(1)
     };
-    console.log('[Main] File info:', fileInfo);
-    console.log('[Main] File size:', (fileInfo.size / (1024 * 1024)).toFixed(2), 'MB');
     return fileInfo;
   } catch (err) {
-    console.error('[Main] Error in file dialog:', err);
     return null;
   }
 });
 
 ipcMain.handle('file:read', (_, filePath) => {
   try {
-    console.log('[Main] Reading file:', filePath);
-    // Returns file as base64 for renderer to parse
     if (!fs.existsSync(filePath)) {
-      console.error('[Main] File does not exist:', filePath);
       return null;
     }
     const buffer = fs.readFileSync(filePath);
-    const base64 = buffer.toString('base64');
-    console.log('[Main] File read successfully, size:', buffer.length, 'bytes, base64 length:', base64.length);
-    return base64;
+    return buffer.toString('base64');
   } catch (err) {
-    console.error('[Main] Error reading file:', err);
     return null;
   }
 });
@@ -281,11 +259,8 @@ ipcMain.handle('shell:openExternal', (_, url) => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('tts:getVoices', async () => {
   try {
-    const voices = await edgeTTS.getVoices();
-    console.log('[Main] Edge TTS voices:', voices.length);
-    return voices;
+    return await edgeTTS.getVoices();
   } catch (err) {
-    console.error('[Main] Error fetching Edge TTS voices:', err);
     return [];
   }
 });
@@ -352,15 +327,12 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
   try {
     const rate = edgeTTS.speedToRate(speed || 1.0);
     const pitchHz = edgeTTS.pitchToHz(pitch || 1.0);
-    console.log('[Main] TTS synthesize:', voice, 'rate:', rate, 'pitch:', pitchHz, 'text length:', text.length);
     const result = await edgeTTS.synthesize(text, voice, { rate, pitch: pitchHz });
-    console.log('[Main] TTS audio generated:', result.audio.length, 'bytes,', result.wordBoundaries.length, 'word boundaries');
     return {
       audio: result.audio.toString('base64'),
       wordBoundaries: result.wordBoundaries
     };
   } catch (err) {
-    console.error('[Main] TTS synthesis error:', err);
     throw err;
   }
 });

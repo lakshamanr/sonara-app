@@ -122,13 +122,11 @@ const UI = (() => {
   }
 
   function resumeBook() {
-    console.log('[UI] Resume button clicked');
     closeModal('modalResume');
     if (resumeResolve) { resumeResolve('resume'); resumeResolve = null; }
   }
 
   function startFromBeginning() {
-    console.log('[UI] Start Over button clicked');
     closeModal('modalResume');
     if (resumeResolve) { resumeResolve('restart'); resumeResolve = null; }
   }
@@ -212,8 +210,6 @@ const App = (() => {
   }
 
   async function init() {
-    console.log('[App] Initializing...');
-
     // Start in library mode
     document.body.classList.add('mode-library');
 
@@ -221,15 +217,16 @@ const App = (() => {
     const overlay = document.getElementById('generatingOverlay');
     if (overlay) {
       overlay.style.display = 'none';
-      console.log('[App] Overlay hidden on init');
     }
 
     // Ensure welcome screen is visible
     const welcome = document.getElementById('readerWelcome');
     if (welcome) {
       welcome.style.display = 'flex';
-      console.log('[App] Welcome screen visible');
     }
+
+    // Initialize responsive helpers
+    _initResponsiveHelpers();
 
     // Wire buttons
     document.getElementById('btnAddBook').addEventListener('click',    addBook);
@@ -265,17 +262,14 @@ const App = (() => {
     }
 
     // Load library
-    console.log('[App] Loading library...');
     await Library.load();
 
     // Init voices
-    console.log('[App] Initializing voices...');
     Reader.initVoices();
     await Reader.applySettings();
 
     // Save progress on window close
     window.addEventListener('beforeunload', () => {
-      console.log('[App] Window closing - saving progress');
       Reader.saveProgress();
     });
 
@@ -286,12 +280,9 @@ const App = (() => {
       }
     });
 
-    console.log('[App] Initialization complete');
-
     // Auto-load last opened book
     const lastBookId = await window.sonara.settings.get('lastBookId', null);
     if (lastBookId) {
-      console.log('[App] Auto-loading last book:', lastBookId);
       try {
         const book = await window.sonara.library.getBook(lastBookId);
         if (book) {
@@ -299,20 +290,16 @@ const App = (() => {
           if (fileExists) {
             setTimeout(() => {
               openBook(lastBookId).catch(err => {
-                console.error('[App] Auto-load failed:', err);
                 UI.toast('Could not auto-load last book', 'error');
               });
             }, 100);
           } else {
-            console.log('[App] Last book file missing, clearing lastBookId');
             await window.sonara.settings.set('lastBookId', '');
           }
         } else {
-          console.log('[App] Last book not in library, clearing lastBookId');
           await window.sonara.settings.set('lastBookId', '');
         }
       } catch (err) {
-        console.error('[App] Error checking last book:', err);
       }
     }
 
@@ -327,8 +314,7 @@ const App = (() => {
 
       // Check file size (warn if > 50MB, reject if > 200MB)
       const sizeMB = fileInfo.size / (1024 * 1024);
-      console.log('[App] File size:', sizeMB.toFixed(2), 'MB');
-      
+
       if (sizeMB > 200) {
         UI.toast('File too large (' + sizeMB.toFixed(0) + 'MB). Maximum size is 200MB.', 'error');
         return;
@@ -371,24 +357,17 @@ const App = (() => {
         await _processFile(id, fileInfo);
       }
     } catch (err) {
-      console.error('[App] Error in addBook:', err);
       UI.toast('Failed to add book: ' + err.message, 'error');
     }
   }
 
   // ── OPEN BOOK FROM LIBRARY ───────────────────────────────
   async function openBook(id) {
-    console.log('[App] ============ OPEN BOOK CLICKED ============');
-    console.log('[App] openBook called with id:', id);
-    console.log('[App] currentBookId:', currentBookId);
-    
     const book = await window.sonara.library.getBook(id);
-    console.log('[App] Book retrieved from DB:', book);
     if (!book) { UI.toast('Book not found in library', 'error'); return; }
 
     // Check file still exists
     const exists = await window.sonara.file.exists(book.file_path);
-    console.log('[App] File exists:', exists, 'path:', book.file_path);
     if (!exists) {
       UI.toast('File missing — please re-add "' + book.title + '"', 'error');
       return;
@@ -396,17 +375,12 @@ const App = (() => {
 
     // If same book already parsed, just jump
     if (id === currentBookId) {
-      console.log('[App] Same book already loaded, checking progress');
       const progress = await window.sonara.progress.get(id);
-      console.log('[App] Current progress:', progress);
       if (progress?.chunk_index > 0) {
-        console.log('[App] Jumping to saved chunk:', progress.chunk_index);
         Reader.jumpToChunk(progress.chunk_index);
       }
       return;
     }
-
-    console.log('[App] Different book, loading...');
 
     // Load file & parse
     pendingBookData = {
@@ -438,35 +412,30 @@ const App = (() => {
 
   // ── PROCESS FILE ─────────────────────────────────────────
   async function _processFile(id, fileInfo) {
-    console.log('[App] Processing file:', fileInfo.name, 'ID:', id);
     if (isGenerating) {
-      console.log('[App] Already generating, skipping');
       return;
     }
     isGenerating = true;
 
     // Show generating overlay
     const overlay = document.getElementById('generatingOverlay');
-    console.log('[App] Showing overlay');
     overlay.style.display = 'flex';
     document.getElementById('readerWelcome').style.display   = 'none';
     document.getElementById('chapterTitlebar').style.display = 'none';
     document.getElementById('readerTextWrap').style.display  = 'none';
+    document.getElementById('readerPdfWrap').style.display   = 'none';
 
     _setGenStep('extract','active'); _setGenProgress(5, 'Reading file…', fileInfo.name);
 
     try {
       // 1. Read file as base64
-      console.log('[App] Reading file from:', fileInfo.path);
       const base64 = await window.sonara.file.read(fileInfo.path);
-      console.log('[App] File read, base64 length:', base64 ? base64.length : 'null');
       if (!base64) throw new Error('Could not read file');
 
       _setGenStep('extract','done'); _setGenStep('clean','active');
       _setGenProgress(20, 'Extracting text…', 'Parsing ' + fileInfo.format.toUpperCase());
 
       // 2. Parse
-      console.log('[App] Parsing', fileInfo.format, 'file');
       let chunks;
       if (fileInfo.format === 'epub') {
         chunks = await Parser.parseEPUB(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting chapters…', p + '%'));
@@ -474,7 +443,6 @@ const App = (() => {
         chunks = await Parser.parsePDF(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting pages…', p + '%'));
       }
 
-      console.log('[App] Parsed chunks:', chunks ? chunks.length : 'null');
       if (!chunks || !chunks.length) throw new Error('No readable text found in file');
 
       _setGenStep('clean','done'); _setGenStep('ai','active');
@@ -518,10 +486,8 @@ const App = (() => {
           totalChunks: chunks.length,
           totalSeconds: totalSecs
         };
-        console.log('[App] New book, saving to library:', bookRecord);
         await window.sonara.library.addBook(bookRecord);
       } else {
-        console.log('[App] Book already exists, updating metadata only');
         await window.sonara.library.updateBook(id, { total_chunks: chunks.length, total_seconds: totalSecs });
       }
 
@@ -532,32 +498,17 @@ const App = (() => {
       // 6. Check for saved progress
       let resumeData = null;
       const savedProgress = await window.sonara.progress.get(id);
-      console.log('[App] ========== PROGRESS CHECK ==========');
-      console.log('[App] Checking saved progress for id:', id);
-      console.log('[App] savedProgress:', savedProgress);
-      console.log('[App] chunk_index:', savedProgress?.chunk_index);
-      console.log('[App] percent:', savedProgress?.percent);
-      console.log('[App] Condition check: chunk_index > 0?', savedProgress?.chunk_index > 0);
-      console.log('[App] Condition check: percent < 98?', savedProgress?.percent < 98);
-      
+
       if (savedProgress && savedProgress.chunk_index > 0 && savedProgress.percent < 98) {
-        console.log('[App] ✓ Progress exists! Showing resume dialog at', savedProgress.percent + '%');
         const action = await UI.showResumeDialog({ title: pendingBookData.title, format: fileInfo.format }, savedProgress);
-        console.log('[App] Resume dialog action:', action);
         if (action === 'resume') {
           resumeData = savedProgress;
-          console.log('[App] ✓ User chose RESUME, resumeData set:', resumeData);
           UI.toast('Resuming from ' + savedProgress.percent + '%', 'success');
         } else {
-          console.log('[App] ✗ User chose START OVER, resetting progress');
           await window.sonara.progress.reset(id);
           resumeData = null;
         }
-      } else {
-        console.log('[App] ✗ No valid progress found. Starting from beginning.');
-        console.log('[App] Reason: ', !savedProgress ? 'No progress record' : savedProgress.chunk_index <= 0 ? 'chunk_index <= 0' : 'percent >= 98');
       }
-      console.log('[App] ========================================');
 
       _setGenStep('done','done');
       _setGenProgress(100, 'Ready!', '');
@@ -573,24 +524,11 @@ const App = (() => {
         }
         if (coverData) {
           await window.sonara.cover.save({ bookId: id, base64: coverData.base64, mediaType: coverData.mediaType });
-          console.log('[App] Cover image saved');
         }
       } catch (coverErr) {
-        console.log('[App] Cover extraction skipped:', coverErr.message);
       }
 
       // 7. Load into reader
-      console.log('[App] ========== LOADING INTO READER ==========');
-      console.log('[App] bookId:', id);
-      console.log('[App] chunks count:', chunks.length);
-      console.log('[App] resumeData:', resumeData);
-      if (resumeData) {
-        console.log('[App] ✓ Will resume at chunk:', resumeData.chunk_index, '(' + resumeData.percent + '%)');
-      } else {
-        console.log('[App] ✗ No resumeData - starting from beginning');
-      }
-      console.log('[App] =============================================');
-      
       currentBookId = id;
       Reader.loadBook(chunks, id, resumeData);
 
@@ -598,35 +536,28 @@ const App = (() => {
       await window.sonara.settings.set('lastBookId', id);
 
       // Refresh library - ensure it updates
-      console.log('[App] Refreshing library');
       await Library.load();
       await _sleep(100); // Give time for DOM to update
       Library.setActiveCard(id);
 
       // Hide overlay, show reader
-      console.log('[App] Hiding overlay');
       overlay.style.display = 'none';
       showReader();
 
-      console.log('[App] Processing complete!');
       UI.toast(pendingBookData.title + ' — press play to listen!', 'success');
 
     } catch (err) {
-      console.error('[App] Error processing file:', err);
       overlay.style.display = 'none';
       document.getElementById('readerWelcome').style.display = 'flex';
       UI.toast('Error: ' + err.message, 'error');
-      console.error('[App] Full error:', err);
     } finally {
       isGenerating   = false;
       pendingBookData = null;
-      console.log('[App] Process complete, isGenerating:', isGenerating);
     }
   }
 
   // ── PROCESS AUDIO FILE ────────────────────────────────────
   async function _processAudioFile(id, fileInfo) {
-    console.log('[App] Processing audio file:', fileInfo.name);
     if (isGenerating) return;
     isGenerating = true;
 
@@ -670,7 +601,6 @@ const App = (() => {
       UI.toast(pendingBookData.title + ' added to library!', 'success');
 
     } catch (err) {
-      console.error('[App] Error importing audio:', err);
       overlay.style.display = 'none';
       UI.toast('Error: ' + err.message, 'error');
     } finally {
@@ -699,12 +629,180 @@ const App = (() => {
     document.getElementById('readerWelcome').style.display   = 'flex';
     document.getElementById('chapterTitlebar').style.display = 'none';
     document.getElementById('readerTextWrap').style.display  = 'none';
+    document.getElementById('readerPdfWrap').style.display   = 'none';
     document.getElementById('tbCenter').textContent = '';
     document.getElementById('chaptersList').innerHTML = '<div class="chapters-empty">Open a book to see chapters</div>';
     Library.setActiveCard(null);
   }
 
   function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ── RESPONSIVE HELPERS ────────────────────────────────────
+  function _initResponsiveHelpers() {
+    let lastWidth = window.innerWidth;
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      const currentWidth = window.innerWidth;
+
+      // If crossing mobile threshold, adjust UI
+      if ((lastWidth > 768 && currentWidth <= 768) || (lastWidth <= 768 && currentWidth > 768)) {
+        _handleBreakpointChange(currentWidth);
+      }
+
+      lastWidth = currentWidth;
+    });
+
+    // Initialize based on current size
+    _handleBreakpointChange(window.innerWidth);
+
+    // Add mobile-specific touch event handling
+    if ('ontouchstart' in window) {
+      document.body.classList.add('touch-device');
+
+      // Prevent double-tap zoom on buttons
+      document.querySelectorAll('button, .clickable').forEach(el => {
+        el.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          el.click();
+        }, { passive: false });
+      });
+    }
+
+    // Add viewport height CSS variable for mobile browsers
+    const setVH = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    setVH();
+    window.addEventListener('resize', setVH);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(setVH, 100);
+    });
+
+    // Handle mobile voice selection - show in modal on mobile
+    if (window.innerWidth <= 768) {
+      const voiceBar = document.getElementById('voiceSelBar');
+      if (voiceBar) {
+        voiceBar.style.cursor = 'pointer';
+        voiceBar.addEventListener('click', () => {
+          _showMobileVoiceModal();
+        });
+      }
+    }
+  }
+
+  function _handleBreakpointChange(width) {
+    if (width <= 768) {
+      // Mobile mode
+      document.body.classList.add('mobile-layout');
+
+      // Auto-collapse panels when in reader mode
+      const panelLeft = document.getElementById('panelLeft');
+      const panelRight = document.getElementById('panelRight');
+
+      if (panelLeft) {
+        panelLeft.style.transition = 'max-height 0.3s ease';
+      }
+      if (panelRight) {
+        panelRight.style.transition = 'max-height 0.3s ease';
+      }
+    } else {
+      // Desktop mode
+      document.body.classList.remove('mobile-layout');
+    }
+
+    // Adjust modals for screen size
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+      if (width <= 480) {
+        modal.style.maxWidth = '95%';
+      } else if (width <= 768) {
+        modal.style.maxWidth = '90%';
+      } else {
+        modal.style.maxWidth = '';
+      }
+    });
+  }
+
+  function _showMobileVoiceModal() {
+    // On mobile, show voice list in a full modal instead of inline
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay open';
+    modal.innerHTML = `
+      <div class="modal" style="max-width: 95%; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</div>
+        <h2 class="modal-title">Select Voice</h2>
+        <p class="modal-sub">Choose a voice for narration</p>
+        <div class="voice-search-row" style="margin-bottom: 10px;">
+          <input type="text" class="voice-srch" id="mobileVoiceSearch" placeholder="Search voices…"
+            oninput="Reader.filterVoices()" style="flex: 1;" />
+          <select class="voice-lang" id="mobileLangFilter" onchange="Reader.filterVoices()" style="width: auto;">
+            <option value="">All</option>
+          </select>
+        </div>
+        <div style="flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+          <div id="mobileVoiceList"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn-primary" onclick="this.closest('.modal-overlay').remove()">Done</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Copy voice list content
+    const sourceList = document.getElementById('voiceList');
+    const targetList = document.getElementById('mobileVoiceList');
+    if (sourceList && targetList) {
+      targetList.innerHTML = sourceList.innerHTML;
+
+      // Re-attach event listeners
+      targetList.querySelectorAll('.voice-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          if (!e.target.closest('.vi-pbtn')) {
+            const voiceName = item.getAttribute('data-voice-name');
+            if (voiceName) {
+              Reader.selectVoice(voiceName);
+              modal.remove();
+            }
+          }
+        });
+      });
+
+      targetList.querySelectorAll('.vi-pbtn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const voiceName = btn.getAttribute('data-preview-voice');
+          if (voiceName) {
+            Reader.previewVoice(voiceName);
+          }
+        });
+      });
+    }
+
+    // Copy language options
+    const sourceLang = document.getElementById('langFilter');
+    const targetLang = document.getElementById('mobileLangFilter');
+    if (sourceLang && targetLang) {
+      targetLang.innerHTML = sourceLang.innerHTML;
+    }
+
+    // Wire search
+    const searchInput = document.getElementById('mobileVoiceSearch');
+    const sourceSearch = document.getElementById('voiceSearch');
+    if (searchInput && sourceSearch) {
+      searchInput.value = sourceSearch.value;
+    }
+
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+      }
+    });
+  }
 
   return {
     init, addBook, openBook, clearCurrentBook,
@@ -715,5 +813,5 @@ const App = (() => {
 
 // ── BOOT ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  App.init().catch(console.error);
+  App.init().catch(() => {});
 });

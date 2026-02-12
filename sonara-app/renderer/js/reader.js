@@ -30,9 +30,19 @@ const Reader = (() => {
   let audioElement   = null;
   let audioBookData  = null;
 
+  // PDF visual mode state
+  let pdfMode        = false;
+  let pdfZoom        = 1.0;
+  let pdfCurrentPage = 1;   // 1-based page number for rendering
+  let pdfRendering   = false;
+  let pdfTextLayerData = null;  // { spans, offsetMap } for on-page highlighting
+
+  // PDF manual highlights state
+  let pdfHighlights  = [];      // Saved highlights for current book
+  let selectedHighlight = null; // Currently selected highlight for editing
+
   // ── VOICES ───────────────────────────────────────────────
   function initVoices() {
-    console.log('[Reader] ========== Initializing voices ==========');
     let loadCount = 0;
     let maxVoices = 0;
 
@@ -42,11 +52,9 @@ const Reader = (() => {
 
       if (v.length > maxVoices) {
         maxVoices = v.length;
-        console.log('[Reader] ✓ System voices loaded! Attempt #' + loadCount + ':', v.length, 'voices');
 
         const localCount = v.filter(voice => voice.localService).length;
         const cloudCount = v.length - localCount;
-        console.log('[Reader] Breakdown:', localCount, 'local,', cloudCount, 'cloud/remote');
       }
 
       if (!v.length && loadCount < 5) {
@@ -63,10 +71,8 @@ const Reader = (() => {
       // Cloud voices first (better quality), then system voices
       if (cloudVoices.length > 0) {
         voiceList = [...cloudVoices, ...systemVoices];
-        console.log('[Reader] ✓ Voice list:', cloudVoices.length, 'neural +', systemVoices.length, 'system =', voiceList.length, 'total');
       } else {
         voiceList = systemVoices;
-        console.log('[Reader] Using', systemVoices.length, 'system voices (neural voices loading...)');
       }
 
       _populateLangFilter();
@@ -83,15 +89,12 @@ const Reader = (() => {
     }
 
     // 2. Load Edge TTS neural voices (async, from main process)
-    console.log('[Reader] Loading Edge TTS neural voices...');
     if (CloudTTS && CloudTTS.loadVoices) {
       CloudTTS.loadVoices().then((cloudVoices) => {
-        console.log('[Reader] ✓ Edge TTS loaded:', cloudVoices.length, 'neural voices');
         // Re-merge with whatever system voices we have
         const sysVoices = speechSynthesis.getVoices();
         _mergeVoices(sysVoices);
       }).catch(err => {
-        console.error('[Reader] Edge TTS load failed:', err);
       });
     }
 
@@ -100,7 +103,6 @@ const Reader = (() => {
 
     if (speechSynthesis.onvoiceschanged !== undefined) {
       speechSynthesis.onvoiceschanged = () => {
-        console.log('[Reader] ✓ onvoiceschanged event fired');
         load();
       };
     }
@@ -122,18 +124,14 @@ const Reader = (() => {
   }
   
   async function refreshVoices() {
-    console.log('[Reader] Manual voice refresh triggered');
     const v = speechSynthesis.getVoices();
-    console.log('[Reader] System voices:', v.length);
 
     // Reload Edge TTS voices
     let cloudVoices = CloudTTS.getVoices();
     if (CloudTTS.loadVoices) {
       try {
         cloudVoices = await CloudTTS.loadVoices();
-        console.log('[Reader] ✓ Refreshed Edge TTS voices:', cloudVoices.length);
       } catch (err) {
-        console.error('[Reader] Edge TTS refresh failed:', err);
       }
     }
 
@@ -152,7 +150,6 @@ const Reader = (() => {
 
   function _pickDefaultVoice() {
     if (!voiceList.length) {
-      console.log('[Reader] No voices available yet');
       return;
     }
 
@@ -173,7 +170,6 @@ const Reader = (() => {
       const v = voiceList.find(x => x._edgeVoice === shortName || x.shortName === shortName);
       if (v) {
         chosenVoice = v;
-        console.log('[Reader] Default neural voice selected:', v.name, '(' + shortName + ')');
         _updateVoiceBar();
         return;
       }
@@ -183,7 +179,6 @@ const Reader = (() => {
     const neuralEn = voiceList.find(v => v._cloudVoice && v.lang && v.lang.startsWith('en'));
     if (neuralEn) {
       chosenVoice = neuralEn;
-      console.log('[Reader] Default English neural voice:', neuralEn.name);
       _updateVoiceBar();
       return;
     }
@@ -197,7 +192,6 @@ const Reader = (() => {
       const v = voiceList.find(x => x.name === name || x.name.includes(name));
       if (v) {
         chosenVoice = v;
-        console.log('[Reader] Default system voice:', v.name);
         _updateVoiceBar();
         return;
       }
@@ -213,7 +207,6 @@ const Reader = (() => {
 
     // Last resort
     chosenVoice = voiceList[0];
-    console.log('[Reader] Default to first voice:', voiceList[0].name);
     _updateVoiceBar();
   }
 
@@ -254,12 +247,10 @@ const Reader = (() => {
       }
     });
     
-    console.log('[Reader] Language filter populated with', langs.length, 'languages');
   }
 
-  function filterVoices() { 
-    console.log('[Reader] Filtering voices');
-    renderVoiceList(); 
+  function filterVoices() {
+    renderVoiceList();
   }
 
   function renderVoiceList() {
@@ -267,7 +258,6 @@ const Reader = (() => {
     const lang   = document.getElementById('langFilter')?.value.toUpperCase() || '';
     
     if (!voiceList.length) {
-      console.log('[Reader] No voices to render yet');
       const el = document.getElementById('voiceList');
       if (el) el.innerHTML = '<div class="voice-loading">Loading voices…</div>';
       return;
@@ -363,31 +353,25 @@ const Reader = (() => {
   }
 
   function selectVoice(name) {
-    console.log('[Reader] Selecting voice:', name);
     const v = voiceList.find(x => x.name === name);
     if (!v) {
-      console.error('[Reader] Voice not found:', name);
       UI.toast('Voice not found', 'error');
       return;
     }
     
     chosenVoice = v;
-    console.log('[Reader] Voice selected:', v.name);
-    
+
     // Update UI immediately
     renderVoiceList();
     _updateVoiceBar();
     
     // Save to settings globally (persists across all books)
     window.sonara?.settings.set('voice', name).then(() => {
-      console.log('[Reader] ✓ Voice saved to global settings:', name);
     }).catch(err => {
-      console.error('[Reader] Failed to save voice:', err);
     });
     
     // If currently playing, switch voice live
     if (isPlaying) {
-      console.log('[Reader] Switching voice during playback');
       speechSynthesis.cancel();
       CloudTTS.stop();
       _speakChunk(currentChunk);
@@ -402,7 +386,6 @@ const Reader = (() => {
     const langEl = document.getElementById('vsbLang');
     
     if (!chosenVoice) {
-      console.log('[Reader] No voice selected for UI update');
       if (nameEl) nameEl.textContent = 'Loading…';
       if (langEl) langEl.textContent = '';
       return;
@@ -420,14 +403,11 @@ const Reader = (() => {
       langEl.textContent = chosenVoice.lang + voiceType;
     }
     
-    console.log('[Reader] Voice bar updated:', chosenVoice.name);
   }
 
   function previewVoice(name) {
-    console.log('[Reader] Previewing voice:', name);
     const v = voiceList.find(x => x.name === name);
     if (!v) {
-      console.error('[Reader] Voice not found for preview:', name);
       UI.toast('Voice not found', 'error');
       return;
     }
@@ -439,12 +419,9 @@ const Reader = (() => {
     setTimeout(() => {
       // Use real Edge TTS for neural voices
       if (v._cloudVoice && v._edgeVoice) {
-        console.log('[Reader] Preview with Edge TTS neural voice:', v._edgeVoice);
         UI.toast('Generating natural voice preview...', '', 2000);
         CloudTTS.preview(v, speed, pitch).then(() => {
-          console.log('[Reader] Neural preview complete');
         }).catch(err => {
-          console.error('[Reader] Neural preview failed:', err);
           UI.toast('Preview failed: ' + err.message, 'error');
         });
       } else {
@@ -457,11 +434,10 @@ const Reader = (() => {
         u.volume = 1.0;
         u.onerror = (e) => {
           if (e.error !== 'interrupted') {
-            console.error('[Reader] Preview error:', e.error);
             UI.toast('Preview failed: ' + e.error, 'error');
           }
         };
-        u.onend = () => console.log('[Reader] Preview complete');
+        u.onend = () => {};
         speechSynthesis.speak(u);
       }
     }, 100);
@@ -469,21 +445,357 @@ const Reader = (() => {
 
   function previewSelectedVoice() {
     if (!chosenVoice) {
-      console.log('[Reader] No voice selected to preview');
       UI.toast('Please select a voice first', 'error');
       return;
     }
-    console.log('[Reader] Previewing selected voice:', chosenVoice.name);
     previewVoice(chosenVoice.name);
   }
 
+  // ── PDF VISUAL MODE ─────────────────────────────────────
+  async function _showPDFPage(pageNum) {
+    if (pdfRendering || !Parser.hasPDFDoc()) return;
+    pdfRendering = true;
+
+    const totalPages = Parser.getPDFPageCount();
+    if (pageNum < 1) pageNum = 1;
+    if (pageNum > totalPages) pageNum = totalPages;
+    pdfCurrentPage = pageNum;
+
+    const canvas   = document.getElementById('pdfCanvas');
+    const viewer   = document.getElementById('pdfViewer');
+    const maxWidth = Math.min(viewer.clientWidth - 48, 800) * pdfZoom;
+
+    try {
+      await Parser.renderPDFPage(pageNum, canvas, maxWidth);
+      // Scale the canvas display size for crisp rendering
+      const displayW = Math.round(canvas.width / 2);
+      const displayH = Math.round(canvas.height / 2);
+      canvas.style.width  = displayW + 'px';
+      canvas.style.height = displayH + 'px';
+
+      // Build text overlay layer for on-page highlighting
+      const textLayerDiv = document.getElementById('pdfTextLayer');
+      try {
+        pdfTextLayerData = await Parser.createPDFTextLayer(pageNum, textLayerDiv, displayW);
+
+        // Render saved highlights on this page
+        _renderHighlightsOnPage(pageNum);
+      } catch (_) {
+        pdfTextLayerData = null;
+      }
+    } catch (e) {
+      // Fallback: leave canvas blank
+      pdfTextLayerData = null;
+    }
+
+    // Update nav info
+    document.getElementById('pdfPageInfo').textContent =
+      'Page ' + pageNum + ' / ' + totalPages;
+    document.getElementById('pdfZoomInfo').textContent =
+      Math.round(pdfZoom * 100) + '%';
+
+    // Enable/disable nav buttons
+    document.getElementById('pdfPrevPage').disabled = (pageNum <= 1);
+    document.getElementById('pdfNextPage').disabled = (pageNum >= totalPages);
+
+    // Scroll to top of viewer on page change
+    viewer.scrollTop = 0;
+
+    pdfRendering = false;
+  }
+
+  function _initPDFNav() {
+    document.getElementById('pdfPrevPage').addEventListener('click', () => {
+      if (pdfCurrentPage > 1) {
+        _showPDFPage(pdfCurrentPage - 1);
+        // Sync chunk to match the page
+        _syncChunkToPage(pdfCurrentPage);
+      }
+    });
+    document.getElementById('pdfNextPage').addEventListener('click', () => {
+      if (pdfCurrentPage < Parser.getPDFPageCount()) {
+        _showPDFPage(pdfCurrentPage + 1);
+        _syncChunkToPage(pdfCurrentPage);
+      }
+    });
+    document.getElementById('pdfZoomIn').addEventListener('click', () => {
+      pdfZoom = Math.min(pdfZoom + 0.25, 3.0);
+      _showPDFPage(pdfCurrentPage);
+    });
+    document.getElementById('pdfZoomOut').addEventListener('click', () => {
+      pdfZoom = Math.max(pdfZoom - 0.25, 0.5);
+      _showPDFPage(pdfCurrentPage);
+    });
+  }
+
+  // Sync reader chunk index to match a PDF page number
+  function _syncChunkToPage(pageNum) {
+    const idx = chunks.findIndex(c => c.page === pageNum);
+    if (idx >= 0 && idx !== currentChunk) {
+      currentChunk = idx;
+      _updateChapterTitleBar(idx);
+      _highlightChapterItem(idx);
+      _updateSeekBar();
+      document.getElementById('pbChapterLabel').textContent =
+        chunks[idx].title || ('Page ' + pageNum);
+    }
+  }
+
+  // Sync PDF viewer page to match current chunk
+  function _syncPageToChunk(idx) {
+    const chunk = chunks[idx];
+    if (chunk && chunk.page && pdfMode) {
+      _showPDFPage(chunk.page);
+    }
+  }
+
+  let _pdfNavInited = false;
+
+  // ── PDF ON-PAGE HIGHLIGHTING ──────────────────────────────
+  function _highlightPdfWord(charIndex) {
+    if (!pdfTextLayerData || !pdfTextLayerData.offsetMap.length) return;
+
+    // Clear previous active
+    if (pdfTextLayerData._activeSpan) {
+      pdfTextLayerData._activeSpan.classList.remove('pdf-word-active');
+      pdfTextLayerData._activeSpan.classList.add('pdf-word-spoken');
+    }
+
+    // Find the span containing this charIndex
+    let targetSpan = null;
+    for (const entry of pdfTextLayerData.offsetMap) {
+      if (charIndex >= entry.start && charIndex < entry.end) {
+        targetSpan = entry.span;
+        break;
+      }
+    }
+
+    // Fuzzy match: find closest span if exact match failed
+    if (!targetSpan) {
+      let minDist = Infinity;
+      for (const entry of pdfTextLayerData.offsetMap) {
+        const dist = Math.min(
+          Math.abs(charIndex - entry.start),
+          Math.abs(charIndex - entry.end)
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          targetSpan = entry.span;
+        }
+      }
+    }
+
+    if (targetSpan) {
+      targetSpan.classList.remove('pdf-word-spoken');
+      targetSpan.classList.add('pdf-word-active');
+      pdfTextLayerData._activeSpan = targetSpan;
+    }
+  }
+
+  function _clearPdfHighlights() {
+    if (!pdfTextLayerData) return;
+    pdfTextLayerData.spans.forEach(s => {
+      s.classList.remove('pdf-word-active', 'pdf-word-spoken');
+    });
+    pdfTextLayerData._activeSpan = null;
+  }
+
+  // ── PDF MANUAL HIGHLIGHTING ────────────────────────────────
+  function _initPDFHighlighting() {
+    const textLayer = document.getElementById('pdfTextLayer');
+    const toolbar = document.getElementById('pdfHighlightToolbar');
+    if (!textLayer || !toolbar) return;
+
+    // Track text selection
+    document.addEventListener('mouseup', (e) => {
+      if (!pdfMode || !pdfTextLayerData) return;
+
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        toolbar.classList.remove('visible');
+        return;
+      }
+
+      // Check if selection is within PDF text layer
+      const range = selection.getRangeAt(0);
+      if (!textLayer.contains(range.commonAncestorContainer)) {
+        toolbar.classList.remove('visible');
+        return;
+      }
+
+      // Get selected text spans
+      const selectedSpans = _getSelectedSpans(range);
+      if (selectedSpans.length === 0) {
+        toolbar.classList.remove('visible');
+        return;
+      }
+
+      // Position toolbar near selection
+      const rect = range.getBoundingClientRect();
+      const viewerRect = document.getElementById('pdfViewer').getBoundingClientRect();
+      toolbar.style.left = Math.min(rect.left - viewerRect.left, viewerRect.width - 300) + 'px';
+      toolbar.style.top = (rect.top - viewerRect.top - 40) + 'px';
+      toolbar.classList.add('visible');
+
+      // Check if selection overlaps existing highlight
+      selectedHighlight = _findHighlightInSelection(selectedSpans);
+    });
+
+    // Color button clicks
+    toolbar.querySelectorAll('.hl-color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const color = btn.dataset.color;
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+
+        const range = selection.getRangeAt(0);
+        const selectedSpans = _getSelectedSpans(range);
+        if (selectedSpans.length === 0) return;
+
+        _applyHighlight(selectedSpans, color);
+        selection.removeAllRanges();
+        toolbar.classList.remove('visible');
+      });
+    });
+
+    // Delete button
+    document.getElementById('hlDeleteBtn').addEventListener('click', () => {
+      if (selectedHighlight) {
+        _removeHighlight(selectedHighlight);
+        selectedHighlight = null;
+      }
+      toolbar.classList.remove('visible');
+    });
+
+    // Hide toolbar when clicking outside
+    document.addEventListener('mousedown', (e) => {
+      if (!toolbar.contains(e.target) && !e.target.closest('.pdf-text-layer')) {
+        toolbar.classList.remove('visible');
+      }
+    });
+  }
+
+  function _getSelectedSpans(range) {
+    if (!pdfTextLayerData) return [];
+    const selectedSpans = [];
+
+    pdfTextLayerData.spans.forEach(span => {
+      if (range.intersectsNode(span)) {
+        selectedSpans.push(span);
+      }
+    });
+
+    return selectedSpans;
+  }
+
+  function _applyHighlight(spans, color) {
+    if (!spans.length || !bookId) return;
+
+    // Get char index range
+    const startSpan = spans[0];
+    const endSpan = spans[spans.length - 1];
+
+    let startIdx = -1, endIdx = -1;
+    for (const entry of pdfTextLayerData.offsetMap) {
+      if (entry.span === startSpan && startIdx === -1) startIdx = entry.start;
+      if (entry.span === endSpan) endIdx = entry.end;
+    }
+
+    if (startIdx === -1 || endIdx === -1) return;
+
+    // Create highlight record
+    const highlight = {
+      id: Date.now() + Math.random(),
+      bookId,
+      page: pdfCurrentPage,
+      startIdx,
+      endIdx,
+      color
+    };
+
+    // Save to memory and database
+    pdfHighlights.push(highlight);
+    _saveHighlights();
+
+    // Apply visual highlight
+    spans.forEach(span => {
+      span.classList.remove('pdf-highlight-yellow', 'pdf-highlight-green',
+                           'pdf-highlight-blue', 'pdf-highlight-pink', 'pdf-highlight-orange');
+      span.classList.add(`pdf-highlight-${color}`);
+      span.dataset.highlightId = highlight.id;
+    });
+
+    UI.toast(`Highlighted with ${color}`, 'success', 1500);
+  }
+
+  function _removeHighlight(highlight) {
+    if (!highlight) return;
+
+    // Remove from memory
+    const idx = pdfHighlights.findIndex(h => h.id === highlight.id);
+    if (idx >= 0) pdfHighlights.splice(idx, 1);
+
+    // Remove visual highlight
+    if (pdfTextLayerData) {
+      pdfTextLayerData.spans.forEach(span => {
+        if (span.dataset.highlightId == highlight.id) {
+          span.classList.remove('pdf-highlight-yellow', 'pdf-highlight-green',
+                               'pdf-highlight-blue', 'pdf-highlight-pink', 'pdf-highlight-orange');
+          delete span.dataset.highlightId;
+        }
+      });
+    }
+
+    // Save to database
+    _saveHighlights();
+
+    UI.toast('Highlight removed', '', 1500);
+  }
+
+  function _findHighlightInSelection(spans) {
+    if (!spans.length) return null;
+    const highlightId = spans[0].dataset.highlightId;
+    if (!highlightId) return null;
+    return pdfHighlights.find(h => h.id == highlightId);
+  }
+
+  async function _loadHighlights() {
+    if (!bookId) return;
+
+    try {
+      const saved = await window.sonara?.settings.get(`highlights_${bookId}`, '[]');
+      pdfHighlights = JSON.parse(saved);
+    } catch (err) {
+      pdfHighlights = [];
+    }
+  }
+
+  async function _saveHighlights() {
+    if (!bookId) return;
+
+    try {
+      await window.sonara?.settings.set(`highlights_${bookId}`, JSON.stringify(pdfHighlights));
+    } catch (err) {
+    }
+  }
+
+  function _renderHighlightsOnPage(pageNum) {
+    if (!pdfTextLayerData || !pdfHighlights.length) return;
+
+    const pageHighlights = pdfHighlights.filter(h => h.page === pageNum);
+
+    pageHighlights.forEach(highlight => {
+      pdfTextLayerData.offsetMap.forEach(entry => {
+        if (entry.start >= highlight.startIdx && entry.end <= highlight.endIdx) {
+          entry.span.classList.add(`pdf-highlight-${highlight.color}`);
+          entry.span.dataset.highlightId = highlight.id;
+        }
+      });
+    });
+  }
+
   // ── LOAD BOOK ────────────────────────────────────────────
-  function loadBook(newChunks, newBookId, resumeData) {
-    console.log('[Reader] ========== LOAD BOOK ==========');
-    console.log('[Reader] bookId:', newBookId);
-    console.log('[Reader] chunks:', newChunks.length);
-    console.log('[Reader] resumeData:', resumeData);
-    
+  async function loadBook(newChunks, newBookId, resumeData) {
     // Stop any current playback
     stop();
 
@@ -492,12 +804,10 @@ const Reader = (() => {
     currentChunk = resumeData?.chunk_index || 0;
     elapsedTime  = resumeData?.elapsed_seconds || 0;
     currentWordIdx = 0;
-    
-    console.log('[Reader] ✓ Set currentChunk to:', currentChunk);
-    console.log('[Reader] ✓ Set elapsedTime to:', elapsedTime);
-    console.log('[Reader] Total chunks:', chunks.length);
-    console.log('[Reader] Progress:', Math.round((currentChunk / chunks.length) * 100) + '%');
-    console.log('[Reader] =======================================');
+
+    // Detect PDF visual mode
+    const isPDF = chunks.length > 0 && chunks[0].source === 'pdf' && Parser.hasPDFDoc();
+    pdfMode = isPDF;
 
     // Build chapter list
     _buildChapterList();
@@ -507,8 +817,36 @@ const Reader = (() => {
     totalDuration = Math.round((words / (150 * speed)) * 60);
     document.getElementById('pbTimeTotal').textContent = _fmt(totalDuration);
 
-    // Show first chunk
-    _renderChunkText(currentChunk);
+    if (pdfMode) {
+      // PDF visual mode: show PDF page with on-page text layer highlighting
+      document.getElementById('readerWelcome').style.display   = 'none';
+      document.getElementById('readerAudio').style.display     = 'none';
+      document.getElementById('readerPdfWrap').style.display   = 'flex';
+      document.getElementById('readerTextWrap').style.display  = 'none';
+      document.getElementById('chapterTitlebar').style.display = 'flex';
+
+      // Init PDF nav once
+      if (!_pdfNavInited) {
+        _initPDFNav();
+        _pdfNavInited = true;
+      }
+
+      // Init PDF highlighting
+      _initPDFHighlighting();
+
+      // Load saved highlights for this book
+      await _loadHighlights();
+
+      // Show the page for current chunk
+      const startPage = chunks[currentChunk]?.page || 1;
+      pdfZoom = 1.0;
+      _showPDFPage(startPage);
+    } else {
+      // Text mode (EPUB or fallback)
+      document.getElementById('readerPdfWrap').style.display = 'none';
+      _renderChunkText(currentChunk);
+    }
+
     _updateChapterTitleBar(currentChunk);
     _highlightChapterItem(currentChunk);
     _updateSeekBar();
@@ -550,9 +888,10 @@ const Reader = (() => {
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
 
-    // Show the text reader, hide audio reader
+    // Show the text reader, hide audio/pdf reader
     document.getElementById('readerWelcome').style.display   = 'none';
     document.getElementById('readerAudio').style.display     = 'none';
+    document.getElementById('readerPdfWrap').style.display   = 'none';
     document.getElementById('chapterTitlebar').style.display = 'flex';
     document.getElementById('readerTextWrap').style.display  = 'flex';
     audioMode = false;
@@ -560,6 +899,12 @@ const Reader = (() => {
 
   // ── WORD HIGHLIGHT (onboundary) ───────────────────────────
   function _highlightWord(charIndex) {
+    // In PDF mode, highlight directly on the PDF text layer
+    if (pdfMode) {
+      _highlightPdfWord(charIndex);
+      return;
+    }
+
     // Find the word span whose charIndex corresponds
     // We walk wordSpans by accumulated charIndex
     if (!wordSpans.length) return;
@@ -608,11 +953,12 @@ const Reader = (() => {
     });
     document.querySelectorAll('.sentence').forEach(s => s.classList.remove('sentence-active'));
     currentWordIdx = 0;
+    // Also clear PDF text layer highlights
+    _clearPdfHighlights();
   }
 
   // ── PLAYBACK ─────────────────────────────────────────────
   function togglePlay() {
-    console.log('[Reader] togglePlay called, isPlaying:', isPlaying, 'audioMode:', audioMode);
     if (audioMode) {
       _toggleAudioPlay();
       return;
@@ -621,7 +967,6 @@ const Reader = (() => {
   }
 
   function _play() {
-    console.log('[Reader] Play button clicked. Chunks loaded:', chunks.length);
     if (!chunks.length) {
       UI.toast('Please add a book first', 'error');
       return;
@@ -642,7 +987,6 @@ const Reader = (() => {
     }
 
     if (currentChunk >= chunks.length) { currentChunk = 0; elapsedTime = 0; }
-    console.log('[Reader] Starting playback, chunk:', currentChunk, 'voice:', chosenVoice?.name);
     isPlaying = true;
     _updatePlayIcon(true);
 
@@ -673,6 +1017,8 @@ const Reader = (() => {
       audioMode = false;
       audioBookData = null;
     }
+    pdfMode = false;
+    pdfTextLayerData = null;
     speechSynthesis.cancel();
     CloudTTS.stop();
     _stopTimer();
@@ -694,8 +1040,14 @@ const Reader = (() => {
     speechSynthesis.cancel();
     CloudTTS.stop();
     currentChunk = idx;
-    console.log('[Reader] _speakChunk - Setting currentChunk to:', idx, 'of', chunks.length);
-    _renderChunkText(idx);
+
+    // In PDF mode, sync visual page (text layer highlights directly on PDF)
+    if (pdfMode) {
+      _syncPageToChunk(idx);
+    } else {
+      _renderChunkText(idx);
+    }
+
     _updateChapterTitleBar(idx);
     _highlightChapterItem(idx);
     _clearWordHighlight();
@@ -703,7 +1055,6 @@ const Reader = (() => {
 
     // Auto-save periodically
     if (idx % autoSaveEvery === 0) {
-      console.log('[Reader] Auto-save trigger at chunk', idx);
       _saveProgress();
     }
 
@@ -716,7 +1067,6 @@ const Reader = (() => {
 
     // ── EDGE TTS (Neural voice) ──
     if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
-      console.log('[Reader] Speaking chunk', idx, 'with Edge TTS:', chosenVoice._edgeVoice);
       CloudTTS.speak(
         chunkText,
         chosenVoice,
@@ -724,13 +1074,11 @@ const Reader = (() => {
         pitch,
         () => {
           // onEnd
-          console.log('[Reader] Chunk', idx, 'finished (Edge TTS). Moving to next.');
           _saveProgress();
           if (isPlaying) _speakChunk(idx + 1);
         },
         (err) => {
           // onError — fall back to system voice
-          console.error('[Reader] Edge TTS error, falling back to system:', err);
           _speakChunkWithSystem(idx);
         }
       );
@@ -750,12 +1098,10 @@ const Reader = (() => {
 
     if (chosenVoice && !chosenVoice._cloudVoice) {
       u.voice = chosenVoice;
-      console.log('[Reader] Speaking with system voice:', chosenVoice.name);
     } else {
       // Fallback system voice for cloud voice failures
       const fallback = _findFallbackVoice(chosenVoice?.lang || 'en-US');
       if (fallback) u.voice = fallback;
-      console.log('[Reader] Speaking with fallback voice:', fallback?.name || 'default');
     }
 
     u.onboundary = (e) => {
@@ -763,13 +1109,11 @@ const Reader = (() => {
     };
 
     u.onend = () => {
-      console.log('[Reader] Chunk', idx, 'finished. Moving to next chunk.');
       _saveProgress();
       if (isPlaying) _speakChunk(idx + 1);
     };
 
     u.onerror = (e) => {
-      console.error('[Reader] Speech error:', e.error);
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
         UI.toast('Speech error: ' + e.error, 'error');
       }
@@ -790,7 +1134,11 @@ const Reader = (() => {
     _updateSeekBar();
     if (isPlaying) _speakChunk(next);
     else {
-      _renderChunkText(next);
+      if (pdfMode) {
+        _syncPageToChunk(next);
+      } else {
+        _renderChunkText(next);
+      }
       _updateChapterTitleBar(next);
       _highlightChapterItem(next);
     }
@@ -800,7 +1148,13 @@ const Reader = (() => {
     currentChunk = idx;
     elapsedTime  = Math.round((idx / chunks.length) * totalDuration);
     _updateSeekBar();
-    _renderChunkText(idx);
+
+    if (pdfMode) {
+      _syncPageToChunk(idx);
+    } else {
+      _renderChunkText(idx);
+    }
+
     _updateChapterTitleBar(idx);
     _highlightChapterItem(idx);
     if (isPlaying) _speakChunk(idx);
@@ -955,7 +1309,6 @@ const Reader = (() => {
   function _saveProgress(finished = false) {
     if (!bookId || !chunks.length) return;
     const percent = finished ? 100 : Math.round((currentChunk / chunks.length) * 100);
-    console.log('[Reader] Saving progress - bookId:', bookId, 'chunk:', currentChunk, 'percent:', percent + '%');
     window.sonara?.progress.save({
       book_id:         bookId,
       chunk_index:     finished ? chunks.length - 1 : currentChunk,
@@ -970,8 +1323,7 @@ const Reader = (() => {
   // ── APPLY SAVED SETTINGS ───────────────────────────────────
   async function applySettings() {
     if (!window.sonara) return;
-    console.log('[Reader] Applying saved settings...');
-    
+
     const savedVoice = await window.sonara.settings.get('voice');
     const savedSpeed = await window.sonara.settings.get('speed', 1.0);
     const savedPitch = await window.sonara.settings.get('pitch', 1.0);
@@ -985,35 +1337,27 @@ const Reader = (() => {
     document.getElementById('pitchSlider').value  = pitch;
     document.getElementById('pitchVal').textContent = pitch.toFixed(1);
     
-    console.log('[Reader] Speed:', speed, 'Pitch:', pitch);
-
     // Try to restore saved voice (global setting - persists across all books)
     if (savedVoice) {
-      console.log('[Reader] Restoring globally saved voice:', savedVoice);
-      
       // If voices already loaded, select immediately
       if (voiceList.length) {
         const v = voiceList.find(x => x.name === savedVoice);
         if (v) { 
-          chosenVoice = v; 
-          _updateVoiceBar(); 
+          chosenVoice = v;
+          _updateVoiceBar();
           renderVoiceList();
-          console.log('[Reader] ✓ Global voice restored:', v.name);
         } else {
-          console.log('[Reader] Saved voice not found, will use default');
           _pickDefaultVoice();
         }
       } else {
         // Voices not loaded yet - retry after delays
-        console.log('[Reader] Voices not loaded yet, will retry voice restoration');
         const tryRestore = async () => {
           if (voiceList.length) {
             const v = voiceList.find(x => x.name === savedVoice);
             if (v) { 
-              chosenVoice = v; 
-              _updateVoiceBar(); 
+              chosenVoice = v;
+              _updateVoiceBar();
               renderVoiceList();
-              console.log('[Reader] ✓ Global voice restored (delayed):', v.name);
             } else {
               _pickDefaultVoice();
             }
@@ -1028,7 +1372,6 @@ const Reader = (() => {
         setTimeout(tryRestore, 2000);
       }
     } else {
-      console.log('[Reader] No saved voice, will use default');
       if (voiceList.length && !chosenVoice) {
         _pickDefaultVoice();
       }
@@ -1055,16 +1398,12 @@ const Reader = (() => {
       return;
     }
     
-    console.log('[Reader] Manual bookmark/save triggered');
-    console.log('[Reader] Current state - chunk:', currentChunk, 'of', chunks.length);
-    
     // Save progress (same as auto-save)
     _saveProgress();
     
     const percent = Math.round((currentChunk / chunks.length) * 100);
     const chunkLabel = chunks[currentChunk]?.title || ('Section ' + (currentChunk + 1));
     
-    console.log('[Reader] Bookmark saved successfully at', percent + '%');
     UI.toast('📖 Progress saved at ' + percent + '% - ' + chunkLabel, 'success', 2500);
     
     // Visual feedback on the button
@@ -1099,16 +1438,16 @@ const Reader = (() => {
   // ── AUDIOBOOK MODE ──────────────────────────────────────────
 
   function loadAudioBook(bookData, resumeData) {
-    console.log('[Reader] Loading audiobook:', bookData.title);
     audioMode = true;
     audioBookData = bookData;
     bookId = bookData.id;
     chunks = [];
 
-    // Hide text reader, show audio reader
+    // Hide text/pdf reader, show audio reader
     document.getElementById('readerWelcome').style.display   = 'none';
     document.getElementById('chapterTitlebar').style.display  = 'none';
     document.getElementById('readerTextWrap').style.display   = 'none';
+    document.getElementById('readerPdfWrap').style.display    = 'none';
     document.getElementById('readerAudio').style.display      = 'flex';
 
     // Set up audio element

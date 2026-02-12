@@ -117,7 +117,12 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  /* Mobile viewport height fix */
+  height: calc(var(--vh, 1vh) * 100);
+}
 body {
   background: var(--bg);
   color: var(--text);
@@ -125,7 +130,30 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
+  /* Prevent pull-to-refresh on mobile */
+  overscroll-behavior-y: contain;
+  /* Smooth scrolling */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Touch device specific styles */
+body.touch-device {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.touch-device * {
+  -webkit-touch-callout: none;
+}
+
+/* Mobile layout helper */
+body.mobile-layout .desktop-only {
+  display: none !important;
+}
+
+body:not(.mobile-layout) .mobile-only {
+  display: none !important;
 }
 
 /* ── SCROLLBARS ── */
@@ -457,6 +485,229 @@ body {
   user-select: text;
 }
 
+/* ── PDF VISUAL VIEWER ── */
+.reader-pdf-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.pdf-viewer {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  scroll-behavior: smooth;
+}
+.pdf-page-container {
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 8px rgba(0,0,0,.2),
+    0 8px 32px rgba(0,0,0,.15),
+    0 0 0 1px rgba(255,255,255,.04);
+  background: #fff;
+  transition: box-shadow .3s;
+  line-height: 0;
+}
+.pdf-page-container:hover {
+  box-shadow:
+    0 4px 16px rgba(0,0,0,.25),
+    0 12px 48px rgba(0,0,0,.2),
+    0 0 0 1px rgba(255,255,255,.06);
+}
+#pdfCanvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* PDF bottom nav bar */
+.pdf-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.pdf-nav-btn {
+  width: 32px; height: 32px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.pdf-nav-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.pdf-nav-btn:disabled {
+  opacity: .3;
+  cursor: default;
+}
+.pdf-nav-btn:disabled:hover {
+  background: var(--surface2);
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+.pdf-page-info {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: .5px;
+  min-width: 90px;
+  text-align: center;
+}
+.pdf-zoom-info {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+.pdf-nav-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 6px;
+}
+
+/* ── PDF TEXT LAYER (on-page highlights) ── */
+.pdf-text-layer {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 1;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.pdf-text-layer span {
+  position: absolute;
+  color: transparent;
+  white-space: nowrap;
+  font-family: sans-serif;
+  line-height: 1;
+  pointer-events: auto;
+  border-radius: 2px;
+  transition: background .15s, box-shadow .15s;
+  cursor: text;
+}
+.pdf-text-layer span.pdf-word-active {
+  background: var(--highlight-bg);
+  box-shadow: 0 0 10px var(--highlight-glow), 0 0 2px var(--highlight-glow);
+}
+.pdf-text-layer span.pdf-word-spoken {
+  background: rgba(200,169,110,.10);
+}
+
+/* Manual PDF highlights (saved) */
+.pdf-text-layer span.pdf-highlight-yellow {
+  background: rgba(255, 235, 59, 0.4) !important;
+}
+.pdf-text-layer span.pdf-highlight-green {
+  background: rgba(76, 175, 80, 0.3) !important;
+}
+.pdf-text-layer span.pdf-highlight-blue {
+  background: rgba(33, 150, 243, 0.3) !important;
+}
+.pdf-text-layer span.pdf-highlight-pink {
+  background: rgba(233, 30, 99, 0.3) !important;
+}
+.pdf-text-layer span.pdf-highlight-orange {
+  background: rgba(255, 152, 0, 0.3) !important;
+}
+
+/* PDF Highlight Toolbar */
+.pdf-highlight-toolbar {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 6px;
+  display: none;
+  gap: 4px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  flex-direction: row;
+  align-items: center;
+}
+
+.pdf-highlight-toolbar.visible {
+  display: flex;
+}
+
+.hl-color-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+}
+
+.hl-color-btn:hover {
+  transform: scale(1.1);
+  border-color: var(--accent);
+}
+
+.hl-color-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.hl-color-btn.yellow { background: linear-gradient(135deg, #ffeb3b, #fdd835); }
+.hl-color-btn.green  { background: linear-gradient(135deg, #4caf50, #43a047); }
+.hl-color-btn.blue   { background: linear-gradient(135deg, #2196f3, #1e88e5); }
+.hl-color-btn.pink   { background: linear-gradient(135deg, #e91e63, #d81b60); }
+.hl-color-btn.orange { background: linear-gradient(135deg, #ff9800, #f57c00); }
+
+.hl-action-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .2s;
+  margin-left: 4px;
+}
+
+.hl-action-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.hl-action-btn.delete:hover {
+  background: rgba(224, 82, 82, 0.1);
+  border-color: rgba(224, 82, 82, 0.3);
+  color: var(--red);
+}
+
+.hl-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
 /* ── WORD HIGHLIGHT ── */
 .word {
   display: inline;
@@ -547,6 +798,7 @@ body {
 .rp-section-chapters {
   flex: 1;
   display: flex; flex-direction: column;
+  min-height: 160px;
   overflow: hidden;
   min-height: 0;
 }
@@ -687,7 +939,13 @@ body {
 /* Chapters list */
 .chapters-list {
   flex: 1; overflow-y: auto; padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
 }
+.chapters-list::-webkit-scrollbar { width: 6px; }
+.chapters-list::-webkit-scrollbar-track { background: transparent; border-radius: 3px; }
+.chapters-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+.chapters-list::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 .chapter-item {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 9px; border-radius: 7px; cursor: pointer;
@@ -1055,6 +1313,1034 @@ body.mode-reader  .layout { display: grid; }
 }
 .collection-item:hover .col-delete-btn { display: flex; }
 .col-delete-btn:hover { color: var(--red); }
+
+/* ══════════════════════════════════════════════════════════
+   RESPONSIVE DESIGN — Comprehensive Multi-Screen Support
+   Works across all themes (black, white, blue)
+══════════════════════════════════════════════════════════ */
+
+/* ── LARGE DESKTOP (>1600px) ─────────────────────────────── */
+@media (min-width: 1601px) {
+  :root {
+    --left-w: 280px;
+    --right-w: 300px;
+    --font-reader: 18px;
+  }
+
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 28px;
+  }
+
+  .reader-text {
+    max-width: 800px;
+  }
+
+  .voice-list-wrap {
+    max-height: 320px;
+  }
+
+  .rp-section-chapters {
+    min-height: 200px;
+  }
+}
+
+/* ── STANDARD DESKTOP (1200px - 1600px) ──────────────────── */
+@media (min-width: 1201px) and (max-width: 1600px) {
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 24px;
+  }
+}
+
+/* ── LAPTOP / SMALL DESKTOP (960px - 1200px) ─────────────── */
+@media (max-width: 1200px) {
+  :root {
+    --left-w: 200px;
+    --right-w: 220px;
+  }
+
+  .rp-section-chapters {
+    min-height: 220px;
+  }
+
+  .voice-list-wrap {
+    max-height: 220px;
+  }
+
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 20px;
+    padding: 12px 20px 32px;
+  }
+
+  /* Compact top bar */
+  .logo-tag {
+    display: none;
+  }
+
+  .tb-center {
+    font-size: 10px;
+    padding: 0 12px;
+  }
+
+  /* Smaller modals */
+  .modal {
+    padding: 24px;
+    max-width: 400px;
+  }
+
+  .modal-title {
+    font-size: 20px;
+  }
+}
+
+/* ── TABLET LANDSCAPE (768px - 960px) ────────────────────── */
+@media (max-width: 960px) {
+  :root {
+    --left-w: 180px;
+    --right-w: 200px;
+    --topbar-h: 42px;
+    --player-h: 68px;
+  }
+
+  /* More compact panels */
+  .rp-section-chapters {
+    min-height: 260px;
+    flex: 1.5;
+  }
+
+  .voice-list-wrap {
+    max-height: 180px;
+  }
+
+  /* Compact chapter items */
+  .chapter-item {
+    padding: 6px 8px;
+  }
+
+  .ci-name {
+    font-size: 11px;
+  }
+
+  .ci-dur {
+    font-size: 8px;
+  }
+
+  .ci-num {
+    width: 16px;
+    font-size: 8px;
+  }
+
+  /* Compact library */
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    padding: 12px 16px 32px;
+  }
+
+  .lib-sidebar {
+    width: 180px;
+  }
+
+  /* Smaller buttons */
+  .tb-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .tb-icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Compact player bar */
+  .pb-wave-wrap {
+    width: 100px;
+    height: 36px;
+  }
+
+  .pb-play-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pb-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .pb-time {
+    font-size: 9px;
+  }
+
+  .pb-chapter-label {
+    max-width: 100px;
+    font-size: 9px;
+  }
+
+  /* Reader adjustments */
+  .reader-text-wrap {
+    padding: 24px 32px;
+  }
+
+  .chapter-titlebar {
+    padding: 10px 20px;
+  }
+
+  .ctb-title {
+    font-size: 15px;
+  }
+
+  /* Library toolbar */
+  .lib-toolbar {
+    padding: 10px 16px;
+    gap: 8px;
+  }
+
+  .lib-search-wrap {
+    flex: 0 1 220px;
+    min-width: 160px;
+  }
+
+  .lib-search {
+    font-size: 11px;
+    padding: 6px 28px 6px 30px;
+  }
+}
+
+/* ── TABLET PORTRAIT (600px - 768px) ─────────────────────── */
+@media (max-width: 768px) {
+  :root {
+    --topbar-h: 40px;
+    --player-h: 64px;
+  }
+
+  /* Stack layout vertically */
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .panel-left {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .panel-right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .rp-section-chapters {
+    min-height: 200px;
+    flex: 2;
+  }
+
+  /* Hide non-essential sections on tablets */
+  .rp-section:not(.rp-section-chapters) {
+    max-height: 0;
+    overflow: hidden;
+    padding: 0;
+    border: none;
+  }
+
+  /* Compact voice controls - show in modal instead */
+  .rp-section:first-child {
+    max-height: none;
+    padding: 12px 14px;
+  }
+
+  .voice-sel-bar {
+    padding: 6px 8px;
+    margin-bottom: 0;
+  }
+
+  .voice-search-row,
+  .voice-list-wrap,
+  .voice-tip,
+  .prev-sel-btn {
+    display: none;
+  }
+
+  /* Library grid - 2 columns on tablet */
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+    padding: 12px 16px 24px;
+  }
+
+  .lib-sidebar {
+    width: 160px;
+  }
+
+  .collection-item {
+    padding: 7px 8px;
+  }
+
+  .col-name {
+    font-size: 11px;
+  }
+
+  /* Top bar - hide extras */
+  .logo-mark {
+    font-size: 16px;
+  }
+
+  .logo-tag,
+  .tb-library-btn svg,
+  .tb-btn svg {
+    display: none;
+  }
+
+  .tb-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .claude-pill {
+    padding: 3px 8px 3px 6px;
+  }
+
+  .cp-label {
+    font-size: 9px;
+  }
+
+  /* Reader */
+  .reader-text-wrap {
+    padding: 20px 24px;
+  }
+
+  .reader-text {
+    font-size: 16px;
+    line-height: 1.9;
+  }
+
+  /* Player bar - more compact */
+  .player-bar {
+    padding: 0 12px;
+    gap: 10px;
+  }
+
+  .pb-wave-wrap {
+    width: 80px;
+    height: 32px;
+  }
+
+  .pb-play-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .pb-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .pb-bookmark-btn span {
+    display: none;
+  }
+
+  .pb-bookmark-btn {
+    padding: 5px 8px;
+  }
+
+  /* Modals */
+  .modal {
+    padding: 20px;
+    max-width: 90%;
+    margin: 0 16px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* PDF viewer */
+  .pdf-viewer {
+    padding: 16px 12px;
+  }
+
+  .pdf-nav-bar {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+
+  .pdf-page-info,
+  .pdf-zoom-info {
+    font-size: 10px;
+    min-width: 70px;
+  }
+
+  /* Highlight toolbar - smaller */
+  .hl-color-btn,
+  .hl-action-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .pdf-highlight-toolbar {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  /* Library toolbar */
+  .lib-format-tabs {
+    gap: 1px;
+  }
+
+  .lib-tab {
+    font-size: 9px;
+    padding: 4px 8px;
+  }
+
+  .lib-sort {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+}
+
+/* ── MOBILE LANDSCAPE (480px - 600px) ────────────────────── */
+@media (max-width: 600px) {
+  :root {
+    --topbar-h: 38px;
+    --player-h: 60px;
+  }
+
+  /* Top bar - minimal */
+  .topbar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .logo-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .logo-mark {
+    font-size: 14px;
+  }
+
+  .tb-center {
+    display: none;
+  }
+
+  .tb-btn {
+    padding: 3px 6px;
+    font-size: 9px;
+  }
+
+  .tb-icon-btn {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* Panels - very compact */
+  .panel-left {
+    max-height: 140px;
+  }
+
+  .panel-header {
+    padding: 10px 12px 8px;
+  }
+
+  .book-list {
+    padding: 6px;
+  }
+
+  .book-card {
+    margin-bottom: 3px;
+  }
+
+  .bc-inner {
+    padding: 7px 9px 6px;
+  }
+
+  .bc-title {
+    font-size: 12px;
+  }
+
+  .bc-meta {
+    font-size: 10px;
+  }
+
+  /* Right panel */
+  .panel-right {
+    max-height: 45vh;
+  }
+
+  .rp-section {
+    padding: 10px 12px;
+  }
+
+  .rp-section-header {
+    margin-bottom: 8px;
+  }
+
+  .rp-section-label {
+    font-size: 8px;
+  }
+
+  /* Library - single column on small mobile */
+  .lib-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    padding: 10px 12px 20px;
+  }
+
+  .lib-sidebar {
+    width: 140px;
+    font-size: 11px;
+  }
+
+  .lib-sidebar-header {
+    padding: 10px 12px 8px;
+  }
+
+  .lib-sidebar-title {
+    font-size: 8px;
+  }
+
+  .collection-item {
+    padding: 6px 8px;
+  }
+
+  .col-name {
+    font-size: 10px;
+  }
+
+  .col-count {
+    font-size: 9px;
+  }
+
+  /* Library toolbar */
+  .lib-toolbar {
+    padding: 8px 12px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .lib-search-wrap {
+    flex: 1 1 100%;
+    min-width: 100%;
+    margin-bottom: 6px;
+  }
+
+  .lib-format-tabs {
+    flex: 1;
+  }
+
+  .lib-toolbar-right {
+    margin-left: 0;
+  }
+
+  .lib-add-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+
+  /* Reader */
+  .reader-text-wrap {
+    padding: 16px 20px;
+  }
+
+  .reader-text {
+    font-size: 15px;
+    line-height: 1.85;
+  }
+
+  .chapter-titlebar {
+    padding: 8px 16px;
+    gap: 12px;
+  }
+
+  .ctb-title {
+    font-size: 14px;
+  }
+
+  .ctb-num {
+    font-size: 10px;
+  }
+
+  .ctb-progress {
+    font-size: 9px;
+  }
+
+  .ctb-bar {
+    width: 60px;
+  }
+
+  /* Player bar */
+  .player-bar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .pb-wave-wrap {
+    display: none;
+  }
+
+  .pb-play-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .pb-btn {
+    width: 26px;
+    height: 26px;
+  }
+
+  .pb-time {
+    font-size: 8px;
+  }
+
+  .pb-chapter-label {
+    display: none;
+  }
+
+  .pb-speed-pill {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  /* PDF */
+  .pdf-nav-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .pdf-page-info {
+    min-width: 60px;
+  }
+
+  /* Modals */
+  .modal-title {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+
+  .modal-sub {
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+
+  .modal-input {
+    padding: 9px 12px;
+    font-size: 11px;
+  }
+
+  .modal-btn-primary,
+  .modal-btn-cancel {
+    font-size: 12px;
+    padding: 7px 16px;
+  }
+}
+
+/* ── MOBILE PORTRAIT (<480px) ────────────────────────────── */
+@media (max-width: 480px) {
+  :root {
+    --topbar-h: 36px;
+    --player-h: 56px;
+  }
+
+  /* Minimal top bar */
+  .topbar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .logo-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .logo-mark {
+    font-size: 13px;
+  }
+
+  .tb-btn {
+    min-width: auto;
+  }
+
+  .tb-btn,
+  .tb-library-btn {
+    padding: 3px 5px;
+    font-size: 8px;
+  }
+
+  .tb-icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .claude-pill {
+    padding: 2px 6px;
+  }
+
+  .cp-dot {
+    width: 5px;
+    height: 5px;
+  }
+
+  .cp-label {
+    font-size: 8px;
+  }
+
+  /* Minimal panels */
+  .panel-left {
+    max-height: 120px;
+  }
+
+  .panel-right {
+    max-height: 40vh;
+  }
+
+  .panel-header {
+    padding: 8px 10px 6px;
+  }
+
+  .panel-label {
+    font-size: 8px;
+  }
+
+  .lib-stats-mini {
+    font-size: 9px;
+  }
+
+  /* Chapters - very compact */
+  .chapter-item {
+    padding: 5px 6px;
+  }
+
+  .ci-name {
+    font-size: 10px;
+  }
+
+  .ci-dur {
+    font-size: 7px;
+  }
+
+  .ci-num {
+    width: 14px;
+    font-size: 7px;
+  }
+
+  /* Library - single column */
+  .lib-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 8px 10px 16px;
+  }
+
+  .lib-sidebar {
+    width: 120px;
+  }
+
+  .lib-sidebar-header {
+    padding: 8px 10px;
+  }
+
+  .collection-item {
+    padding: 5px 6px;
+  }
+
+  .col-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Reader */
+  .reader-text-wrap {
+    padding: 12px 16px;
+  }
+
+  .reader-text {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  .chapter-titlebar {
+    padding: 6px 12px;
+  }
+
+  .ctb-title {
+    font-size: 13px;
+  }
+
+  .ctb-num {
+    font-size: 9px;
+  }
+
+  .ctb-right {
+    display: none;
+  }
+
+  /* Player bar - ultra compact */
+  .player-bar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .pb-controls {
+    gap: 6px;
+  }
+
+  .pb-play-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .pb-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .pb-seeker-wrap {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pb-time {
+    font-size: 7px;
+  }
+
+  .pb-bookmark-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .pb-right {
+    gap: 6px;
+  }
+
+  /* PDF */
+  .pdf-viewer {
+    padding: 12px 8px;
+  }
+
+  .pdf-nav-bar {
+    padding: 5px 8px;
+  }
+
+  .pdf-nav-btn {
+    width: 26px;
+    height: 26px;
+  }
+
+  .pdf-page-info,
+  .pdf-zoom-info {
+    font-size: 9px;
+  }
+
+  /* Highlight toolbar - touch friendly */
+  .hl-color-btn,
+  .hl-action-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .pdf-highlight-toolbar {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  /* Modals - full screen on tiny phones */
+  .modal {
+    max-width: 95%;
+    margin: 0 10px;
+    padding: 16px;
+  }
+
+  .modal-title {
+    font-size: 16px;
+  }
+
+  .modal-sub {
+    font-size: 11px;
+  }
+
+  .modal-close {
+    width: 24px;
+    height: 24px;
+    top: 12px;
+    right: 12px;
+  }
+
+  /* Library stats */
+  .lib-stats-bar {
+    padding: 6px 12px;
+  }
+
+  .lib-stats-text {
+    font-size: 10px;
+  }
+
+  /* Toast */
+  .toast {
+    font-size: 11px;
+    padding: 8px 14px;
+    max-width: 95vw;
+  }
+
+  /* Audio reader mode */
+  .ra-cover-wrap {
+    width: 200px;
+  }
+
+  .ra-title {
+    font-size: 20px;
+  }
+
+  .ra-author {
+    font-size: 12px;
+  }
+
+  .ra-time {
+    font-size: 11px;
+  }
+}
+
+/* ── EXTRA SMALL MOBILE (<360px) ─────────────────────────── */
+@media (max-width: 360px) {
+  :root {
+    --topbar-h: 34px;
+    --player-h: 52px;
+  }
+
+  .lib-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .reader-text {
+    font-size: 13px;
+  }
+
+  .pb-play-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .modal {
+    padding: 12px;
+  }
+
+  .chapter-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .lib-sidebar {
+    display: none;
+  }
+
+  #libraryView.mode-library .lib-main {
+    width: 100%;
+  }
+}
+
+/* ── TOUCH DEVICE OPTIMIZATIONS ──────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets */
+  .tb-btn,
+  .tb-icon-btn,
+  .pb-btn,
+  .pdf-nav-btn,
+  .lib-tab,
+  .voice-item,
+  .chapter-item,
+  .collection-item,
+  .book-card {
+    min-height: 44px;
+  }
+
+  .hl-color-btn,
+  .hl-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Remove hover effects on touch devices */
+  .book-card:hover,
+  .chapter-item:hover,
+  .collection-item:hover,
+  .lib-card:hover {
+    transform: none;
+  }
+
+  /* Show controls without hover */
+  .bc-delete-btn,
+  .col-delete-btn,
+  .lc-menu-btn {
+    display: flex;
+    opacity: 0.6;
+  }
+}
+
+/* ── LANDSCAPE ORIENTATION OPTIMIZATIONS ─────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .panel-left,
+  .panel-right {
+    max-height: 35vh;
+  }
+
+  .modal {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .reader-text-wrap {
+    padding: 12px 20px;
+  }
+
+  .rp-section-chapters {
+    min-height: 120px;
+  }
+}
+
+/* ── PRINT STYLES ────────────────────────────────────────── */
+@media print {
+  .topbar,
+  .player-bar,
+  .panel-left,
+  .panel-right,
+  .pdf-nav-bar,
+  .pdf-highlight-toolbar,
+  .chapter-titlebar,
+  .modal-overlay,
+  .toast-wrap {
+    display: none !important;
+  }
+
+  .panel-center {
+    position: static;
+    width: 100%;
+    height: auto;
+  }
+
+  .reader-text {
+    color: #000;
+    background: #fff;
+    max-width: 100%;
+  }
+
+  .layout {
+    display: block;
+  }
+
+  body {
+    background: #fff;
+  }
+}
 
 /* ══════════════════════════════════════════════════════════
    LIBRARY — MAIN CONTENT AREA

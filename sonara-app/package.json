@@ -1,58 +1,179 @@
 {
   "name": "sonara",
-  "version": "1.0.0",
-  "description": "PDF & EPUB Audiobook Player with library and progress tracking",
+  "version": "2.0.0",
+  "description": "Professional Audiobook Player with PDF Highlighting, TTS, and Smart Library Management",
   "main": "main/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
     "postinstall": "electron-builder install-app-deps",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder --win --mac --linux"
+    "prebuild": "npm run clean",
+    "clean": "rimraf dist",
+    "build": "electron-builder --win --publish never",
+    "build:win": "electron-builder --win --x64 --publish never",
+    "build:win:portable": "electron-builder --win --x64 portable --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "build:all": "electron-builder --win --mac --linux --publish never",
+    "build:prod": "npm run clean && electron-builder --win --x64 --publish never",
+    "dist": "npm run build:prod"
   },
   "build": {
     "appId": "com.sonara.audiobook",
     "productName": "Sonara",
     "copyright": "Copyright © 2025 Sonara",
+    "compression": "maximum",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "files": [
       "main/**/*",
       "renderer/**/*",
       "database/**/*",
+      "!database/*.db",
+      "!database/*.db-shm",
+      "!database/*.db-wal",
       "assets/**/*",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.txt",
+      "!**/LICENSE",
+      "!**/*.log",
+      "!.claude/**/*",
+      "!.git/**/*",
+      "!.vscode/**/*",
+      "!dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "database/schema.sql",
+        "to": "database/schema.sql"
+      }
     ],
     "mac": {
       "category": "public.app-category.books",
       "target": [
-        "dmg",
-        "zip"
-      ]
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "darkModeSupport": true,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "category": "AudioVideo"
+      "icon": "assets/icon.png",
+      "publisherName": "Sonara",
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sonara",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "AudioVideo;Audio;Player;",
+      "icon": "assets/icon.png",
+      "synopsis": "Professional Audiobook Player with TTS",
+      "description": "Sonara is a modern audiobook player with PDF highlighting, text-to-speech, and smart library management.",
+      "desktop": {
+        "Name": "Sonara",
+        "Comment": "Professional Audiobook Player",
+        "Categories": "AudioVideo;Audio;Player;",
+        "StartupNotify": "true"
+      }
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}_${version}_${arch}.${ext}",
+      "priority": "optional",
+      "depends": []
+    },
+    "publish": null
   },
   "keywords": [
     "audiobook",

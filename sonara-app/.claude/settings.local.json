@@ -6,7 +6,24 @@
       "Bash(node_modules.binelectron --version)",
       "Bash(npm install:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(wc:*)",
+      "Bash(npm run build:win:*)",
+      "Bash(dir:*)",
+      "Bash(ls -la \"c:\\\\PersonalOneDrive\\\\OneDrive\\\\Sourcecode\\\\Tools\\\\sonara-app\\\\sonara-app\\\\dist\"\"*.exe 2>/dev/null; ls -la \"c:/PersonalOneDrive/OneDrive/Sourcecode/Tools/sonara-app/sonara-app/dist/ \")",
+      "Bash(node prebuild-check.js:*)",
+      "Bash(if not exist assets mkdir assets)",
+      "Bash(copy:*)",
+      "Bash(node -e:*)",
+      "Bash(node setup-assets.js:*)",
+      "Bash(npm run build:prod:*)",
+      "Bash(timeout /t 15 /nobreak)",
+      "Bash(echo:*)",
+      "Bash(ls:*)",
+      "Bash(certutil:*)",
+      "Bash(node -p \"const crypto=require\\(''crypto''\\);const fs=require\\(''fs''\\);[''Sonara-Setup-2.0.0.exe'',''Sonara-Portable-2.0.0.exe''].map\\(f=>{const hash=crypto.createHash\\(''sha256''\\).update\\(fs.readFileSync\\(f\\)\\).digest\\(''hex''\\);const size=\\(fs.statSync\\(f\\).size/\\(1024*1024\\)\\).toFixed\\(1\\);return f+'' \\(''+size+'' MB\\)\\\\nSHA256: ''+hash}\\).join\\(''\\\\n\\\\n''\\)\")"
     ]
   }
 }

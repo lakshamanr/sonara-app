@@ -22,14 +22,12 @@ const CloudTTS = (() => {
   async function loadVoices() {
     if (isLoaded || isLoading) return edgeVoices;
     if (!window.sonara?.tts) {
-      console.log('[CloudTTS] TTS API not available');
       return [];
     }
 
     isLoading = true;
     try {
       const raw = await window.sonara.tts.getVoices();
-      console.log('[CloudTTS] Raw voices from Edge TTS:', raw.length);
 
       edgeVoices = raw.map(v => ({
         // Display name: "en-US-AriaNeural" -> "Microsoft Aria (Natural)"
@@ -45,11 +43,9 @@ const CloudTTS = (() => {
       }));
 
       isLoaded = true;
-      console.log('[CloudTTS] Loaded', edgeVoices.length, 'Edge neural voices');
       return edgeVoices;
 
     } catch (err) {
-      console.error('[CloudTTS] Failed to load voices:', err);
       return [];
     } finally {
       isLoading = false;
@@ -103,7 +99,6 @@ const CloudTTS = (() => {
     try {
 
       const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
-      console.log('[CloudTTS] Synthesizing with', voiceId, 'rate:', rate, 'pitch:', pitch, 'reqId:', myRequestId);
 
       const result = await window.sonara.tts.synthesize({
         text,
@@ -114,7 +109,6 @@ const CloudTTS = (() => {
 
       // Another speak() or stop() was called while we were waiting — discard
       if (myRequestId !== requestId) {
-        console.log('[CloudTTS] Discarding stale synthesis result (reqId:', myRequestId, 'current:', requestId, ')');
         return;
       }
 
@@ -168,14 +162,12 @@ const CloudTTS = (() => {
       }
 
       currentAudio.onended = () => {
-        console.log('[CloudTTS] Playback complete');
         URL.revokeObjectURL(url);
         currentAudio = null;
         if (onEndCb) onEndCb();
       };
 
       currentAudio.onerror = (e) => {
-        console.error('[CloudTTS] Audio playback error:', e);
         URL.revokeObjectURL(url);
         currentAudio = null;
         if (onError) onError(e);
@@ -184,17 +176,14 @@ const CloudTTS = (() => {
       // Final check before playing — another request may have come in
       if (myRequestId !== requestId) {
         URL.revokeObjectURL(url);
-        console.log('[CloudTTS] Discarding stale audio before play (reqId:', myRequestId, ')');
         return;
       }
 
       await currentAudio.play();
-      console.log('[CloudTTS] Playing audio, duration:', currentAudio.duration, 'word boundaries:', boundaries.length);
 
     } catch (err) {
       // Only report error if this request is still the active one
       if (myRequestId !== requestId) return;
-      console.error('[CloudTTS] Synthesis failed:', err);
       if (onError) onError(err);
     }
   }

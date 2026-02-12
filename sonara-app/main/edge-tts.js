@@ -130,12 +130,8 @@ async function getVoices() {
             status:       v.Status
           }));
           cacheTime = Date.now();
-          console.log('[EdgeTTS] Fetched', cachedVoices.length, 'voices');
           resolve(cachedVoices);
         } catch (e) {
-          console.error('[EdgeTTS] Failed to parse voice list:', e.message);
-          console.error('[EdgeTTS] Response status:', res.statusCode);
-          console.error('[EdgeTTS] Response body (first 500 chars):', data.slice(0, 500));
           reject(e);
         }
       });
@@ -195,25 +191,22 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
     let textSearchPos = 0;  // Running position for computing word text offsets
     let resolved = false;
 
-    console.log('[EdgeTTS] Connecting to WebSocket...');
-    console.log('[EdgeTTS] Sec-MS-GEC:', secMsGec.slice(0, 16) + '...');
-
     const ws = new WebSocket(wssUrl, {
       headers: getWssHeaders(),
       perMessageDeflate: true,
     });
 
+    // Scale timeout with text length — longer texts need more time
+    const timeoutMs = Math.max(30000, Math.min(120000, text.length * 20));
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
         ws.close();
-        reject(new Error('Edge TTS timeout after 30s'));
+        reject(new Error(`Edge TTS timeout after ${Math.round(timeoutMs / 1000)}s`));
       }
-    }, 30000);
+    }, timeoutMs);
 
     ws.on('open', () => {
-      console.log('[EdgeTTS] WebSocket connected, sending config...');
-
       // 1. Send speech config
       const configMsg =
         `X-Timestamp:${dateToString()}\r\n` +
@@ -249,7 +242,6 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
         `Path:ssml\r\n\r\n` +
         ssml;
       ws.send(ssmlMsg);
-      console.log('[EdgeTTS] SSML sent, waiting for audio...');
     });
 
     ws.on('message', (data, isBinary) => {
@@ -261,8 +253,6 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
           clearTimeout(timeout);
           resolved = true;
           ws.close();
-          const totalBytes = audioChunks.reduce((sum, c) => sum + c.length, 0);
-          console.log('[EdgeTTS] Synthesis complete:', totalBytes, 'bytes,', wordBoundaries.length, 'word boundaries');
           resolve({ audio: Buffer.concat(audioChunks), wordBoundaries });
           return;
         }
@@ -325,13 +315,6 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
 
     ws.on('error', (err) => {
       clearTimeout(timeout);
-      console.error('[EdgeTTS] WebSocket error:', err.message);
-
-      // If we get a 403, try to adjust clock skew
-      if (err.message && err.message.includes('403')) {
-        console.error('[EdgeTTS] 403 Forbidden — possible clock skew or outdated Chromium version');
-      }
-
       if (!resolved) {
         resolved = true;
         reject(err);
@@ -352,7 +335,6 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
 
     ws.on('unexpected-response', (req, res) => {
       clearTimeout(timeout);
-      console.error('[EdgeTTS] Unexpected response:', res.statusCode);
 
       // Try clock skew correction from server Date header
       const serverDate = res.headers['date'];
@@ -363,10 +345,9 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
           const skew = serverTime - clientTime;
           if (Math.abs(skew) > 1) {
             clockSkewSeconds += skew;
-            console.log('[EdgeTTS] Clock skew adjusted by', skew.toFixed(1), 'seconds');
           }
         } catch (e) {
-          console.error('[EdgeTTS] Failed to parse server date for skew correction');
+          // skew correction failed
         }
       }
 
@@ -379,17 +360,21 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
 }
 
 /**
- * Synthesize with automatic retry on 403 (clock skew correction)
+ * Synthesize with automatic retry on transient failures (403, timeout)
  */
 async function synthesizeWithRetry(text, voice, options, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await synthesize(text, voice, options);
     } catch (err) {
-      const is403 = err.message && err.message.includes('403');
-      if (is403 && attempt < maxRetries) {
-        console.log(`[EdgeTTS] Retry ${attempt + 1}/${maxRetries} after 403...`);
-        // Clock skew was already adjusted in the unexpected-response handler
+      const isRetryable = err.message && (
+        err.message.includes('403') ||
+        err.message.includes('timeout') ||
+        err.message.includes('WebSocket closed')
+      );
+      if (isRetryable && attempt < maxRetries) {
+        const delay = (attempt + 1) * 1000; // 1s, 2s backoff
+        await new Promise(r => setTimeout(r, delay));
         continue;
       }
       throw err;

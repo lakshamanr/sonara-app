@@ -6,6 +6,10 @@
 
 const Parser = (() => {
 
+  // ── STATE ───────────────────────────────────────────────
+  let _pdfDoc = null;      // cached pdf.js document for page rendering
+  let _pdfPageCount = 0;
+
   // ── HELPERS ──────────────────────────────────────────────
   function cleanText(raw) {
     return raw
@@ -29,18 +33,19 @@ const Parser = (() => {
   }
 
   async function parsePDF(base64Data, onProgress) {
-    console.log('[Parser] Starting PDF parse...');
     await loadPDFScript();
 
-    console.log('[Parser] Decoding base64, length:', base64Data.length);
     const binary   = atob(base64Data);
     const bytes    = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-    console.log('[Parser] Loading PDF document...');
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+
+    // Cache the document for visual page rendering
+    _pdfDoc = pdf;
+    _pdfPageCount = pdf.numPages;
+
     const total = pdf.numPages;
-    console.log('[Parser] PDF loaded, pages:', total);
     const raw = [];
 
     for (let i = 1; i <= total; i++) {
@@ -53,7 +58,6 @@ const Parser = (() => {
       onProgress && onProgress(Math.round((i / total) * 100));
     }
 
-    console.log('[Parser] PDF parsing complete, chunks:', raw.length);
     // Improve chapter titles from first sentence
     return raw.map(c => {
       const firstSentence = c.text.split('.')[0].trim();
@@ -63,6 +67,88 @@ const Parser = (() => {
       return c;
     });
   }
+
+  // ── PDF PAGE RENDERING ─────────────────────────────────
+  // Renders a PDF page to a canvas element at the given scale
+  async function renderPDFPage(pageNum, canvas, maxWidth) {
+    if (!_pdfDoc) return null;
+    if (pageNum < 1 || pageNum > _pdfDoc.numPages) return null;
+
+    const page = await _pdfDoc.getPage(pageNum);
+    const baseViewport = page.getViewport({ scale: 1.0 });
+
+    // Scale to fit within maxWidth while maintaining aspect ratio
+    const scale = maxWidth ? Math.min((maxWidth * 2) / baseViewport.width, 3.0) : 2.0;
+    const viewport = page.getViewport({ scale });
+
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+
+    // White background for pages
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return { width: viewport.width, height: viewport.height };
+  }
+
+  // Creates a text overlay layer for on-page highlighting
+  async function createPDFTextLayer(pageNum, layerDiv, displayWidth) {
+    if (!_pdfDoc) return null;
+    if (pageNum < 1 || pageNum > _pdfDoc.numPages) return null;
+
+    const page = await _pdfDoc.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const baseVP = page.getViewport({ scale: 1.0 });
+    const scale = displayWidth / baseVP.width;
+    const viewport = page.getViewport({ scale });
+
+    layerDiv.innerHTML = '';
+
+    const spans = [];
+    const offsetMap = [];
+    let cumOffset = 0;
+
+    textContent.items.forEach((item, i) => {
+      if (!item.str) { cumOffset += 1; return; }
+
+      const span = document.createElement('span');
+      span.textContent = item.str;
+
+      // Font size from transform matrix
+      const tx = item.transform;
+      const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) * scale;
+
+      // Convert PDF coords (origin bottom-left) to viewport coords (origin top-left)
+      const [vx, vy] = viewport.convertToViewportPoint(tx[4], tx[5]);
+
+      span.style.fontSize = fontSize + 'px';
+      span.style.left = vx + 'px';
+      span.style.top = (vy - fontSize) + 'px';
+
+      // Match the PDF text width
+      if (item.width > 0) {
+        span.style.width = (item.width * scale) + 'px';
+        span.style.display = 'inline-block';
+        span.style.transformOrigin = '0 0';
+      }
+
+      layerDiv.appendChild(span);
+
+      if (item.str.trim()) {
+        offsetMap.push({ start: cumOffset, end: cumOffset + item.str.length, span });
+        spans.push(span);
+      }
+      cumOffset += item.str.length + 1; // +1 for space separator
+    });
+
+    return { spans, offsetMap };
+  }
+
+  function getPDFDoc() { return _pdfDoc; }
+  function getPDFPageCount() { return _pdfPageCount; }
+  function hasPDFDoc() { return !!_pdfDoc; }
 
   // ── EPUB ─────────────────────────────────────────────────
   async function loadJSZipScript() {
@@ -76,24 +162,19 @@ const Parser = (() => {
   }
 
   async function parseEPUB(base64Data, onProgress) {
-    console.log('[Parser] Starting EPUB parse...');
     await loadJSZipScript();
 
-    console.log('[Parser] Decoding base64, length:', base64Data.length);
     const binary = atob(base64Data);
     const bytes  = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-    console.log('[Parser] Loading ZIP...');
     const zip = await JSZip.loadAsync(bytes.buffer);
 
     // 1. container.xml → OPF path
-    console.log('[Parser] Reading container.xml...');
     const containerXml = await zip.file('META-INF/container.xml')?.async('text');
     if (!containerXml) throw new Error('Invalid EPUB: missing container.xml');
     const opfPath = containerXml.match(/full-path="([^"]+\.opf)"/i)?.[1];
     if (!opfPath) throw new Error('Could not locate OPF file');
-    console.log('[Parser] OPF path:', opfPath);
 
     // 2. OPF manifest + spine
     const opfText = await zip.file(opfPath)?.async('text');
@@ -115,7 +196,6 @@ const Parser = (() => {
       .filter(id => manifest[id]?.type?.includes('html'));
 
     if (!spineIds.length) throw new Error('No readable content in EPUB');
-    console.log('[Parser] Found', spineIds.length, 'spine items');
 
     // 3. Extract text from each spine item
     const raw     = [];
@@ -142,7 +222,6 @@ const Parser = (() => {
       onProgress && onProgress(Math.round(((i + 1) / spineIds.length) * 100));
     }
 
-    console.log('[Parser] EPUB parsing complete, chapters:', raw.length);
     if (!raw.length) throw new Error('No readable text found. EPUB may be image-based.');
     return raw;
   }
@@ -207,10 +286,8 @@ const Parser = (() => {
                    || await zip.file(decodeURIComponent(fullPath))?.async('base64');
       if (!imgData) return null;
 
-      console.log('[Parser] EPUB cover extracted, mediaType:', mediaType);
       return { base64: imgData, mediaType };
     } catch (err) {
-      console.error('[Parser] Error extracting EPUB cover:', err);
       return null;
     }
   }
@@ -239,14 +316,12 @@ const Parser = (() => {
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       const base64  = dataUrl.split(',')[1];
-      console.log('[Parser] PDF cover extracted from first page');
       return { base64, mediaType: 'image/jpeg' };
     } catch (err) {
-      console.error('[Parser] Error extracting PDF cover:', err);
       return null;
     }
   }
 
   // ── PUBLIC ───────────────────────────────────────────────
-  return { parsePDF, parseEPUB, extractEPUBCover, extractPDFCover };
+  return { parsePDF, parseEPUB, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
 })();
