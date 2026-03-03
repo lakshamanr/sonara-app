@@ -320,31 +320,22 @@ const Notes = (() => {
   // ── TAB SWITCH ────────────────────────────────────────────
   function switchTab(tab) {
     const ctrlPane = document.getElementById('paneControls');
-    const chWrap   = document.getElementById('rpChaptersWrap');
     const ntWrap   = document.getElementById('rpNotesWrap');
     const ctrlTab  = document.getElementById('rpTabControls');
-    const chTab    = document.getElementById('rpTabChapters');
     const ntTab    = document.getElementById('rpTabNotes');
 
-    // Hide all panes
+    // Hide all panes, deactivate all tabs
     if (ctrlPane) ctrlPane.style.display = 'none';
-    if (chWrap)   chWrap.style.display   = 'none';
     if (ntWrap)   ntWrap.style.display   = 'none';
+    [ctrlTab, ntTab].forEach(t => t && t.classList.remove('rp-tab-active'));
 
-    // Deactivate all tabs
-    [ctrlTab, chTab, ntTab].forEach(t => t && t.classList.remove('rp-tab-active'));
-
-    // Show active pane
-    if (tab === 'controls') {
+    if (tab === 'notes') {
+      if (ntWrap)  ntWrap.style.display = '';
+      if (ntTab)   ntTab.classList.add('rp-tab-active');
+      _updatePositionLabel();
+    } else {
       if (ctrlPane) ctrlPane.style.display = '';
       if (ctrlTab)  ctrlTab.classList.add('rp-tab-active');
-    } else if (tab === 'chapters') {
-      if (chWrap) chWrap.style.display = '';
-      if (chTab)  chTab.classList.add('rp-tab-active');
-    } else {
-      if (ntWrap) ntWrap.style.display = '';
-      if (ntTab)  ntTab.classList.add('rp-tab-active');
-      _updatePositionLabel();
     }
   }
 

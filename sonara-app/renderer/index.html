@@ -357,13 +357,9 @@
   <!-- ── RIGHT: CONTROLS ── -->
   <aside class="panel-right" id="panelRight">
 
-    <!-- Tab bar — Controls | Chapters | Notes -->
+    <!-- Tab bar — Controls | Notes -->
     <div class="rp-tabs">
       <button class="rp-tab rp-tab-active" id="rpTabControls" onclick="Notes.switchTab('controls')">Controls</button>
-      <button class="rp-tab" id="rpTabChapters" onclick="Notes.switchTab('chapters')">
-        <span id="chaptersLabel">Chapters</span>
-        <span class="rp-tab-badge" id="chaptersCount"></span>
-      </button>
       <button class="rp-tab" id="rpTabNotes" onclick="Notes.switchTab('notes')">
         Notes
         <span class="rp-tab-badge" id="notesTabCount"></span>
@@ -452,13 +448,6 @@
           <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
         </div>
 
-      </div>
-
-      <!-- ── Chapters pane ── -->
-      <div id="rpChaptersWrap" style="display:none">
-        <div class="chapters-list" id="chaptersList">
-          <div class="chapters-empty">Open a book to see chapters</div>
-        </div>
       </div>
 
       <!-- ── Notes pane ── -->

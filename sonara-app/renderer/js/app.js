@@ -657,7 +657,6 @@ const App = (() => {
     document.getElementById('readerTextWrap').style.display  = 'none';
     document.getElementById('readerPdfWrap').style.display   = 'none';
     document.getElementById('tbCenter').textContent = '';
-    document.getElementById('chaptersList').innerHTML = '<div class="chapters-empty">Open a book to see chapters</div>';
     Library.setActiveCard(null);
     _updateNavPanel(null); // clear nav panel
     Notes.clear();         // clear notes panel

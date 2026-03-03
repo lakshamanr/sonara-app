@@ -1236,21 +1236,8 @@ const Reader = (() => {
   function _buildChapterList() {
     const isEpub   = chunks.length > 0 && chunks[0].source === 'epub';
     const label    = isEpub ? 'Chapters' : 'Sections';
-    document.getElementById('chaptersLabel').textContent = label;
-    document.getElementById('chaptersCount').textContent = chunks.length;
 
-    const itemsHTML = chunks.map((c, i) => `
-      <div class="chapter-item${i === 0 ? ' active' : ''}" id="ch-item-${i}" onclick="Reader.jumpToChunk(${i})">
-        <span class="ci-num">${String(i + 1).padStart(2, '0')}</span>
-        <span class="ci-dot"></span>
-        <span class="ci-name">${_escHtml(c.title || (label.slice(0,-1) + ' ' + (i+1)))}</span>
-        <span class="ci-dur">${_estimateDur(c.text)}</span>
-      </div>`
-    ).join('');
-
-    document.getElementById('chaptersList').innerHTML = itemsHTML;
-
-    // ── Mirror to left nav panel ──
+    // Populate left nav panel
     const navLabel = document.getElementById('navListLabel');
     const navCount = document.getElementById('navListCount');
     const navList  = document.getElementById('navChapterList');
@@ -1268,11 +1255,6 @@ const Reader = (() => {
   }
 
   function _highlightChapterItem(idx) {
-    // Right panel
-    document.querySelectorAll('.chapter-item').forEach((el, i) => {
-      el.classList.toggle('active', i === idx);
-    });
-    document.getElementById('ch-item-' + idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     // Left nav panel
     document.querySelectorAll('.nav-ch-item').forEach((el, i) => {
       el.classList.toggle('active', i === idx);
@@ -1531,11 +1513,14 @@ const Reader = (() => {
     if (pmTitle) pmTitle.textContent = bookData.title || '';
     if (pmAuthor) pmAuthor.textContent = bookData.author || '';
 
-    // Chapter list (single entry for audiobook)
-    document.getElementById('chaptersLabel').textContent = 'Audiobook';
-    document.getElementById('chaptersCount').textContent = '1';
-    document.getElementById('chaptersList').innerHTML =
-      '<div class="chapter-item active"><span class="ci-name">' + _escHtml(bookData.title) + '</span></div>';
+    // Left nav panel — single entry for audiobook
+    const navLabel = document.getElementById('navListLabel');
+    const navCount = document.getElementById('navListCount');
+    const navList  = document.getElementById('navChapterList');
+    if (navLabel) navLabel.textContent = 'Audiobook';
+    if (navCount) navCount.textContent = '1';
+    if (navList)  navList.innerHTML =
+      '<div class="nav-ch-item active" id="nav-ch-item-0"><span class="nav-ci-name">' + _escHtml(bookData.title) + '</span></div>';
   }
 
   function _onAudioMeta() {
