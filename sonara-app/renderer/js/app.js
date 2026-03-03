@@ -697,7 +697,9 @@ const App = (() => {
       coverImg.style.display = 'none';
       coverPlc.style.display = 'flex';
     }
-  } ────────────────────────────────────
+  }
+
+  // ── RESPONSIVE HELPERS ───────────────────────────────────
   function _initResponsiveHelpers() {
     let lastWidth = window.innerWidth;
 
