@@ -86,7 +86,7 @@ const UI = (() => {
 
   // Settings modal
   async function openSettingsModal() {
-    const version = await window.sonara.app.getVersion();
+    const version = await window.sonara.meta.version();
     document.getElementById('settingVersion').textContent = version;
     // Sync swatch to current theme
     document.querySelectorAll('.theme-swatch').forEach(s => {
@@ -705,6 +705,109 @@ const App = (() => {
         });
       }
     }
+
+    // Init panel resize and right-panel toggle
+    _initPanelResize();
+    _initRightPanelToggle();
+  }
+
+  // ── PANEL DRAG-TO-RESIZE ──────────────────────────────────
+  function _initPanelResize() {
+    const root = document.documentElement;
+
+    // Load saved panel widths from settings
+    async function _loadSavedWidths() {
+      const lw = await window.sonara.settings.get('panelLeftW',  null);
+      const rw = await window.sonara.settings.get('panelRightW', null);
+      if (lw  && lw  > 0) root.style.setProperty('--left-w',  lw  + 'px');
+      if (rw  && rw  > 0) root.style.setProperty('--right-w', rw  + 'px');
+    }
+
+    function _makeDragger(handleEl, side) {
+      handleEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        handleEl.classList.add('dragging');
+        document.body.style.cursor     = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const startX = e.clientX;
+        const cs     = getComputedStyle(root);
+        const initLW = parseInt(cs.getPropertyValue('--left-w'))  || 240;
+        const initRW = parseInt(cs.getPropertyValue('--right-w')) || 260;
+
+        const MIN_LEFT  = 160, MAX_LEFT  = 400;
+        const MIN_RIGHT = 180, MAX_RIGHT = 420;
+        const MIN_CENTER = 380; // always keep center readable
+
+        function _onMove(ev) {
+          const dx = ev.clientX - startX;
+          const totalW = window.innerWidth;
+
+          if (side === 'left') {
+            const rw = parseInt(getComputedStyle(root).getPropertyValue('--right-w')) || initRW;
+            const maxAllowed = Math.min(MAX_LEFT, totalW - rw - MIN_CENTER - 12);
+            const nw = Math.max(MIN_LEFT, Math.min(maxAllowed, initLW + dx));
+            root.style.setProperty('--left-w', nw + 'px');
+          } else {
+            const lw = parseInt(getComputedStyle(root).getPropertyValue('--left-w')) || initLW;
+            const maxAllowed = Math.min(MAX_RIGHT, totalW - lw - MIN_CENTER - 12);
+            // dragging right handle: moving right makes panel smaller
+            const nw = Math.max(MIN_RIGHT, Math.min(maxAllowed, initRW - dx));
+            root.style.setProperty('--right-w', nw + 'px');
+          }
+        }
+
+        function _onUp() {
+          handleEl.classList.remove('dragging');
+          document.body.style.cursor     = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', _onMove);
+          document.removeEventListener('mouseup',   _onUp);
+          // Persist widths
+          const cs2 = getComputedStyle(root);
+          const lw2 = parseInt(cs2.getPropertyValue('--left-w'));
+          const rw2 = parseInt(cs2.getPropertyValue('--right-w'));
+          window.sonara.settings.set('panelLeftW',  lw2);
+          window.sonara.settings.set('panelRightW', rw2);
+        }
+
+        document.addEventListener('mousemove', _onMove);
+        document.addEventListener('mouseup',   _onUp);
+      });
+    }
+
+    const hLeft  = document.getElementById('resizeLeft');
+    const hRight = document.getElementById('resizeRight');
+    if (hLeft)  _makeDragger(hLeft,  'left');
+    if (hRight) _makeDragger(hRight, 'right');
+
+    _loadSavedWidths();
+  }
+
+  // ── RIGHT PANEL COLLAPSE TOGGLE ───────────────────────────
+  function _initRightPanelToggle() {
+    const btn    = document.getElementById('btnToggleRight');
+    const layout = document.querySelector('.layout');
+    if (!btn || !layout) return;
+
+    let collapsed = false;
+
+    // Restore saved state
+    window.sonara.settings.get('rpCollapsed', false).then(saved => {
+      if (saved) {
+        collapsed = true;
+        layout.classList.add('rp-collapsed');
+        btn.classList.add('active');
+      }
+    });
+
+    btn.addEventListener('click', () => {
+      collapsed = !collapsed;
+      layout.classList.toggle('rp-collapsed', collapsed);
+      btn.classList.toggle('active', collapsed);
+      window.sonara.settings.set('rpCollapsed', collapsed);
+    });
   }
 
   function _handleBreakpointChange(width) {

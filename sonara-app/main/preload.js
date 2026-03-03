@@ -1,77 +1,133 @@
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose a safe, typed API to the renderer
+/**
+ * window.sonara — the entire renderer-facing API surface.
+ *
+ * Standards:
+ *  - All methods return Promises (wrapping ipcRenderer.invoke).
+ *  - Read operations resolve with the requested data (or null/[] if not found).
+ *  - Write/delete operations resolve with { success: true }.
+ *  - Errors are thrown as structured Error objects with `e.code` set.
+ *  - The `meta` namespace exposes static runtime values synchronously.
+ */
 contextBridge.exposeInMainWorld('sonara', {
+
+  // ── META / RUNTIME (synchronous — available immediately) ─
+  meta: {
+    platform: process.platform,        // 'win32' | 'darwin' | 'linux'
+    arch:     process.arch,            // 'x64' | 'arm64' | ...
+    version:  () => ipcRenderer.invoke('app:getVersion'),
+    getAll:   () => ipcRenderer.invoke('app:getMeta'),
+  },
 
   // ── LIBRARY ──────────────────────────────────────────────
   library: {
-    getAll:      ()         => ipcRenderer.invoke('library:getAll'),
-    getBook:     (id)       => ipcRenderer.invoke('library:getBook', id),
-    addBook:     (data)     => ipcRenderer.invoke('library:addBook', data),
-    updateBook:  (id, f)    => ipcRenderer.invoke('library:updateBook', id, f),
-    deleteBook:  (id)       => ipcRenderer.invoke('library:deleteBook', id),
-    bookExists:  (id)       => ipcRenderer.invoke('library:bookExists', id),
+    /** @returns {Promise<Book[]>} */
+    getAll:     ()         => ipcRenderer.invoke('library:getAll'),
+    /** @returns {Promise<Book|null>} */
+    getBook:    (id)       => ipcRenderer.invoke('library:getBook', id),
+    /** @returns {Promise<Book>} */
+    addBook:    (data)     => ipcRenderer.invoke('library:addBook', data),
+    /** @returns {Promise<Book>} */
+    updateBook: (id, f)    => ipcRenderer.invoke('library:updateBook', id, f),
+    /** @returns {Promise<{success:true}>} */
+    deleteBook: (id)       => ipcRenderer.invoke('library:deleteBook', id),
+    /** @returns {Promise<boolean>} */
+    bookExists: (id)       => ipcRenderer.invoke('library:bookExists', id),
   },
 
   // ── PROGRESS ─────────────────────────────────────────────
   progress: {
+    /** @returns {Promise<Progress|null>} */
     get:   (bookId) => ipcRenderer.invoke('progress:get', bookId),
+    /** @returns {Promise<{success:true}>} */
     save:  (data)   => ipcRenderer.invoke('progress:save', data),
+    /** @returns {Promise<{success:true}>} */
     reset: (bookId) => ipcRenderer.invoke('progress:reset', bookId),
   },
 
   // ── SETTINGS ─────────────────────────────────────────────
   settings: {
+    /** @returns {Promise<any>} resolved value or defaultVal */
     get:    (key, def) => ipcRenderer.invoke('settings:get', key, def),
+    /** @returns {Promise<{success:true}>} */
     set:    (key, val) => ipcRenderer.invoke('settings:set', key, val),
+    /** @returns {Promise<Record<string,any>>} */
     getAll: ()         => ipcRenderer.invoke('settings:getAll'),
   },
 
-  // ── FILE ─────────────────────────────────────────────────
+  // ── FILE / DIALOG ─────────────────────────────────────────
   dialog: {
+    /** @returns {Promise<FileInfo|null>} */
     openFile: () => ipcRenderer.invoke('dialog:openFile'),
   },
   file: {
+    /** @returns {Promise<string|null>} base64 encoded file contents */
     read:   (p) => ipcRenderer.invoke('file:read', p),
+    /** @returns {Promise<boolean>} */
     exists: (p) => ipcRenderer.invoke('file:exists', p),
   },
 
-  // ── APP ──────────────────────────────────────────────────
-  app: {
-    getVersion:      () => ipcRenderer.invoke('app:getVersion'),
-    getUserDataPath: () => ipcRenderer.invoke('app:getUserDataPath'),
-  },
+  // ── SHELL ────────────────────────────────────────────────
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
-  // ── COLLECTIONS ─────────────────────────────────────────
+  // ── COLLECTIONS ──────────────────────────────────────────
   collections: {
+    /** @returns {Promise<Collection[]>} */
     getAll:             ()           => ipcRenderer.invoke('collections:getAll'),
+    /** @returns {Promise<Collection|null>} */
     get:                (id)         => ipcRenderer.invoke('collections:get', id),
+    /** @returns {Promise<Collection>} */
     create:             (name, col)  => ipcRenderer.invoke('collections:create', name, col),
+    /** @returns {Promise<Collection>} */
     update:             (id, f)      => ipcRenderer.invoke('collections:update', id, f),
+    /** @returns {Promise<{success:true}>} */
     delete:             (id)         => ipcRenderer.invoke('collections:delete', id),
+    /** @returns {Promise<{success:true}>} */
     addBook:            (bId, cId)   => ipcRenderer.invoke('collections:addBook', bId, cId),
+    /** @returns {Promise<{success:true}>} */
     removeBook:         (bId, cId)   => ipcRenderer.invoke('collections:removeBook', bId, cId),
+    /** @returns {Promise<Collection[]>} */
     getBookCollections: (bId)        => ipcRenderer.invoke('collections:getBookCollections', bId),
+    /** @returns {Promise<Book[]>} */
     getBooks:           (cId)        => ipcRenderer.invoke('collections:getBooks', cId),
   },
 
-  // ── COVERS ─────────────────────────────────────────────
+  // ── COVERS ───────────────────────────────────────────────
   cover: {
+    /** @returns {Promise<string>} saved cover file path */
     save:    (data) => ipcRenderer.invoke('cover:save', data),
+    /** @returns {Promise<string|null>} */
     getPath: (bId)  => ipcRenderer.invoke('cover:getPath', bId),
   },
 
-  // ── EDGE TTS (Natural Neural Voices) ───────────────────
+  // ── EDGE TTS (Neural voices — no API key required) ────────
   tts: {
-    getVoices:   ()     => ipcRenderer.invoke('tts:getVoices'),
-    synthesize:  (opts) => ipcRenderer.invoke('tts:synthesize', opts),  },
+    /** @returns {Promise<Voice[]>} */
+    getVoices:  ()     => ipcRenderer.invoke('tts:getVoices'),
+    /**
+     * @param {{ text: string, voice: string, speed?: number, pitch?: number }} opts
+     * @returns {Promise<{ audio: string, wordBoundaries: any[] }>} base64 MP3
+     */
+    synthesize: (opts) => ipcRenderer.invoke('tts:synthesize', opts),
+  },
 
-  // ── EXPORT ──────────────────────────────────────
+  // ── EXPORT ───────────────────────────────────────────────
   export: {
+    /**
+     * Show save dialog for MP3.
+     * @returns {Promise<string|null>} file path, or null if cancelled
+     */
     saveDialog: (title) => ipcRenderer.invoke('export:saveDialog', title),
-    writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),  }
+    /**
+     * Concatenate base64 chunks and write to disk.
+     * @param {{ path: string, chunks: string[] }} data
+     * @returns {Promise<{success:true}>}
+     */
+    writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
+  },
 });
+

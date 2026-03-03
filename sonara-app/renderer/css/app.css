@@ -3,6 +3,56 @@
    3-panel fixed layout · Word highlight · Dark luxury theme
 ══════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════
+   DESIGN SYSTEM — shared tokens (theme-independent)
+══════════════════════════════════════════════════════════ */
+:root {
+  /* ── Spacing scale ── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ── Border radius scale ── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-full: 9999px;
+
+  /* ── Transition speeds ── */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 350ms;
+  --ease:     ease;
+
+  /* ── Z-index scale ── */
+  --z-base:      0;
+  --z-raised:   10;
+  --z-sticky:   50;
+  --z-topbar:  100;
+  --z-dropdown:150;
+  --z-modal:   200;
+  --z-toast:   300;
+
+  /* ── Layout dimensions (resize-aware) ── */
+  --topbar-h:  48px;
+  --player-h:  76px;
+  --handle-w:  6px;
+  --left-w:    clamp(200px, 20vw, 300px);
+  --right-w:   clamp(230px, 20vw, 310px);
+  --font-reader: 17px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   DARK / BLACK THEME (default)
+══════════════════════════════════════════════════════════ */
 :root,
 [data-theme="black"] {
   --bg:          #0c0c0f;
@@ -19,29 +69,27 @@
   --accent-select: rgba(200,169,110,.1);
   --accent-border: rgba(200,169,110,.25);
   --accent-border-hi: rgba(200,169,110,.4);
-  --text:        #ffffff;
-  --text-dim:    #ffffff;
+  --text:        #f0eff8;
+  --text-dim:    #c8c6d8;
   --text-muted:  #4a4858;
   --green:       #52c87a;
   --red:         #e05252;
   --purple:      #a87de0;
-  --topbar-h:    46px;
-  --player-h:    74px;
-  --left-w:      240px;
-  --right-w:     260px;
-  --font-reader: 17px;
   --overlay-bg:  rgba(12,12,15,.92);
   --grad-start:  #c8a96e;
   --grad-end:    #9b7a4e;
   --play-btn-fg: #1a1206;
+  --handle-bg:   rgba(255,255,255,.04);
+  --handle-hover: rgba(200,169,110,.15);
+  --focus-ring:  0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   /* Reading highlights */
-  --sentence-bg:       rgba(200,169,110,.06);
-  --highlight-bg:      rgba(200,169,110,.22);
-  --highlight-color:   #e8c88a;
-  --highlight-glow:    rgba(200,169,110,.4);
-  --spoken-color:      rgba(255,255,255,.55);
-  --unspoken-color:    #4a4858;
-  --btn-hover-bg:      rgba(255,255,255,.06);
+  --sentence-bg:    rgba(200,169,110,.06);
+  --highlight-bg:   rgba(200,169,110,.22);
+  --highlight-color: #e8c88a;
+  --highlight-glow:  rgba(200,169,110,.4);
+  --spoken-color:    rgba(255,255,255,.45);
+  --unspoken-color:  #4a4858;
+  --btn-hover-bg:    rgba(255,255,255,.06);
 }
 
 /* ── WHITE THEME ── */
@@ -70,14 +118,17 @@
   --grad-start:  #8b6914;
   --grad-end:    #6e5310;
   --play-btn-fg: #ffffff;
+  --handle-bg:   rgba(0,0,0,.04);
+  --handle-hover: rgba(139,105,20,.12);
+  --focus-ring:  0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   /* Reading highlights */
-  --sentence-bg:       rgba(139,105,20,.12);
-  --highlight-bg:      rgba(139,105,20,.28);
-  --highlight-color:   #7a5500;
-  --highlight-glow:    rgba(139,105,20,.3);
-  --spoken-color:      #a09f98;
-  --unspoken-color:    #0a0e1a;
-  --btn-hover-bg:      rgba(0,0,0,.05);
+  --sentence-bg:    rgba(139,105,20,.12);
+  --highlight-bg:   rgba(139,105,20,.28);
+  --highlight-color: #7a5500;
+  --highlight-glow:  rgba(139,105,20,.3);
+  --spoken-color:    #a09f98;
+  --unspoken-color:  #0a0e1a;
+  --btn-hover-bg:    rgba(0,0,0,.05);
 }
 
 /* ── BLUE THEME ── */
@@ -106,14 +157,17 @@
   --grad-start:  #4a9eff;
   --grad-end:    #2a6ecc;
   --play-btn-fg: #0a0e1a;
+  --handle-bg:   rgba(255,255,255,.04);
+  --handle-hover: rgba(74,158,255,.15);
+  --focus-ring:  0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   /* Reading highlights */
-  --sentence-bg:       rgba(74,158,255,.06);
-  --highlight-bg:      rgba(74,158,255,.22);
-  --highlight-color:   #6bb3ff;
-  --highlight-glow:    rgba(74,158,255,.4);
-  --spoken-color:      rgba(200,208,224,.55);
-  --unspoken-color:    #4a5a7a;
-  --btn-hover-bg:      rgba(255,255,255,.06);
+  --sentence-bg:    rgba(74,158,255,.06);
+  --highlight-bg:   rgba(74,158,255,.22);
+  --highlight-color: #6bb3ff;
+  --highlight-glow:  rgba(74,158,255,.4);
+  --spoken-color:    rgba(200,208,224,.45);
+  --unspoken-color:  #4a5a7a;
+  --btn-hover-bg:    rgba(255,255,255,.06);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -248,8 +302,31 @@ body:not(.mobile-layout) .mobile-only {
 }
 .tb-icon-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
 
+/* Right-panel toggle button (visible on narrow screens or explicitly) */
+.rp-toggle-btn {
+  display: none;
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  align-items: center; justify-content: center;
+  transition: all var(--dur-base);
+  -webkit-app-region: no-drag;
+}
+.rp-toggle-btn:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent-border); }
+.rp-toggle-btn.active { color: var(--accent); border-color: var(--accent-border); background: var(--accent-dim); }
+
+/* Focus ring standard — applies to all interactive elements */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring) !important;
+}
+
 /* ──────────────────────────────────────────────────────────
-   3-PANEL LAYOUT
+   3-PANEL LAYOUT  (grid: left | handle | center | handle | right)
 ────────────────────────────────────────────────────────── */
 .layout {
   position: fixed;
@@ -257,8 +334,61 @@ body:not(.mobile-layout) .mobile-only {
   left: 0; right: 0;
   bottom: var(--player-h);
   display: grid;
-  grid-template-columns: var(--left-w) 1fr var(--right-w);
+  grid-template-columns: var(--left-w) var(--handle-w) 1fr var(--handle-w) var(--right-w);
   overflow: hidden;
+  transition: grid-template-columns var(--dur-base) var(--ease);
+}
+
+/* Right panel collapsed */
+.layout.rp-collapsed {
+  grid-template-columns: var(--left-w) var(--handle-w) 1fr 0 0;
+}
+.layout.rp-collapsed .panel-right,
+.layout.rp-collapsed #resizeRight {
+  width: 0;
+  overflow: hidden;
+  border: none;
+  min-width: 0;
+}
+
+/* ── RESIZE HANDLES ── */
+.resize-handle {
+  position: relative;
+  background: var(--handle-bg);
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: var(--z-raised);
+  transition: background var(--dur-fast);
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 2px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--border2);
+  opacity: 0;
+  transition: opacity var(--dur-base);
+}
+.resize-handle:hover { background: var(--handle-hover); }
+.resize-handle:hover::after,
+.resize-handle.dragging::after { opacity: 1; }
+.resize-handle.dragging { background: var(--handle-hover); }
+
+/* Responsive: auto-collapse right panel on narrow windows */
+@media (max-width: 1100px) {
+  :root { --right-w: clamp(0px, 0px, 0px); }
+  .layout { grid-template-columns: var(--left-w) var(--handle-w) 1fr 0 0; }
+  .panel-right, #resizeRight { display: none; }
+  .rp-toggle-btn { display: flex !important; }
+}
+@media (max-width: 860px) {
+  :root { --left-w: clamp(0px, 0px, 0px); }
+  .panel-left, #resizeLeft { display: none; }
+  .layout { grid-template-columns: 0 0 1fr 0 0; }
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -266,7 +396,7 @@ body:not(.mobile-layout) .mobile-only {
 ────────────────────────────────────────────────────────── */
 .panel-left {
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-right: none;
   display: flex; flex-direction: column;
   overflow: hidden;
 }
@@ -786,9 +916,10 @@ body:not(.mobile-layout) .mobile-only {
 ────────────────────────────────────────────────────────── */
 .panel-right {
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-left: none;
   display: flex; flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 .rp-section {
   padding: 14px 16px;

@@ -36,6 +36,28 @@ let booksDir;   // where we copy user files
 let coversDir;  // where we save extracted cover images
 
 // ─────────────────────────────────────────────────────────────
+//  IPC STANDARD RESPONSE WRAPPER
+//  All handlers should use ipcHandler() to guarantee consistent
+//  error logging and structured error propagation to the renderer.
+//  Success: return any value
+//  Failure: throw an Error — ipcHandler adds .code and logs it
+// ─────────────────────────────────────────────────────────────
+function ipcHandler(fn) {
+  return async (event, ...args) => {
+    try {
+      return await fn(event, ...args);
+    } catch (err) {
+      const code = err.code || 'ERR_IPC';
+      const msg  = err.message || String(err);
+      console.error(`[IPC] ${code}: ${msg}`);
+      const e    = new Error(msg);
+      e.code     = code;
+      throw e;
+    }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
 //  APP BOOTSTRAP
 // ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
@@ -111,13 +133,9 @@ function createWindow() {
 // ─────────────────────────────────────────────────────────────
 //  IPC — LIBRARY
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('library:getAll', () => {
-  return db.getAllBooks();
-});
-
-ipcMain.handle('library:getBook', (_, id) => {
-  return db.getBook(id);
-});
+ipcMain.handle('library:getAll',    ipcHandler(() => db.getAllBooks()));
+ipcMain.handle('library:getBook',   ipcHandler((_, id) => db.getBook(id)));
+ipcMain.handle('library:bookExists',ipcHandler((_, id) => db.bookExists(id)));
 
 ipcMain.handle('library:addBook', async (_, bookData) => {
   try {
@@ -154,56 +172,35 @@ ipcMain.handle('library:addBook', async (_, bookData) => {
   }
 });
 
-ipcMain.handle('library:updateBook', (_, id, fields) => {
+ipcMain.handle('library:updateBook', ipcHandler((_, id, fields) => {
   db.updateBook(id, fields);
   return db.getBook(id);
-});
+}));
 
-ipcMain.handle('library:deleteBook', (_, id) => {
+ipcMain.handle('library:deleteBook', ipcHandler(async (_, id) => {
   const book = db.getBook(id);
   if (book && book.file_path && fs.existsSync(book.file_path)) {
     try { fs.unlinkSync(book.file_path); } catch {}
   }
   db.deleteBook(id);
   return { success: true };
-});
+}));
 
-ipcMain.handle('library:bookExists', (_, id) => {
-  return db.bookExists(id);
-});
+// library:bookExists is already handled above via ipcHandler
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — PROGRESS
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('progress:get', (_, bookId) => {
-  return db.getProgress(bookId);
-});
-
-ipcMain.handle('progress:save', (_, data) => {
-  db.saveProgress(data);
-  return { success: true };
-});
-
-ipcMain.handle('progress:reset', (_, bookId) => {
-  db.resetProgress(bookId);
-  return { success: true };
-});
+ipcMain.handle('progress:get',   ipcHandler((_, bookId) => db.getProgress(bookId)));
+ipcMain.handle('progress:save',  ipcHandler((_, data)   => { db.saveProgress(data);   return { success: true }; }));
+ipcMain.handle('progress:reset', ipcHandler((_, bookId) => { db.resetProgress(bookId); return { success: true }; }));
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — SETTINGS
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('settings:get', (_, key, defaultVal) => {
-  return db.getSetting(key, defaultVal);
-});
-
-ipcMain.handle('settings:set', (_, key, value) => {
-  db.setSetting(key, value);
-  return { success: true };
-});
-
-ipcMain.handle('settings:getAll', () => {
-  return db.getAllSettings();
-});
+ipcMain.handle('settings:get',    ipcHandler((_, key, def) => db.getSetting(key, def)));
+ipcMain.handle('settings:set',    ipcHandler((_, key, val) => { db.setSetting(key, val); return { success: true }; }));
+ipcMain.handle('settings:getAll', ipcHandler(() => db.getAllSettings()));
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — FILE DIALOG & READING
@@ -253,14 +250,18 @@ ipcMain.handle('file:exists', (_, filePath) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-//  IPC — APP INFO
+//  IPC — APP META
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('app:getVersion', () => app.getVersion());
-ipcMain.handle('app:getUserDataPath', () => app.getPath('userData'));
-
-ipcMain.handle('shell:openExternal', (_, url) => {
-  shell.openExternal(url);
-});
+ipcMain.handle('app:getVersion',     ipcHandler(() => app.getVersion()));
+ipcMain.handle('app:getUserDataPath',ipcHandler(() => app.getPath('userData')));
+ipcMain.handle('app:getMeta',        ipcHandler(() => ({
+  version:  app.getVersion(),
+  platform: process.platform,
+  arch:     process.arch,
+  name:     app.getName(),
+  userData: app.getPath('userData'),
+})));
+ipcMain.handle('shell:openExternal', ipcHandler((_, url) => shell.openExternal(url)));
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — EDGE TTS (Natural Neural Voices)
@@ -276,39 +277,15 @@ ipcMain.handle('tts:getVoices', async () => {
 // ─────────────────────────────────────────────────────────────
 //  IPC — COLLECTIONS
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('collections:getAll', () => db.getAllCollections());
-
-ipcMain.handle('collections:get', (_, id) => db.getCollection(id));
-
-ipcMain.handle('collections:create', (_, name, color) => db.createCollection(name, color));
-
-ipcMain.handle('collections:update', (_, id, fields) => {
-  db.updateCollection(id, fields);
-  return db.getCollection(id);
-});
-
-ipcMain.handle('collections:delete', (_, id) => {
-  db.deleteCollection(id);
-  return { success: true };
-});
-
-ipcMain.handle('collections:addBook', (_, bookId, collectionId) => {
-  db.addBookToCollection(bookId, collectionId);
-  return { success: true };
-});
-
-ipcMain.handle('collections:removeBook', (_, bookId, collectionId) => {
-  db.removeBookFromCollection(bookId, collectionId);
-  return { success: true };
-});
-
-ipcMain.handle('collections:getBookCollections', (_, bookId) => {
-  return db.getBookCollections(bookId);
-});
-
-ipcMain.handle('collections:getBooks', (_, collectionId) => {
-  return db.getCollectionBooks(collectionId);
-});
+ipcMain.handle('collections:getAll',  ipcHandler(() => db.getAllCollections()));
+ipcMain.handle('collections:get',     ipcHandler((_, id) => db.getCollection(id)));
+ipcMain.handle('collections:create',  ipcHandler((_, name, color) => db.createCollection(name, color)));
+ipcMain.handle('collections:update',  ipcHandler((_, id, fields) => { db.updateCollection(id, fields); return db.getCollection(id); }));
+ipcMain.handle('collections:delete',  ipcHandler((_, id) => { db.deleteCollection(id); return { success: true }; }));
+ipcMain.handle('collections:addBook', ipcHandler((_, bId, cId) => { db.addBookToCollection(bId, cId); return { success: true }; }));
+ipcMain.handle('collections:removeBook', ipcHandler((_, bId, cId) => { db.removeBookFromCollection(bId, cId); return { success: true }; }));
+ipcMain.handle('collections:getBookCollections', ipcHandler((_, bId) => db.getBookCollections(bId)));
+ipcMain.handle('collections:getBooks', ipcHandler((_, cId) => db.getCollectionBooks(cId)));
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — COVERS
