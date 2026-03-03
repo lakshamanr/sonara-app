@@ -342,135 +342,132 @@
   <!-- ── RIGHT: CONTROLS ── -->
   <aside class="panel-right" id="panelRight">
 
-    <!-- VOICE SECTION -->
-    <div class="rp-section">
-      <div class="rp-section-header">
-        <span class="rp-section-label">Voice</span>
-        <div style="display:flex;gap:6px;">
-          <button class="prev-sel-btn" id="refreshVoicesBtn" onclick="Reader.refreshVoices()" title="Refresh voice list">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            Refresh
-          </button>
-          <button class="prev-sel-btn" id="previewSelBtn" onclick="Reader.previewSelectedVoice()">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Preview
-          </button>
-        </div>
-      </div>
-      <div class="voice-sel-bar" id="voiceSelBar">
-        <div class="vsb-dot"></div>
-        <div class="vsb-name" id="vsbName">Loading…</div>
-        <div class="vsb-lang" id="vsbLang"></div>
-      </div>
-      <div class="voice-search-row">
-        <input type="text" class="voice-srch" id="voiceSearch" placeholder="Search voices…" oninput="Reader.filterVoices()"/>
-        <select class="voice-lang" id="langFilter" onchange="Reader.filterVoices()">
-          <option value="">All</option>
-        </select>
-      </div>
-      <div class="voice-list-wrap" id="voiceListWrap">
-        <div id="voiceList"><div class="voice-loading">Loading voices…</div></div>
-      </div>
-      <div class="voice-tip">Natural voices use Microsoft Neural TTS — no API key needed</div>
-    </div>
-
-    <!-- PLAYBACK SETTINGS -->
-    <div class="rp-section">
-      <div class="rp-section-header">
-        <span class="rp-section-label">Playback</span>
-      </div>
-      <div class="ctrl-row">
-        <label class="ctrl-label">Speed</label>
-        <input type="range" class="ctrl-range" id="speedSlider" min="0.5" max="2.5" step="0.05" value="1.0"
-          oninput="Reader.onSpeedChange(this.value)"/>
-        <span class="ctrl-val" id="speedVal">1.0×</span>
-      </div>
-      <div class="ctrl-row">
-        <label class="ctrl-label">Pitch</label>
-        <input type="range" class="ctrl-range" id="pitchSlider" min="0.5" max="2.0" step="0.1" value="1.0"
-          oninput="Reader.onPitchChange(this.value)"/>
-        <span class="ctrl-val" id="pitchVal">1.0</span>
-      </div>
-      <div class="ctrl-row">
-        <label class="ctrl-label">AI Style</label>
-        <select class="ctrl-select" id="narrateStyle">
-          <option value="natural" selected>Natural Flow</option>
-          <option value="dramatic">Dramatic</option>
-          <option value="academic">Academic</option>
-          <option value="casual">Casual</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- EXPORT TO MP3 -->
-    <div class="rp-section">
-      <div class="rp-section-header">
-        <span class="rp-section-label">Export</span>
-      </div>
-      <button class="export-mp3-btn" id="exportBtn" onclick="ExportMP3.start()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        Export to MP3
+    <!-- Tab bar — Controls | Chapters | Notes -->
+    <div class="rp-tabs">
+      <button class="rp-tab rp-tab-active" id="rpTabControls" onclick="Notes.switchTab('controls')">Controls</button>
+      <button class="rp-tab" id="rpTabChapters" onclick="Notes.switchTab('chapters')">
+        <span id="chaptersLabel">Chapters</span>
+        <span class="rp-tab-badge" id="chaptersCount"></span>
       </button>
-      <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
+      <button class="rp-tab" id="rpTabNotes" onclick="Notes.switchTab('notes')">
+        Notes
+        <span class="rp-tab-badge" id="notesTabCount"></span>
+      </button>
     </div>
 
-    <!-- CHAPTERS / NOTES TABS -->
-    <div class="rp-section rp-section-chapters">
+    <!-- Scrollable pane body -->
+    <div class="rp-body" id="rpPaneBody">
 
-      <!-- Tab row -->
-      <div class="rp-tabs">
-        <button class="rp-tab rp-tab-active" id="rpTabChapters" onclick="Notes.switchTab('chapters')">
-          <span id="chaptersLabel">Chapters</span>
-          <span class="rp-section-count" id="chaptersCount">0</span>
-        </button>
-        <button class="rp-tab" id="rpTabNotes" onclick="Notes.switchTab('notes')">
-          Notes
-          <span class="rp-tab-badge" id="notesTabCount"></span>
-        </button>
+      <!-- ── Controls pane ── -->
+      <div id="paneControls">
+
+        <!-- VOICE -->
+        <div class="rp-section">
+          <div class="rp-section-header">
+            <span class="rp-section-label">Voice</span>
+            <div style="display:flex;gap:6px;">
+              <button class="prev-sel-btn" id="refreshVoicesBtn" onclick="Reader.refreshVoices()" title="Refresh voice list">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Refresh
+              </button>
+              <button class="prev-sel-btn" id="previewSelBtn" onclick="Reader.previewSelectedVoice()">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Preview
+              </button>
+            </div>
+          </div>
+          <div class="voice-sel-bar" id="voiceSelBar">
+            <div class="vsb-dot"></div>
+            <div class="vsb-name" id="vsbName">Loading…</div>
+            <div class="vsb-lang" id="vsbLang"></div>
+          </div>
+          <div class="voice-search-row">
+            <input type="text" class="voice-srch" id="voiceSearch" placeholder="Search voices…" oninput="Reader.filterVoices()"/>
+            <select class="voice-lang" id="langFilter" onchange="Reader.filterVoices()">
+              <option value="">All</option>
+            </select>
+          </div>
+          <div class="voice-list-wrap" id="voiceListWrap">
+            <div id="voiceList"><div class="voice-loading">Loading voices…</div></div>
+          </div>
+          <div class="voice-tip">Natural voices use Microsoft Neural TTS — no API key needed</div>
+        </div>
+
+        <!-- PLAYBACK -->
+        <div class="rp-section">
+          <div class="rp-section-header">
+            <span class="rp-section-label">Playback</span>
+          </div>
+          <div class="ctrl-row">
+            <label class="ctrl-label">Speed</label>
+            <input type="range" class="ctrl-range" id="speedSlider" min="0.5" max="2.5" step="0.05" value="1.0"
+              oninput="Reader.onSpeedChange(this.value)"/>
+            <span class="ctrl-val" id="speedVal">1.0×</span>
+          </div>
+          <div class="ctrl-row">
+            <label class="ctrl-label">Pitch</label>
+            <input type="range" class="ctrl-range" id="pitchSlider" min="0.5" max="2.0" step="0.1" value="1.0"
+              oninput="Reader.onPitchChange(this.value)"/>
+            <span class="ctrl-val" id="pitchVal">1.0</span>
+          </div>
+          <div class="ctrl-row">
+            <label class="ctrl-label">AI Style</label>
+            <select class="ctrl-select" id="narrateStyle">
+              <option value="natural" selected>Natural Flow</option>
+              <option value="dramatic">Dramatic</option>
+              <option value="academic">Academic</option>
+              <option value="casual">Casual</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- EXPORT -->
+        <div class="rp-section">
+          <div class="rp-section-header">
+            <span class="rp-section-label">Export</span>
+          </div>
+          <button class="export-mp3-btn" id="exportBtn" onclick="ExportMP3.start()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export to MP3
+          </button>
+          <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
+        </div>
+
       </div>
 
-      <!-- Chapters list -->
-      <div id="rpChaptersWrap">
+      <!-- ── Chapters pane ── -->
+      <div id="rpChaptersWrap" style="display:none">
         <div class="chapters-list" id="chaptersList">
           <div class="chapters-empty">Open a book to see chapters</div>
         </div>
       </div>
 
-      <!-- Notes panel -->
-      <div id="rpNotesWrap" style="display:none">
+      <!-- ── Notes pane ── -->
+      <div id="rpNotesWrap" class="notes-pane" style="display:none">
 
-        <!-- Add note form -->
-        <div class="notes-add">
-          <div class="notes-add-header">
-            <select class="note-tag-sel" id="noteTagSel">
-              <option value="note">📝️ Note</option>
-              <option value="key">💡 Key Point</option>
-              <option value="quote">📌 Quote</option>
-              <option value="question">❓ Question</option>
-            </select>
-            <span class="notes-at-label">at:</span>
-            <span class="notes-position" id="notesPosition">—</span>
-          </div>
-          <textarea class="notes-textarea" id="noteTextarea"
-            placeholder="Write your note… (current chapter will be linked)"
-            rows="3"
-            onkeydown="if(event.ctrlKey&&event.key==='Enter'){Notes.save();}"></textarea>
-          <div class="notes-add-footer">
-            <span class="notes-kbd-hint">Ctrl+Enter to save</span>
-            <button class="notes-save-btn" onclick="Notes.save()">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-                <polyline points="17 21 17 13 7 13 7 21"/>
-                <polyline points="7 3 7 8 15 8"/>
-              </svg>
-              Save Note
-            </button>
-          </div>
+        <!-- Tag + position row -->
+        <div class="note-meta-row">
+          <select class="note-tag-sel" id="noteTagSel">
+            <option value="note">📝 Note</option>
+            <option value="key">💡 Key Point</option>
+            <option value="quote">📌 Quote</option>
+            <option value="question">❓ Question</option>
+          </select>
+          <span class="notes-position" id="notesPosition">—</span>
         </div>
+
+        <!-- Textarea -->
+        <textarea class="note-input" id="noteTextarea"
+          placeholder="Write your note… (current chapter will be linked)"
+          rows="3"
+          onkeydown="if(event.ctrlKey&&event.key==='Enter'){Notes.save();}"></textarea>
+
+        <!-- Add button -->
+        <button class="note-add-btn" onclick="Notes.save()">Add Note</button>
 
         <!-- Notes list -->
         <div class="notes-list" id="notesList">
@@ -478,7 +475,8 @@
         </div>
 
       </div>
-    </div>
+
+    </div><!-- /.rp-body -->
 
   </aside>
 </div>
