@@ -63,6 +63,29 @@ contextBridge.exposeInMainWorld('sonara', {
     close:       () => ipcRenderer.invoke('win:close'),
     isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
   },
+
+  // ── DATABASE SYNC ─────────────────────────────────────────
+  db: {
+    /** @returns {Promise<string>} current db file path */
+    getPath:         ()    => ipcRenderer.invoke('db:getPath'),
+    /** @returns {Promise<string|null>} new path, or null if cancelled */
+    choosePath:      ()    => ipcRenderer.invoke('db:choosePath'),
+    /** @returns {Promise<string>} default userData path */
+    resetPath:       ()    => ipcRenderer.invoke('db:resetPath'),
+    /** @returns {Promise<{path,books,notes}|null>} */
+    export:          ()    => ipcRenderer.invoke('db:export'),
+    /** @returns {Promise<{books,notes,collections}|null>} */
+    import:          ()    => ipcRenderer.invoke('db:import'),
+    /** @returns {Promise<{url,token}>} */
+    getTursoConfig:  ()    => ipcRenderer.invoke('db:getTursoConfig'),
+    /** @returns {Promise<{success:true}>} */
+    saveTursoConfig: (cfg) => ipcRenderer.invoke('db:saveTursoConfig', cfg),
+    /** @returns {Promise<{ok:true}>} */
+    testTurso:       (cfg) => ipcRenderer.invoke('db:testTurso', cfg),
+    /** @returns {Promise<{pushed,pulled}>} */
+    syncTurso:       (cfg) => ipcRenderer.invoke('db:syncTurso', cfg),
+  },
+
   // ── FILE / DIALOG ─────────────────────────────────────────
   dialog: {
     /** @returns {Promise<FileInfo|null>} */

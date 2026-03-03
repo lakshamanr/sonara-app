@@ -58,17 +58,42 @@ function ipcHandler(fn) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  CONFIG FILE (stored separately from the DB so we can read before init)
+// ─────────────────────────────────────────────────────────────
+let _userData = '';
+let _configPath = '';
+
+function _readConfig() {
+  try {
+    if (fs.existsSync(_configPath)) return JSON.parse(fs.readFileSync(_configPath, 'utf8'));
+  } catch {}
+  return {};
+}
+
+function _writeConfig(updates) {
+  const data = { ..._readConfig(), ...updates };
+  fs.writeFileSync(_configPath, JSON.stringify(data, null, 2));
+}
+
+// ─────────────────────────────────────────────────────────────
 //  APP BOOTSTRAP
 // ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   try {
     const userData = app.getPath('userData');
+    _userData   = userData;
+    _configPath = path.join(userData, 'sonara-config.json');
     booksDir  = path.join(userData, 'books');
     coversDir = path.join(userData, 'covers');
     fs.mkdirSync(booksDir, { recursive: true });
     fs.mkdirSync(coversDir, { recursive: true });
 
-    db.init(userData);
+    // Determine DB location — custom cloud folder or default userData
+    const cfg    = _readConfig();
+    const dbPath = (cfg.customDbPath && fs.existsSync(cfg.customDbPath))
+      ? cfg.customDbPath
+      : path.join(userData, 'sonara.db');
+    db.init(dbPath);
     createWindow();
 
     app.on('activate', () => {
@@ -402,4 +427,229 @@ ipcMain.handle('notes:writePdf', async (_, { path: filePath, html }) => {
   win.close();
   fs.writeFileSync(filePath, pdfData);
   return { success: true };
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — DATABASE SYNC (custom path / export / import / Turso)
+// ─────────────────────────────────────────────────────────────
+
+/** Return current on-disk DB file path */
+ipcMain.handle('db:getPath', () => db.getPath());
+
+/** Get / set Turso credentials from config file */
+ipcMain.handle('db:getTursoConfig', () => {
+  const cfg = _readConfig();
+  return { url: cfg.tursoUrl || '', token: cfg.tursoToken || '' };
+});
+ipcMain.handle('db:saveTursoConfig', (_, { url, token }) => {
+  _writeConfig({ tursoUrl: url.trim(), tursoToken: token.trim() });
+  return { success: true };
+});
+
+/** Let user pick a folder — copy DB there, save in config, reopen */
+ipcMain.handle('db:choosePath', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Choose Database Folder (e.g. OneDrive, Dropbox)',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+
+  const chosenDir = result.filePaths[0];
+  const newDbPath = path.join(chosenDir, 'sonara.db');
+  const curDbPath = db.getPath();
+
+  // Copy existing DB to new location (keeps original as fallback)
+  if (curDbPath && fs.existsSync(curDbPath) && curDbPath !== newDbPath) {
+    fs.copyFileSync(curDbPath, newDbPath);
+    // Also copy WAL / SHM if present
+    for (const ext of ['-wal', '-shm']) {
+      const wal = curDbPath + ext;
+      if (fs.existsSync(wal)) fs.copyFileSync(wal, newDbPath + ext);
+    }
+  }
+
+  _writeConfig({ customDbPath: newDbPath });
+  db.reopen(newDbPath);
+  return newDbPath;
+});
+
+/** Reset to default userData path */
+ipcMain.handle('db:resetPath', () => {
+  _writeConfig({ customDbPath: null });
+  const defaultPath = path.join(_userData, 'sonara.db');
+  db.reopen(defaultPath);
+  return defaultPath;
+});
+
+/** Export all DB data as JSON — shows save dialog */
+ipcMain.handle('db:export', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Sonara Database',
+    defaultPath: path.join(app.getPath('documents'), 'sonara-backup.json'),
+    filters:     [{ name: 'JSON Backup', extensions: ['json'] }],
+  });
+  if (result.canceled) return null;
+  const data = db.exportAll();
+  fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8');
+  return { path: result.filePath, books: data.books.length, notes: data.notes.length };
+});
+
+/** Import data from a JSON backup file */
+ipcMain.handle('db:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:   'Import Sonara Backup',
+    filters: [{ name: 'JSON Backup', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const raw  = fs.readFileSync(result.filePaths[0], 'utf8');
+  const data = JSON.parse(raw);
+  const stats = db.importAll(data);
+  return stats;
+});
+
+// ── TURSO HTTP HELPERS ────────────────────────────────────────────────────
+
+function _toTursoArg(v) {
+  if (v === null || v === undefined) return { type: 'null' };
+  if (typeof v === 'number') {
+    return Number.isInteger(v)
+      ? { type: 'integer', value: String(v) }
+      : { type: 'float',   value: String(v) };
+  }
+  return { type: 'text', value: String(v) };
+}
+
+function _parseResult(result) {
+  const r = result?.response?.result;
+  if (!r || !r.cols) return [];
+  const cols = r.cols.map(c => c.name);
+  return r.rows.map(row =>
+    Object.fromEntries(cols.map((c, i) => {
+      const cell = row[i];
+      const val  = cell?.value ?? null;
+      const type = cell?.type;
+      if (type === 'integer') return [c, val === null ? null : parseInt(val, 10)];
+      if (type === 'float')   return [c, val === null ? null : parseFloat(val)];
+      if (type === 'null')    return [c, null];
+      return [c, val];
+    }))
+  );
+}
+
+async function _tursoHttp(url, token, pipeline) {
+  const https = require('https');
+  const base  = url.replace(/\/$/, '');
+  const body  = JSON.stringify({ requests: pipeline });
+  const u     = new URL('/v2/pipeline', base);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: u.hostname,
+      port:     443,
+      path:     u.pathname,
+      method:   'POST',
+      headers: {
+        'Authorization':  `Bearer ${token}`,
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('Turso: invalid response (' + res.statusCode + '): ' + data.slice(0, 300))); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+const TURSO_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT, format TEXT NOT NULL,
+   file_path TEXT NOT NULL, file_name TEXT NOT NULL, file_size INTEGER NOT NULL, cover_path TEXT,
+   total_chunks INTEGER DEFAULT 0, total_seconds INTEGER DEFAULT 0, duration_seconds REAL DEFAULT 0,
+   status TEXT DEFAULT 'unstarted', added_at INTEGER NOT NULL, last_read INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS progress (book_id TEXT PRIMARY KEY, chunk_index INTEGER DEFAULT 0,
+   word_index INTEGER DEFAULT 0, elapsed_seconds INTEGER DEFAULT 0, percent INTEGER DEFAULT 0,
+   updated_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, book_id TEXT NOT NULL,
+   chunk_index INTEGER DEFAULT 0, chunk_title TEXT DEFAULT '', tag TEXT DEFAULT 'note',
+   content TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS collections (id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+   color TEXT DEFAULT '#c8a96e', sort_order INTEGER DEFAULT 0, created_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS book_collections (book_id TEXT NOT NULL, collection_id INTEGER NOT NULL,
+   added_at INTEGER NOT NULL, PRIMARY KEY (book_id, collection_id))`,
+];
+
+/** Quick connectivity test */
+ipcMain.handle('db:testTurso', async (_, { url, token }) => {
+  if (!url || !token) throw new Error('Turso URL and token are required');
+  const res = await _tursoHttp(url, token, [
+    { type: 'execute', stmt: { sql: 'SELECT 1' } },
+    { type: 'close' },
+  ]);
+  if (res.results?.[0]?.type === 'error') throw new Error(res.results[0].error?.message || 'Unknown Turso error');
+  return { ok: true };
+});
+
+/** Full bidirectional sync with Turso */
+ipcMain.handle('db:syncTurso', async (_, { url, token }) => {
+  if (!url || !token) throw new Error('Enter Turso URL and token first');
+  const local = db.exportAll();
+
+  // ── PUSH: ensure schema + upsert all local records ──
+  const pushPipeline = [
+    ...TURSO_SCHEMA.map(sql => ({ type: 'execute', stmt: { sql } })),
+  ];
+
+  const pushBook = 'INSERT OR REPLACE INTO books (id,title,author,format,file_path,file_name,file_size,cover_path,total_chunks,total_seconds,duration_seconds,status,added_at,last_read) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+  for (const b of local.books)
+    pushPipeline.push({ type: 'execute', stmt: { sql: pushBook, args: [b.id,b.title,b.author,b.format,b.file_path,b.file_name,b.file_size,b.cover_path,b.total_chunks,b.total_seconds,b.duration_seconds,b.status,b.added_at,b.last_read].map(_toTursoArg) } });
+
+  const pushProg = 'INSERT OR REPLACE INTO progress (book_id,chunk_index,word_index,elapsed_seconds,percent,updated_at) VALUES (?,?,?,?,?,?)';
+  for (const p of local.progress)
+    pushPipeline.push({ type: 'execute', stmt: { sql: pushProg, args: [p.book_id,p.chunk_index,p.word_index,p.elapsed_seconds,p.percent,p.updated_at].map(_toTursoArg) } });
+
+  const pushNote = 'INSERT OR REPLACE INTO notes (id,book_id,chunk_index,chunk_title,tag,content,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)';
+  for (const n of local.notes)
+    pushPipeline.push({ type: 'execute', stmt: { sql: pushNote, args: [n.id,n.book_id,n.chunk_index,n.chunk_title,n.tag,n.content,n.created_at,n.updated_at].map(_toTursoArg) } });
+
+  const pushCol = 'INSERT OR IGNORE INTO collections (id,name,color,sort_order,created_at) VALUES (?,?,?,?,?)';
+  for (const c of local.collections)
+    pushPipeline.push({ type: 'execute', stmt: { sql: pushCol, args: [c.id,c.name,c.color,c.sort_order,c.created_at].map(_toTursoArg) } });
+
+  const pushBC = 'INSERT OR IGNORE INTO book_collections (book_id,collection_id,added_at) VALUES (?,?,?)';
+  for (const bc of local.book_collections)
+    pushPipeline.push({ type: 'execute', stmt: { sql: pushBC, args: [bc.book_id,bc.collection_id,bc.added_at].map(_toTursoArg) } });
+
+  pushPipeline.push({ type: 'close' });
+  await _tursoHttp(url, token, pushPipeline);
+
+  // ── PULL: fetch all remote records ──
+  const pullRes = await _tursoHttp(url, token, [
+    { type: 'execute', stmt: { sql: 'SELECT * FROM books' } },
+    { type: 'execute', stmt: { sql: 'SELECT * FROM progress' } },
+    { type: 'execute', stmt: { sql: 'SELECT * FROM notes' } },
+    { type: 'execute', stmt: { sql: 'SELECT * FROM collections' } },
+    { type: 'execute', stmt: { sql: 'SELECT * FROM book_collections' } },
+    { type: 'close' },
+  ]);
+
+  const remote = {
+    version:          2,
+    books:            _parseResult(pullRes.results[0]),
+    progress:         _parseResult(pullRes.results[1]),
+    notes:            _parseResult(pullRes.results[2]),
+    collections:      _parseResult(pullRes.results[3]),
+    book_collections: _parseResult(pullRes.results[4]),
+  };
+  const stats = db.importAll(remote);
+
+  return {
+    pushed: { books: local.books.length, notes: local.notes.length },
+    pulled: stats,
+  };
 });

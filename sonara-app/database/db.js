@@ -3,11 +3,12 @@ const path = require('path');
 const fs   = require('fs');
 
 let db;
+let _dbPath = null;
 
-function init(userDataPath) {
+function init(dbFullPath) {
   const Database = require('better-sqlite3');
-  const dbPath = path.join(userDataPath, 'sonara.db');
-  db = new Database(dbPath);
+  _dbPath = dbFullPath;
+  db = new Database(dbFullPath);
 
   // WAL mode for better performance
   db.pragma('journal_mode = WAL');
@@ -391,8 +392,87 @@ function deleteNote(id) {
   db.prepare('DELETE FROM notes WHERE id = ?').run(id);
 }
 
+// ── DB PATH / EXPORT / IMPORT / REOPEN ────────────────────────────────────
+
+function getPath() { return _dbPath; }
+
+function reopen(newFullPath) {
+  if (db) { try { db.close(); } catch {} }
+  _dbPath = newFullPath;
+  const Database = require('better-sqlite3');
+  db = new Database(newFullPath);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+}
+
+function exportAll() {
+  return {
+    version:          2,
+    exported_at:      Date.now(),
+    books:            db.prepare('SELECT * FROM books').all(),
+    progress:         db.prepare('SELECT * FROM progress').all(),
+    notes:            db.prepare('SELECT * FROM notes').all(),
+    collections:      db.prepare('SELECT * FROM collections').all(),
+    book_collections: db.prepare('SELECT * FROM book_collections').all(),
+  };
+}
+
+function importAll(data) {
+  if (!data || !data.books) throw new Error('Invalid or incompatible backup format');
+
+  const run = db.transaction(() => {
+    // Books
+    const bStmt = db.prepare(`
+      INSERT OR REPLACE INTO books
+        (id,title,author,format,file_path,file_name,file_size,cover_path,total_chunks,total_seconds,duration_seconds,status,added_at,last_read)
+      VALUES
+        (@id,@title,@author,@format,@file_path,@file_name,@file_size,@cover_path,@total_chunks,@total_seconds,@duration_seconds,@status,@added_at,@last_read)`);
+    for (const b of (data.books || [])) bStmt.run(b);
+
+    // Progress — newer timestamp wins
+    const pStmt = db.prepare(`
+      INSERT INTO progress (book_id,chunk_index,word_index,elapsed_seconds,percent,updated_at)
+      VALUES (@book_id,@chunk_index,@word_index,@elapsed_seconds,@percent,@updated_at)
+      ON CONFLICT(book_id) DO UPDATE SET
+        chunk_index     = CASE WHEN excluded.updated_at > updated_at THEN excluded.chunk_index     ELSE chunk_index     END,
+        word_index      = CASE WHEN excluded.updated_at > updated_at THEN excluded.word_index      ELSE word_index      END,
+        elapsed_seconds = CASE WHEN excluded.updated_at > updated_at THEN excluded.elapsed_seconds ELSE elapsed_seconds END,
+        percent         = CASE WHEN excluded.updated_at > updated_at THEN excluded.percent         ELSE percent         END,
+        updated_at      = MAX(excluded.updated_at, updated_at)`);
+    for (const p of (data.progress || [])) pStmt.run(p);
+
+    // Notes — INSERT OR IGNORE to preserve locally created notes
+    const nStmt = db.prepare(`
+      INSERT OR IGNORE INTO notes
+        (id,book_id,chunk_index,chunk_title,tag,content,created_at,updated_at)
+      VALUES
+        (@id,@book_id,@chunk_index,@chunk_title,@tag,@content,@created_at,@updated_at)`);
+    for (const n of (data.notes || [])) nStmt.run(n);
+
+    // Collections — INSERT OR IGNORE to preserve local collections
+    const cStmt = db.prepare(`
+      INSERT OR IGNORE INTO collections (id,name,color,sort_order,created_at)
+      VALUES (@id,@name,@color,@sort_order,@created_at)`);
+    for (const c of (data.collections || [])) cStmt.run(c);
+
+    // Book-collection links
+    const bcStmt = db.prepare(`
+      INSERT OR IGNORE INTO book_collections (book_id,collection_id,added_at)
+      VALUES (@book_id,@collection_id,@added_at)`);
+    for (const bc of (data.book_collections || [])) bcStmt.run(bc);
+  });
+
+  run();
+  return {
+    books:       (data.books       || []).length,
+    notes:       (data.notes       || []).length,
+    collections: (data.collections || []).length,
+  };
+}
+
 module.exports = {
   init,
+  getPath, reopen, exportAll, importAll,
   getAllBooks, getBook, addBook, updateBook, deleteBook, bookExists,
   getProgress, saveProgress, resetProgress,
   getAllCollections, getCollection, createCollection, updateCollection, deleteCollection,

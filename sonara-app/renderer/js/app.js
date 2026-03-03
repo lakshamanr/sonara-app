@@ -92,7 +92,104 @@ const UI = (() => {
     document.querySelectorAll('.theme-swatch').forEach(s => {
       s.classList.toggle('active', s.dataset.theme === currentTheme);
     });
+    // Load DB path
+    try {
+      const dbPath = await window.sonara.db.getPath();
+      const el = document.getElementById('syncDbPath');
+      if (el) { el.textContent = dbPath || '(default)'; el.title = dbPath || ''; }
+    } catch {}
+    // Load Turso config
+    try {
+      const { url, token } = await window.sonara.db.getTursoConfig();
+      const urlEl   = document.getElementById('tursoUrl');
+      const tokenEl = document.getElementById('tursoToken');
+      if (urlEl)   urlEl.value   = url   || '';
+      if (tokenEl) tokenEl.value = token || '';
+    } catch {}
     openModal('modalSettings');
+  }
+
+  // ── DB SYNC FUNCTIONS ─────────────────────────────────────
+
+  async function chooseDbPath() {
+    try {
+      const newPath = await window.sonara.db.choosePath();
+      if (!newPath) return;
+      const el = document.getElementById('syncDbPath');
+      if (el) { el.textContent = newPath; el.title = newPath; }
+      toast('Database moved — sync by placing this file in your cloud folder', 'success', 4000);
+    } catch (err) { toast('Could not move database: ' + err.message, 'error'); }
+  }
+
+  async function resetDbPath() {
+    if (!confirm('Reset database location to default (app data folder)?')) return;
+    try {
+      const def = await window.sonara.db.resetPath();
+      const el  = document.getElementById('syncDbPath');
+      if (el) { el.textContent = def; el.title = def; }
+      toast('Database reset to default location', 'success');
+    } catch (err) { toast('Reset failed: ' + err.message, 'error'); }
+  }
+
+  async function exportDb() {
+    try {
+      const result = await window.sonara.db.export();
+      if (!result) return;
+      toast(`Exported: ${result.books} books, ${result.notes} notes → JSON`, 'success', 3000);
+    } catch (err) { toast('Export failed: ' + err.message, 'error'); }
+  }
+
+  async function importDb() {
+    if (!confirm('Import backup? New records will be merged in (existing data is NOT overwritten).')) return;
+    try {
+      const stats = await window.sonara.db.import();
+      if (!stats) return;
+      toast(`Imported: ${stats.books} books, ${stats.notes} notes, ${stats.collections} collections`, 'success', 3500);
+    } catch (err) { toast('Import failed: ' + err.message, 'error'); }
+  }
+
+  function _tursoStatus(msg, type) {
+    const el = document.getElementById('tursoStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className   = 'sync-status ' + (type || '');
+  }
+
+  async function saveTursoConfig() {
+    const url   = (document.getElementById('tursoUrl')?.value   || '').trim();
+    const token = (document.getElementById('tursoToken')?.value || '').trim();
+    await window.sonara.db.saveTursoConfig({ url, token });
+    _tursoStatus('✔ Credentials saved', 'ok');
+    setTimeout(() => _tursoStatus(''), 2500);
+  }
+
+  async function testTurso() {
+    const url   = (document.getElementById('tursoUrl')?.value   || '').trim();
+    const token = (document.getElementById('tursoToken')?.value || '').trim();
+    _tursoStatus('Testing…', '');
+    try {
+      await window.sonara.db.testTurso({ url, token });
+      _tursoStatus('✔ Connected successfully', 'ok');
+    } catch (err) { _tursoStatus('✘ ' + err.message, 'err'); }
+  }
+
+  async function syncTurso() {
+    const url   = (document.getElementById('tursoUrl')?.value   || '').trim();
+    const token = (document.getElementById('tursoToken')?.value || '').trim();
+    const btn   = document.getElementById('btnSyncTurso');
+    if (btn) btn.disabled = true;
+    _tursoStatus('Syncing…', '');
+    try {
+      await window.sonara.db.saveTursoConfig({ url, token });
+      const result = await window.sonara.db.syncTurso({ url, token });
+      _tursoStatus(`✔ Pushed ${result.pushed.books}b/${result.pushed.notes}n — Pulled ${result.pulled.books}b/${result.pulled.notes}n`, 'ok');
+      toast('Turso sync complete', 'success', 3000);
+    } catch (err) {
+      _tursoStatus('✘ ' + err.message, 'err');
+      toast('Turso sync failed: ' + err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function saveSettings() {
@@ -135,6 +232,7 @@ const UI = (() => {
     toast, openModal, closeModal,
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
+    chooseDbPath, resetDbPath, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
     setTheme: applyTheme, _applyThemeVisual: setTheme,
     showResumeDialog, resumeBook, startFromBeginning
   };

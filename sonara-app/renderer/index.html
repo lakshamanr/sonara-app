@@ -582,6 +582,8 @@
     <div class="modal-close" onclick="UI.closeModal('modalSettings')">✕</div>
     <h2 class="modal-title">Settings</h2>
     <div class="settings-grid">
+      <!-- ── APPEARANCE ── -->
+      <div class="sg-section-head">Appearance</div>
       <div class="sg-item">
         <label class="sg-label">Font Size (Reader)</label>
         <select class="sg-select" id="settingFontSize">
@@ -610,6 +612,55 @@
       <div class="sg-item">
         <label class="sg-label">App Version</label>
         <span class="sg-value" id="settingVersion">1.0.0</span>
+      </div>
+
+      <!-- ── DATABASE & SYNC ── -->
+      <div class="sg-section-head sg-section-head--full">Database &amp; Sync</div>
+
+      <!-- DB Location -->
+      <div class="sg-item sg-item--full">
+        <label class="sg-label">Database Location</label>
+        <p class="sg-hint">Point to a OneDrive / Dropbox / Google Drive folder so the DB stays in sync across devices automatically.</p>
+        <div class="sync-path-row">
+          <span class="sync-path-val" id="syncDbPath" title="">Loading…</span>
+          <button class="sync-action-btn" onclick="UI.chooseDbPath()">Move to Folder…</button>
+          <button class="sync-action-btn sync-action-btn--secondary" onclick="UI.resetDbPath()">Reset</button>
+        </div>
+      </div>
+
+      <!-- Export / Import -->
+      <div class="sg-item">
+        <label class="sg-label">Backup</label>
+        <p class="sg-hint">Export a full JSON snapshot of all books, progress, notes and collections.</p>
+        <div class="sync-btn-row">
+          <button class="sync-action-btn" onclick="UI.exportDb()">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export JSON
+          </button>
+          <button class="sync-action-btn" onclick="UI.importDb()">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import JSON
+          </button>
+        </div>
+      </div>
+
+      <!-- Turso Cloud Sync -->
+      <div class="sg-item">
+        <label class="sg-label">Turso Cloud Sync</label>
+        <p class="sg-hint">Free cloud SQLite. Get your DB URL &amp; token from <a href="#" onclick="window.sonara.shell.openExternal('https://turso.tech');return false;">turso.tech</a>.</p>
+        <div class="sync-turso-form">
+          <input class="sync-input" id="tursoUrl"   placeholder="https://your-db-xxxx.turso.io" type="url" />
+          <input class="sync-input" id="tursoToken" placeholder="Auth token (eyJ…)" type="password" />
+          <div class="sync-btn-row">
+            <button class="sync-action-btn" id="btnSyncTurso" onclick="UI.syncTurso()">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync Now
+            </button>
+            <button class="sync-action-btn sync-action-btn--secondary" onclick="UI.testTurso()">Test Connection</button>
+            <button class="sync-action-btn sync-action-btn--secondary" onclick="UI.saveTursoConfig()">Save Credentials</button>
+          </div>
+          <span class="sync-status" id="tursoStatus"></span>
+        </div>
       </div>
     </div>
     <div class="modal-actions">
