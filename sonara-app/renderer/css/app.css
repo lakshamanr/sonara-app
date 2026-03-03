@@ -2903,3 +2903,307 @@ body.mode-reader  .layout { display: grid; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 4px; min-height: 18px;
 }
+
+/* ══════════════════════════════════════════════════════════
+   EXPORT BADGE — non-blocking floating progress card
+══════════════════════════════════════════════════════════ */
+.export-badge {
+  position: fixed;
+  bottom: calc(var(--player-h) + 12px);
+  right: 16px;
+  width: 280px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  z-index: var(--z-toast);
+  display: none;   /* shown via JS */
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+}
+.eb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.eb-head-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.eb-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.eb-cancel {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.eb-cancel:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+.eb-cancel:disabled { opacity: 0.4; cursor: default; }
+.eb-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Direct-child padding when no .eb-body wrapper exists */
+.export-badge > .eb-book    { padding: 10px 12px 0; }
+.export-badge > .eb-voice   { padding: 0 12px; }
+.export-badge > .eb-prog-wrap { margin: 6px 12px; }
+.export-badge > .eb-foot    { padding: 4px 12px 10px; }
+.export-badge > .eb-status  { padding: 0 12px 8px; }
+.eb-book {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eb-voice {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eb-prog-wrap {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255,255,255,.07);
+}
+.eb-prog-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--grad-end), var(--grad-start));
+  border-radius: 99px;
+  transition: width .4s ease;
+}
+.eb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.eb-pct {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.eb-counts {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.eb-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 16px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   NAV PANEL — left panel: cover art + chapter navigation
+══════════════════════════════════════════════════════════ */
+
+/* ── No-book placeholder ── */
+.nav-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.nav-empty-icon {
+  font-size: 40px;
+  opacity: .35;
+  line-height: 1;
+}
+.nav-empty-text {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.nav-open-lib-btn {
+  margin-top: 4px;
+  padding: 7px 16px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.nav-open-lib-btn:hover { background: var(--surface4, var(--surface3)); }
+
+/* ── Book content container ── */
+.nav-book {
+  display: none; /* shown via JS */
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Cover art ── */
+.nav-cover-wrap {
+  position: relative;
+  height: 180px;
+  flex-shrink: 0;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.nav-cover {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.nav-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+.nav-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 52px;
+  opacity: .25;
+}
+
+/* ── Title + author overlay ── */
+.nav-cover-info {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 20px 12px 10px;
+  background: linear-gradient(to top, rgba(0,0,0,.75) 0%, transparent 100%);
+  pointer-events: none;
+}
+.nav-book-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+.nav-book-author {
+  font-size: 11px;
+  color: rgba(255,255,255,.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+
+/* ── Chapter list header ── */
+.nav-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.nav-list-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.nav-list-count {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--surface3,var(--surface2));
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+}
+
+/* ── Scrollable chapter list ── */
+.nav-chapter-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.nav-chapter-list::-webkit-scrollbar { width: 4px; }
+.nav-chapter-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* ── Chapter row ── */
+.nav-ch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  margin: 0 4px;
+  transition: background var(--dur-fast) var(--ease);
+  min-width: 0;
+}
+.nav-ch-item:hover { background: var(--surface3, var(--surface2)); }
+.nav-ch-item.active {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb, 138,79,255),.18), transparent);
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;
+}
+.nav-ci-num {
+  font-size: 10px;
+  font-family: 'DM Mono', monospace;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  width: 20px;
+  text-align: right;
+}
+.nav-ci-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.nav-ch-item.active .nav-ci-name { color: var(--accent); font-weight: 500; }
+.nav-ci-dur {
+  font-size: 10px;
+  font-family: 'DM Mono', monospace;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}

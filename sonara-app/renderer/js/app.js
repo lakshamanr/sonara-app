@@ -380,6 +380,7 @@ const App = (() => {
         if (progress?.chunk_index > 0) {
           Reader.jumpToChunk(progress.chunk_index);
         }
+        _updateNavPanel(id).catch(() => {});
         showReader();
         return;
       }
@@ -411,6 +412,7 @@ const App = (() => {
     Reader.loadAudioBook(book, progress);
     await window.sonara.settings.set('lastBookId', book.id);
     Library.setActiveCard(book.id);
+    _updateNavPanel(book.id);
     showReader();
     pendingBookData = null;
   }
@@ -540,6 +542,7 @@ const App = (() => {
       // 7. Load into reader
       currentBookId = id;
       Reader.loadBook(chunks, id, resumeData);
+      _updateNavPanel(id); // update left panel cover + nav
 
       // Save as last-opened book for auto-load on next startup
       await window.sonara.settings.set('lastBookId', id);
@@ -648,11 +651,53 @@ const App = (() => {
     document.getElementById('tbCenter').textContent = '';
     document.getElementById('chaptersList').innerHTML = '<div class="chapters-empty">Open a book to see chapters</div>';
     Library.setActiveCard(null);
+    _updateNavPanel(null); // clear nav panel
   }
 
   function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ── RESPONSIVE HELPERS ────────────────────────────────────
+  // ── NAV PANEL (left panel cover + chapter list) ──────────
+  async function _updateNavPanel(bookId) {
+    const navEmpty = document.getElementById('navEmpty');
+    const navBook  = document.getElementById('navBook');
+    if (!navEmpty || !navBook) return;
+
+    if (!bookId) {
+      navEmpty.style.display = 'flex';
+      navBook.style.display  = 'none';
+      return;
+    }
+
+    navEmpty.style.display = 'none';
+    navBook.style.display  = 'flex';
+
+    // Populate title / author
+    try {
+      const book = await window.sonara.library.getBook(bookId);
+      if (book) {
+        document.getElementById('navBookTitle').textContent  = book.title  || '—';
+        document.getElementById('navBookAuthor').textContent = book.author || '';
+      }
+    } catch (_) {}
+
+    // Load cover art
+    const coverImg = document.getElementById('navCoverImg');
+    const coverPlc = document.getElementById('navCoverPlaceholder');
+    try {
+      const coverPath = await window.sonara.cover.getPath(bookId);
+      if (coverPath) {
+        coverImg.src           = 'file:///' + coverPath.replace(/\\/g, '/');
+        coverImg.style.display = 'block';
+        coverPlc.style.display = 'none';
+      } else {
+        coverImg.style.display = 'none';
+        coverPlc.style.display = 'flex';
+      }
+    } catch (_) {
+      coverImg.style.display = 'none';
+      coverPlc.style.display = 'flex';
+    }
+  } ────────────────────────────────────
   function _initResponsiveHelpers() {
     let lastWidth = window.innerWidth;
 

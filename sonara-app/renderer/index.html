@@ -165,35 +165,59 @@
 ══════════════════════════════════════════════════════════ -->
 <div class="layout">
 
-  <!-- ── LEFT: LIBRARY ── -->
+  <!-- ── LEFT: CHAPTER NAVIGATION ── -->
   <aside class="panel-left" id="panelLeft">
-    <div class="panel-header">
-      <span class="panel-label">Library</span>
-      <div class="lib-stats-mini" id="libStatsMini">
-        <span class="lsm-item" id="lsmTotal">0 books</span>
-        <span class="lsm-sep">·</span>
-        <span class="lsm-item reading" id="lsmReading">0 reading</span>
+
+    <!-- Legacy DOM nodes required by library.js (hidden from view) -->
+    <div id="libStatsMini" style="display:none">
+      <span class="lsm-item" id="lsmTotal"></span>
+      <span class="lsm-sep">·</span>
+      <span class="lsm-item reading" id="lsmReading"></span>
+    </div>
+    <div class="lib-empty-state" id="libEmpty" style="display:none"></div>
+    <div id="bookList" style="display:none"></div>
+
+    <!-- No-book state -->
+    <div class="nav-empty" id="navEmpty">
+      <div class="nav-empty-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+        </svg>
       </div>
+      <p class="nav-empty-text">Open a book to see<br>chapter navigation</p>
+      <button class="nav-open-lib-btn" onclick="App.showLibrary()">Open Library</button>
     </div>
 
-    <!-- Add book drop zone (when library empty) -->
-    <div class="lib-empty-state" id="libEmpty">
-      <div class="les-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+    <!-- Book open state -->
+    <div class="nav-book" id="navBook" style="display:none">
+
+      <!-- Cover art -->
+      <div class="nav-cover-wrap">
+        <div class="nav-cover" id="navCover">
+          <div class="nav-cover-placeholder" id="navCoverPlaceholder">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+            </svg>
+          </div>
+          <img class="nav-cover-img" id="navCoverImg" alt="" style="display:none"/>
+        </div>
+        <div class="nav-cover-info">
+          <div class="nav-book-title" id="navBookTitle">—</div>
+          <div class="nav-book-author" id="navBookAuthor"></div>
+        </div>
       </div>
-      <p class="les-text">No books yet.<br>Add a PDF or EPUB to get started.</p>
-      <button class="les-btn" onclick="App.addBook()">+ Add Book</button>
-    </div>
 
-    <!-- Book list -->
-    <div class="book-list" id="bookList"></div>
+      <!-- Navigation list header -->
+      <div class="nav-list-header">
+        <span class="nav-list-label" id="navListLabel">Chapters</span>
+        <span class="nav-list-count" id="navListCount">0</span>
+      </div>
 
-    <!-- Library footer -->
-    <div class="lib-footer">
-      <button class="lf-add-btn" onclick="App.addBook()">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add Book
-      </button>
+      <!-- Chapter / page navigation list -->
+      <div class="nav-chapter-list" id="navChapterList"></div>
+
     </div>
   </aside>
 
@@ -568,23 +592,32 @@
   </div>
 </div>
 
-<!-- Export Progress Modal -->
-<div class="modal-overlay" id="exportModal">
-  <div class="modal export-modal">
-    <h2 class="modal-title">Exporting Audiobook</h2>
-    <p class="export-modal-book" id="exportModalTitle">Book Title</p>
-    <p class="export-modal-voice">Voice: <span id="exportVoiceName">—</span></p>
-    <div class="export-prog-wrap">
-      <div class="export-prog-fill" id="exportProgFill"></div>
+<!-- Export Progress Badge (✔ non-blocking — floats above player bar) -->
+<div class="export-badge" id="exportBadge" style="display:none">
+  <div class="eb-head">
+    <div class="eb-head-left">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      <span class="eb-title">Exporting MP3</span>
     </div>
-    <div class="export-prog-info">
-      <span class="export-pct" id="exportPct">0%</span>
-      <span class="export-counts"><span id="exportDone">0</span>&nbsp;/&nbsp;<span id="exportTotal">0</span> parts synthesized</span>
-    </div>
-    <p class="export-status" id="exportStatus">Starting…</p>
-    <div class="modal-actions">
-      <button class="modal-btn-cancel" id="exportCancelBtn" onclick="ExportMP3.cancel()">Cancel</button>
-    </div>
+    <button class="eb-cancel" id="exportCancelBtn" onclick="ExportMP3.cancel()" title="Cancel export">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="eb-book" id="exportModalTitle">Book Title</div>
+  <div class="eb-voice">Voice: <span id="exportVoiceName">—</span></div>
+  <div class="eb-prog-wrap">
+    <div class="eb-prog-fill" id="exportProgFill"></div>
+  </div>
+  <div class="eb-foot">
+    <span class="eb-pct" id="exportPct">0%</span>
+    <span class="eb-counts"><span id="exportDone">0</span> / <span id="exportTotal">0</span></span>
+    <span class="eb-status" id="exportStatus">Starting…</span>
   </div>
 </div>
 

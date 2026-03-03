@@ -156,8 +156,9 @@ const ExportMP3 = (() => {
   function cancel() {
     if (_inProgress) {
       _cancelled = true;
-      document.getElementById('exportCancelBtn').textContent = 'Cancelling…';
-      document.getElementById('exportCancelBtn').disabled    = true;
+      const btn = document.getElementById('exportCancelBtn');
+      btn.disabled = true;
+      btn.title    = 'Cancelling…';
     } else {
       _hideModal();
     }
@@ -172,13 +173,14 @@ const ExportMP3 = (() => {
     document.getElementById('exportStatus').textContent     = 'Starting…';
     document.getElementById('exportPct').textContent        = '0%';
     document.getElementById('exportProgFill').style.width   = '0%';
-    document.getElementById('exportCancelBtn').textContent  = 'Cancel';
-    document.getElementById('exportCancelBtn').disabled     = false;
-    document.getElementById('exportModal').classList.add('open');
+    const btn = document.getElementById('exportCancelBtn');
+    btn.disabled = false;
+    btn.title    = 'Cancel export';
+    document.getElementById('exportBadge').style.display = 'flex';
   }
 
   function _hideModal() {
-    document.getElementById('exportModal').classList.remove('open');
+    document.getElementById('exportBadge').style.display = 'none';
   }
 
   function _updateProgress(done, total, label) {

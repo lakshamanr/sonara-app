@@ -1228,8 +1228,7 @@ const Reader = (() => {
     document.getElementById('chaptersLabel').textContent = label;
     document.getElementById('chaptersCount').textContent = chunks.length;
 
-    const el = document.getElementById('chaptersList');
-    el.innerHTML = chunks.map((c, i) => `
+    const itemsHTML = chunks.map((c, i) => `
       <div class="chapter-item${i === 0 ? ' active' : ''}" id="ch-item-${i}" onclick="Reader.jumpToChunk(${i})">
         <span class="ci-num">${String(i + 1).padStart(2, '0')}</span>
         <span class="ci-dot"></span>
@@ -1237,13 +1236,37 @@ const Reader = (() => {
         <span class="ci-dur">${_estimateDur(c.text)}</span>
       </div>`
     ).join('');
+
+    document.getElementById('chaptersList').innerHTML = itemsHTML;
+
+    // ── Mirror to left nav panel ──
+    const navLabel = document.getElementById('navListLabel');
+    const navCount = document.getElementById('navListCount');
+    const navList  = document.getElementById('navChapterList');
+    if (navLabel) navLabel.textContent = label;
+    if (navCount) navCount.textContent = chunks.length;
+    if (navList) {
+      navList.innerHTML = chunks.map((c, i) => `
+        <div class="nav-ch-item${i === 0 ? ' active' : ''}" id="nav-ch-item-${i}" onclick="Reader.jumpToChunk(${i})">
+          <span class="nav-ci-num">${String(i + 1).padStart(2, '0')}</span>
+          <span class="nav-ci-name">${_escHtml(c.title || (label.slice(0,-1) + ' ' + (i+1)))}</span>
+          <span class="nav-ci-dur">${_estimateDur(c.text)}</span>
+        </div>`
+      ).join('');
+    }
   }
 
   function _highlightChapterItem(idx) {
+    // Right panel
     document.querySelectorAll('.chapter-item').forEach((el, i) => {
       el.classList.toggle('active', i === idx);
     });
     document.getElementById('ch-item-' + idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    // Left nav panel
+    document.querySelectorAll('.nav-ch-item').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+    });
+    document.getElementById('nav-ch-item-' + idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function _updateChapterTitleBar(idx) {
