@@ -1568,6 +1568,7 @@ const Reader = (() => {
     applySettings,
     saveProgress: _saveProgress,
     saveBookmark,
-    getState: () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice })
+    getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice }),
+    getChunks: () => chunks
   };
 })();

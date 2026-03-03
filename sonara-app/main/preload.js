@@ -68,6 +68,10 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── EDGE TTS (Natural Neural Voices) ───────────────────
   tts: {
     getVoices:   ()     => ipcRenderer.invoke('tts:getVoices'),
-    synthesize:  (opts) => ipcRenderer.invoke('tts:synthesize', opts),
-  }
+    synthesize:  (opts) => ipcRenderer.invoke('tts:synthesize', opts),  },
+
+  // ── EXPORT ──────────────────────────────────────
+  export: {
+    saveDialog: (title) => ipcRenderer.invoke('export:saveDialog', title),
+    writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),  }
 });

@@ -362,6 +362,22 @@
       </div>
     </div>
 
+    <!-- EXPORT TO MP3 -->
+    <div class="rp-section">
+      <div class="rp-section-header">
+        <span class="rp-section-label">Export</span>
+      </div>
+      <button class="export-mp3-btn" id="exportBtn" onclick="ExportMP3.start()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Export to MP3
+      </button>
+      <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
+    </div>
+
     <!-- CHAPTERS / SECTIONS -->
     <div class="rp-section rp-section-chapters">
       <div class="rp-section-header">
@@ -540,6 +556,26 @@
   </div>
 </div>
 
+<!-- Export Progress Modal -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal export-modal">
+    <h2 class="modal-title">Exporting Audiobook</h2>
+    <p class="export-modal-book" id="exportModalTitle">Book Title</p>
+    <p class="export-modal-voice">Voice: <span id="exportVoiceName">—</span></p>
+    <div class="export-prog-wrap">
+      <div class="export-prog-fill" id="exportProgFill"></div>
+    </div>
+    <div class="export-prog-info">
+      <span class="export-pct" id="exportPct">0%</span>
+      <span class="export-counts"><span id="exportDone">0</span>&nbsp;/&nbsp;<span id="exportTotal">0</span> parts synthesized</span>
+    </div>
+    <p class="export-status" id="exportStatus">Starting…</p>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" id="exportCancelBtn" onclick="ExportMP3.cancel()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast-wrap" id="toastWrap"></div>
 
@@ -548,6 +584,7 @@
 <script src="js/cloudtts.js"></script>
 <script src="js/reader.js"></script>
 <script src="js/library.js"></script>
+<script src="js/export.js"></script>
 <script src="js/app.js"></script>
 
 </body>

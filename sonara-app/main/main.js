@@ -345,3 +345,26 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
     throw err;
   }
 });
+
+// ────────────────────────────────────────────────────────────
+//  IPC — EXPORT TO MP3
+// ────────────────────────────────────────────────────────────
+ipcMain.handle('export:saveDialog', async (_, defaultName) => {
+  const safe = (defaultName || 'Sonara Audiobook').replace(/[<>:"/\\|?*]/g, '_');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Audiobook as MP3',
+    defaultPath: path.join(app.getPath('downloads'), safe + '.mp3'),
+    filters:     [{ name: 'MP3 Audio', extensions: ['mp3'] }]
+  });
+  return result.canceled ? null : result.filePath;
+});
+
+ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
+  try {
+    const buffers = chunks.map(b64 => Buffer.from(b64, 'base64'));
+    fs.writeFileSync(filePath, Buffer.concat(buffers));
+    return { success: true };
+  } catch (err) {
+    throw err;
+  }
+});
