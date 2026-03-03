@@ -56,7 +56,13 @@ contextBridge.exposeInMainWorld('sonara', {
     /** @returns {Promise<Record<string,any>>} */
     getAll: ()         => ipcRenderer.invoke('settings:getAll'),
   },
-
+  // ── WINDOW CONTROLS ──────────────────────────────
+  win: {
+    minimize:    () => ipcRenderer.invoke('win:minimize'),
+    maximize:    () => ipcRenderer.invoke('win:maximize'),
+    close:       () => ipcRenderer.invoke('win:close'),
+    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
+  },
   // ── FILE / DIALOG ─────────────────────────────────────────
   dialog: {
     /** @returns {Promise<FileInfo|null>} */

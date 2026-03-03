@@ -236,7 +236,7 @@ body:not(.mobile-layout) .mobile-only {
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 0 0 16px;  /* no right padding — win controls sit flush at edge */
   gap: 12px;
   z-index: 100;
   -webkit-app-region: drag;
@@ -278,6 +278,7 @@ body:not(.mobile-layout) .mobile-only {
 .tb-right {
   display: flex; align-items: center; gap: 8px;
   -webkit-app-region: no-drag;
+  padding-right: 10px;
 }
 .tb-btn {
   display: flex; align-items: center; gap: 6px;
@@ -328,6 +329,36 @@ body:not(.mobile-layout) .mobile-only {
 }
 .rp-toggle-btn:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent-border); }
 .rp-toggle-btn.active { color: var(--accent); border-color: var(--accent-border); background: var(--accent-dim); }
+
+/* ── Custom window controls (min / max / close) ── */
+.win-controls {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+/* Hide on macOS — native traffic lights handle it */
+.platform-darwin .win-controls { display: none !important; }
+
+.win-btn {
+  width: 44px;
+  height: 100%;
+  min-height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.win-btn:hover        { background: rgba(255,255,255,0.06); color: var(--text); }
+.win-btn-close:hover  { background: #c42b1c; color: #fff !important; }
+.win-btn:active       { opacity: 0.8; }
 
 /* Focus ring standard — applies to all interactive elements */
 :focus-visible { outline: none; box-shadow: var(--focus-ring); }

@@ -90,13 +90,16 @@ app.on('window-all-closed', () => {
 function createWindow() {
   const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
 
+  const isMac = process.platform === 'darwin';
+
   mainWindow = new BrowserWindow({
     width:  Math.min(1400, width  - 40),
     height: Math.min(900,  height - 40),
     minWidth:  900,
     minHeight: 600,
     icon: path.join(__dirname, 'logo', 'logo.png'),
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    frame:         isMac,                  // Mac keeps native frame; Windows goes frameless
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     backgroundColor: '#0c0c0f',
     show: false,
     webPreferences: {
@@ -129,6 +132,17 @@ function createWindow() {
     db.setSetting('windowBounds', mainWindow.getBounds());
   });
 }
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — WINDOW CONTROLS (custom title bar on Windows)
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('win:minimize',  () => mainWindow && mainWindow.minimize());
+ipcMain.handle('win:maximize',  () => {
+  if (!mainWindow) return;
+  mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+});
+ipcMain.handle('win:close',     () => mainWindow && mainWindow.close());
+ipcMain.handle('win:isMaximized', () => mainWindow ? mainWindow.isMaximized() : false);
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — LIBRARY
