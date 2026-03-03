@@ -1,0 +1,5 @@
+sonara-app/node_modules/
+sonara-app/dist/
+sonara-app/*.db
+sonara-app/*.db-shm
+sonara-app/*.db-wal
