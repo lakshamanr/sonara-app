@@ -26,3 +26,6 @@ desktop.ini
 
 # IDE
 .vscode/
+
+# Visual Studio
+.vs/
