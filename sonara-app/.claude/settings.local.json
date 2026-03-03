@@ -23,7 +23,16 @@
       "Bash(echo:*)",
       "Bash(ls:*)",
       "Bash(certutil:*)",
-      "Bash(node -p \"const crypto=require\\(''crypto''\\);const fs=require\\(''fs''\\);[''Sonara-Setup-2.0.0.exe'',''Sonara-Portable-2.0.0.exe''].map\\(f=>{const hash=crypto.createHash\\(''sha256''\\).update\\(fs.readFileSync\\(f\\)\\).digest\\(''hex''\\);const size=\\(fs.statSync\\(f\\).size/\\(1024*1024\\)\\).toFixed\\(1\\);return f+'' \\(''+size+'' MB\\)\\\\nSHA256: ''+hash}\\).join\\(''\\\\n\\\\n''\\)\")"
+      "Bash(node -p \"const crypto=require\\(''crypto''\\);const fs=require\\(''fs''\\);[''Sonara-Setup-2.0.0.exe'',''Sonara-Portable-2.0.0.exe''].map\\(f=>{const hash=crypto.createHash\\(''sha256''\\).update\\(fs.readFileSync\\(f\\)\\).digest\\(''hex''\\);const size=\\(fs.statSync\\(f\\).size/\\(1024*1024\\)\\).toFixed\\(1\\);return f+'' \\(''+size+'' MB\\)\\\\nSHA256: ''+hash}\\).join\\(''\\\\n\\\\n''\\)\")",
+      "Bash(ping:*)",
+      "Bash(./node_modules/.bin/electron.cmd:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(node -pe:*)",
+      "Bash(npx --yes create-electron-app:*)",
+      "Bash(cmd //c \"node_modules\\\\.bin\\\\electron.cmd .\")"
+    ],
+    "additionalDirectories": [
+      "c:\\PersonalOneDrive\\OneDrive\\Sourcecode\\Tools\\sonara-app\\sonara-app"
     ]
   }
 }

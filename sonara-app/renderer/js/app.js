@@ -363,39 +363,44 @@ const App = (() => {
 
   // ── OPEN BOOK FROM LIBRARY ───────────────────────────────
   async function openBook(id) {
-    const book = await window.sonara.library.getBook(id);
-    if (!book) { UI.toast('Book not found in library', 'error'); return; }
+    try {
+      const book = await window.sonara.library.getBook(id);
+      if (!book) { UI.toast('Book not found in library', 'error'); return; }
 
-    // Check file still exists
-    const exists = await window.sonara.file.exists(book.file_path);
-    if (!exists) {
-      UI.toast('File missing — please re-add "' + book.title + '"', 'error');
-      return;
-    }
-
-    // If same book already parsed, just jump
-    if (id === currentBookId) {
-      const progress = await window.sonara.progress.get(id);
-      if (progress?.chunk_index > 0) {
-        Reader.jumpToChunk(progress.chunk_index);
+      // Check file still exists
+      const exists = await window.sonara.file.exists(book.file_path);
+      if (!exists) {
+        UI.toast('File missing — please re-add "' + book.title + '"', 'error');
+        return;
       }
-      return;
-    }
 
-    // Load file & parse
-    pendingBookData = {
-      id,
-      title:      book.title,
-      format:     book.format,
-      sourcePath: book.file_path,
-      fileName:   book.file_name,
-      fileSize:   book.file_size
-    };
+      // If same book already parsed, just jump
+      if (id === currentBookId) {
+        const progress = await window.sonara.progress.get(id);
+        if (progress?.chunk_index > 0) {
+          Reader.jumpToChunk(progress.chunk_index);
+        }
+        showReader();
+        return;
+      }
 
-    if (AUDIO_FORMATS.includes(book.format)) {
-      await _openAudioBook(book);
-    } else {
-      await _processFile(id, { path: book.file_path, name: book.file_name, size: book.file_size, format: book.format });
+      // Load file & parse
+      pendingBookData = {
+        id,
+        title:      book.title,
+        format:     book.format,
+        sourcePath: book.file_path,
+        fileName:   book.file_name,
+        fileSize:   book.file_size
+      };
+
+      if (AUDIO_FORMATS.includes(book.format)) {
+        await _openAudioBook(book);
+      } else {
+        await _processFile(id, { path: book.file_path, name: book.file_name, size: book.file_size, format: book.format });
+      }
+    } catch (err) {
+      UI.toast('Could not open book: ' + err.message, 'error');
     }
   }
 
@@ -413,9 +418,13 @@ const App = (() => {
   // ── PROCESS FILE ─────────────────────────────────────────
   async function _processFile(id, fileInfo) {
     if (isGenerating) {
+      UI.toast('Please wait, a book is already being processed…', 'error');
       return;
     }
     isGenerating = true;
+
+    // Switch to reader view first so the generating overlay is visible
+    showReader();
 
     // Show generating overlay
     const overlay = document.getElementById('generatingOverlay');
@@ -558,8 +567,14 @@ const App = (() => {
 
   // ── PROCESS AUDIO FILE ────────────────────────────────────
   async function _processAudioFile(id, fileInfo) {
-    if (isGenerating) return;
+    if (isGenerating) {
+      UI.toast('Please wait, a book is already being processed…', 'error');
+      return;
+    }
     isGenerating = true;
+
+    // Switch to reader view first so the generating overlay is visible
+    showReader();
 
     const overlay = document.getElementById('generatingOverlay');
     overlay.style.display = 'flex';

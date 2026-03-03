@@ -186,7 +186,7 @@ const Library = (() => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('.lc-menu-btn')) return;
         const id = card.dataset.bookId;
-        App.openBook(id);
+        App.openBook(id).catch(err => console.error('openBook error:', err));
       });
     });
     // Menu button -> context menu
@@ -225,7 +225,7 @@ const Library = (() => {
     menu.addEventListener('click', async (ev) => {
       const action = ev.target.closest('.lib-ctx-item')?.dataset.action;
       _closeContextMenu();
-      if (action === 'open')   App.openBook(bookId);
+      if (action === 'open')   App.openBook(bookId).catch(err => console.error('openBook error:', err));
       if (action === 'assign') showAssignModal(bookId);
       if (action === 'delete') deleteBook(bookId);
     });

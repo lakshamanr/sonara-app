@@ -1,27 +1,35 @@
 'use strict';
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+
 const path  = require('path');
 const fs    = require('fs');
 const db    = require('../database/db');
 
-const edgeTTS = require('./edge-tts');
-
 // ═══════════════════════════════════════════════════════════
-//  ENABLE CLOUD VOICES
+//  ENABLE CLOUD VOICES - Set command line switches early
 // ═══════════════════════════════════════════════════════════
-app.commandLine.appendSwitch('enable-speech-dispatcher');
-app.commandLine.appendSwitch('enable-features', 'SpeechSynthesis,NetworkService,NetworkServiceInProcess');
-app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-app.commandLine.appendSwitch('enable-speech-input');
-app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+if (app && app.commandLine) {
+  app.commandLine.appendSwitch('enable-speech-dispatcher');
+  app.commandLine.appendSwitch('enable-features', 'SpeechSynthesis,NetworkService,NetworkServiceInProcess');
+  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+  app.commandLine.appendSwitch('enable-speech-input');
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 
-// Allow remote content for cloud voices
-app.commandLine.appendSwitch('disable-web-security');
-app.commandLine.appendSwitch('allow-running-insecure-content');
+  // Allow remote content for cloud voices
+  app.commandLine.appendSwitch('disable-web-security');
+  app.commandLine.appendSwitch('allow-running-insecure-content');
 
-// Suppress cache permission errors on Windows
-app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-app.commandLine.appendSwitch('disk-cache-size', '1');
+  // Suppress cache permission errors on Windows
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+  app.commandLine.appendSwitch('disk-cache-size', '1');
+}
+
+// Lazy-load edge-tts to avoid initialization issues
+let edgeTTS = null;
+function getEdgeTTS() {
+  if (!edgeTTS) edgeTTS = require('./edge-tts');
+  return edgeTTS;
+}
 
 let mainWindow;
 let booksDir;   // where we copy user files
@@ -259,7 +267,7 @@ ipcMain.handle('shell:openExternal', (_, url) => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('tts:getVoices', async () => {
   try {
-    return await edgeTTS.getVoices();
+    return await getEdgeTTS().getVoices();
   } catch (err) {
     return [];
   }
@@ -325,9 +333,10 @@ ipcMain.handle('cover:getPath', (_, bookId) => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
   try {
-    const rate = edgeTTS.speedToRate(speed || 1.0);
-    const pitchHz = edgeTTS.pitchToHz(pitch || 1.0);
-    const result = await edgeTTS.synthesize(text, voice, { rate, pitch: pitchHz });
+    const tts = getEdgeTTS();
+    const rate = tts.speedToRate(speed || 1.0);
+    const pitchHz = tts.pitchToHz(pitch || 1.0);
+    const result = await tts.synthesize(text, voice, { rate, pitch: pitchHz });
     return {
       audio: result.audio.toString('base64'),
       wordBoundaries: result.wordBoundaries
