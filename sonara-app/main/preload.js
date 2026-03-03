@@ -132,12 +132,18 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── NOTES ───────────────────────────────────────
   notes: {
     /** @returns {Promise<Note>} newly created note */
-    add:    (data)             => ipcRenderer.invoke('notes:add', data),
+    add:        (data)             => ipcRenderer.invoke('notes:add', data),
     /** @returns {Promise<Note[]>} all notes for book, ordered by chapter */
-    getAll: (bookId)           => ipcRenderer.invoke('notes:getAll', bookId),
+    getAll:     (bookId)           => ipcRenderer.invoke('notes:getAll', bookId),
     /** @returns {Promise<{success:true}>} */
-    update: (id, content, tag) => ipcRenderer.invoke('notes:update', id, content, tag),
+    update:     (id, content, tag) => ipcRenderer.invoke('notes:update', id, content, tag),
     /** @returns {Promise<{success:true}>} */
-    delete: (id)               => ipcRenderer.invoke('notes:delete', id),
+    delete:     (id)               => ipcRenderer.invoke('notes:delete', id),
+    /** @returns {Promise<string|null>} chosen file path or null */
+    saveDialog: (opts)             => ipcRenderer.invoke('notes:saveDialog', opts),
+    /** @returns {Promise<{success:true}>} */
+    writeText:  (data)             => ipcRenderer.invoke('notes:writeText',  data),
+    /** @returns {Promise<{success:true}>} */
+    writePdf:   (data)             => ipcRenderer.invoke('notes:writePdf',   data),
   },});
 

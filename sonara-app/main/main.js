@@ -351,3 +351,41 @@ ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
     throw err;
   }
 });
+
+// ────────────────────────────────────────────────────────────
+//  IPC — EXPORT NOTES (TXT / PDF)
+// ────────────────────────────────────────────────────────────
+ipcMain.handle('notes:saveDialog', async (_, { defaultName, type }) => {
+  const safe   = (defaultName || 'My Notes').replace(/[<>:"/\\|?*]/g, '_');
+  const isPdf  = type === 'pdf';
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title:       isPdf ? 'Export Notes as PDF' : 'Export Notes as Text',
+    defaultPath: path.join(app.getPath('documents'), safe + (isPdf ? '.pdf' : '.txt')),
+    filters:     isPdf
+      ? [{ name: 'PDF Document', extensions: ['pdf'] }]
+      : [{ name: 'Text File',    extensions: ['txt'] }],
+  });
+  return result.canceled ? null : result.filePath;
+});
+
+ipcMain.handle('notes:writeText', (_, { path: filePath, content }) => {
+  fs.writeFileSync(filePath, content, 'utf8');
+  return { success: true };
+});
+
+ipcMain.handle('notes:writePdf', async (_, { path: filePath, html }) => {
+  const { BrowserWindow: BW } = require('electron');
+  const win = new BW({
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  const pdfData = await win.webContents.printToPDF({
+    printBackground: true,
+    pageSize:        'A4',
+    margins:         { top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 },
+  });
+  win.close();
+  fs.writeFileSync(filePath, pdfData);
+  return { success: true };
+});
