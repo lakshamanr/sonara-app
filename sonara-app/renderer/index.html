@@ -414,14 +414,65 @@
       <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
     </div>
 
-    <!-- CHAPTERS / SECTIONS -->
+    <!-- CHAPTERS / NOTES TABS -->
     <div class="rp-section rp-section-chapters">
-      <div class="rp-section-header">
-        <span class="rp-section-label" id="chaptersLabel">Chapters</span>
-        <span class="rp-section-count" id="chaptersCount">0</span>
+
+      <!-- Tab row -->
+      <div class="rp-tabs">
+        <button class="rp-tab rp-tab-active" id="rpTabChapters" onclick="Notes.switchTab('chapters')">
+          <span id="chaptersLabel">Chapters</span>
+          <span class="rp-section-count" id="chaptersCount">0</span>
+        </button>
+        <button class="rp-tab" id="rpTabNotes" onclick="Notes.switchTab('notes')">
+          Notes
+          <span class="rp-tab-badge" id="notesTabCount"></span>
+        </button>
       </div>
-      <div class="chapters-list" id="chaptersList">
-        <div class="chapters-empty">Open a book to see chapters</div>
+
+      <!-- Chapters list -->
+      <div id="rpChaptersWrap">
+        <div class="chapters-list" id="chaptersList">
+          <div class="chapters-empty">Open a book to see chapters</div>
+        </div>
+      </div>
+
+      <!-- Notes panel -->
+      <div id="rpNotesWrap" style="display:none">
+
+        <!-- Add note form -->
+        <div class="notes-add">
+          <div class="notes-add-header">
+            <select class="note-tag-sel" id="noteTagSel">
+              <option value="note">📝️ Note</option>
+              <option value="key">💡 Key Point</option>
+              <option value="quote">📌 Quote</option>
+              <option value="question">❓ Question</option>
+            </select>
+            <span class="notes-at-label">at:</span>
+            <span class="notes-position" id="notesPosition">—</span>
+          </div>
+          <textarea class="notes-textarea" id="noteTextarea"
+            placeholder="Write your note… (current chapter will be linked)"
+            rows="3"
+            onkeydown="if(event.ctrlKey&&event.key==='Enter'){Notes.save();}"></textarea>
+          <div class="notes-add-footer">
+            <span class="notes-kbd-hint">Ctrl+Enter to save</span>
+            <button class="notes-save-btn" onclick="Notes.save()">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+              Save Note
+            </button>
+          </div>
+        </div>
+
+        <!-- Notes list -->
+        <div class="notes-list" id="notesList">
+          <div class="notes-empty">Open a book to start taking notes</div>
+        </div>
+
       </div>
     </div>
 
@@ -630,6 +681,7 @@
 <script src="js/reader.js"></script>
 <script src="js/library.js"></script>
 <script src="js/export.js"></script>
+<script src="js/notes.js"></script>
 <script src="js/app.js"></script>
 
 </body>

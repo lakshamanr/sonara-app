@@ -287,8 +287,14 @@ ipcMain.handle('collections:removeBook', ipcHandler((_, bId, cId) => { db.remove
 ipcMain.handle('collections:getBookCollections', ipcHandler((_, bId) => db.getBookCollections(bId)));
 ipcMain.handle('collections:getBooks', ipcHandler((_, cId) => db.getCollectionBooks(cId)));
 
-// ─────────────────────────────────────────────────────────────
-//  IPC — COVERS
+// ─────────────────────────────────────────────────────────────//  IPC — NOTES
+// ────────────────────────────────────────────────────────────
+ipcMain.handle('notes:add',    ipcHandler((_, data)          => db.addNote(data)));
+ipcMain.handle('notes:getAll', ipcHandler((_, bookId)        => db.getNotes(bookId)));
+ipcMain.handle('notes:update', ipcHandler((_, id, content, tag) => { db.updateNote(id, { content, tag }); return { success: true }; }));
+ipcMain.handle('notes:delete', ipcHandler((_, id)            => { db.deleteNote(id); return { success: true }; }));
+
+// ────────────────────────────────────────────────────────────//  IPC — COVERS
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('cover:save', async (_, { bookId, base64, mediaType }) => {
   const ext = mediaType.includes('png') ? '.png' : '.jpg';

@@ -144,6 +144,40 @@ function init(userDataPath) {
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v3', '\"true\"')").run();
   }
 
+  // ── SCHEMA V4 — Notes table ──────────────────────────────
+  const v4 = db.prepare("SELECT value FROM settings WHERE key = 'schema_v4'").get();
+  if (!v4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL DEFAULT 0,
+        chunk_title TEXT    NOT NULL DEFAULT '',
+        tag         TEXT    NOT NULL DEFAULT 'note',
+        content     TEXT    NOT NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_notes_book ON notes(book_id);
+    `);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v4', '\"true\"')").run();
+  } else {
+    // Ensure notes table exists on fresh installs after v4 flag already set
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL DEFAULT 0,
+        chunk_title TEXT    NOT NULL DEFAULT '',
+        tag         TEXT    NOT NULL DEFAULT 'note',
+        content     TEXT    NOT NULL,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_notes_book ON notes(book_id);
+    `);
+  }
+
   return db;
 }
 
@@ -328,11 +362,41 @@ function getAllSettings() {
   }, {});
 }
 
+// ── NOTES ────────────────────────────────────────────────────────────────
+
+function addNote({ book_id, chunk_index, chunk_title, tag, content }) {
+  const now = Date.now();
+  const result = db.prepare(`
+    INSERT INTO notes (book_id, chunk_index, chunk_title, tag, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(book_id, chunk_index || 0, chunk_title || '', tag || 'note', content, now, now);
+  return { id: result.lastInsertRowid, book_id, chunk_index: chunk_index || 0,
+           chunk_title: chunk_title || '', tag: tag || 'note', content, created_at: now, updated_at: now };
+}
+
+function getNotes(bookId) {
+  return db.prepare(`
+    SELECT * FROM notes WHERE book_id = ?
+    ORDER BY chunk_index ASC, created_at DESC
+  `).all(bookId);
+}
+
+function updateNote(id, { content, tag }) {
+  const now = Date.now();
+  db.prepare('UPDATE notes SET content = ?, tag = ?, updated_at = ? WHERE id = ?')
+    .run(content, tag || 'note', now, id);
+}
+
+function deleteNote(id) {
+  db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+}
+
 module.exports = {
   init,
   getAllBooks, getBook, addBook, updateBook, deleteBook, bookExists,
   getProgress, saveProgress, resetProgress,
   getAllCollections, getCollection, createCollection, updateCollection, deleteCollection,
   addBookToCollection, removeBookFromCollection, getBookCollections, getCollectionBooks,
-  getSetting, setSetting, getAllSettings
+  getSetting, setSetting, getAllSettings,
+  addNote, getNotes, updateNote, deleteNote,
 };

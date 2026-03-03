@@ -129,5 +129,15 @@ contextBridge.exposeInMainWorld('sonara', {
      */
     writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
   },
-});
+  // ── NOTES ───────────────────────────────────────
+  notes: {
+    /** @returns {Promise<Note>} newly created note */
+    add:    (data)             => ipcRenderer.invoke('notes:add', data),
+    /** @returns {Promise<Note[]>} all notes for book, ordered by chapter */
+    getAll: (bookId)           => ipcRenderer.invoke('notes:getAll', bookId),
+    /** @returns {Promise<{success:true}>} */
+    update: (id, content, tag) => ipcRenderer.invoke('notes:update', id, content, tag),
+    /** @returns {Promise<{success:true}>} */
+    delete: (id)               => ipcRenderer.invoke('notes:delete', id),
+  },});
 

@@ -381,6 +381,7 @@ const App = (() => {
           Reader.jumpToChunk(progress.chunk_index);
         }
         _updateNavPanel(id).catch(() => {});
+        Notes.load(id);
         showReader();
         return;
       }
@@ -413,6 +414,7 @@ const App = (() => {
     await window.sonara.settings.set('lastBookId', book.id);
     Library.setActiveCard(book.id);
     _updateNavPanel(book.id);
+    Notes.load(book.id);
     showReader();
     pendingBookData = null;
   }
@@ -543,6 +545,7 @@ const App = (() => {
       currentBookId = id;
       Reader.loadBook(chunks, id, resumeData);
       _updateNavPanel(id); // update left panel cover + nav
+      Notes.load(id);      // load notes for this book
 
       // Save as last-opened book for auto-load on next startup
       await window.sonara.settings.set('lastBookId', id);
@@ -652,6 +655,7 @@ const App = (() => {
     document.getElementById('chaptersList').innerHTML = '<div class="chapters-empty">Open a book to see chapters</div>';
     Library.setActiveCard(null);
     _updateNavPanel(null); // clear nav panel
+    Notes.clear();         // clear notes panel
   }
 
   function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
