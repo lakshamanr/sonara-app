@@ -302,9 +302,9 @@ body:not(.mobile-layout) .mobile-only {
 }
 .tb-icon-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
 
-/* Right-panel toggle button (visible on narrow screens or explicitly) */
+/* Right-panel toggle button — always visible in topbar */
 .rp-toggle-btn {
-  display: none;
+  display: flex;
   width: 32px; height: 32px;
   background: transparent;
   border: 1px solid var(--border);
@@ -383,7 +383,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   :root { --right-w: clamp(0px, 0px, 0px); }
   .layout { grid-template-columns: var(--left-w) var(--handle-w) 1fr 0 0; }
   .panel-right, #resizeRight { display: none; }
-  .rp-toggle-btn { display: flex !important; }
 }
 @media (max-width: 860px) {
   :root { --left-w: clamp(0px, 0px, 0px); }
