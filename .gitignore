@@ -1,5 +1,28 @@
+# Dependencies
 sonara-app/node_modules/
+
+# Build output
 sonara-app/dist/
+
+# Database files
 sonara-app/*.db
 sonara-app/*.db-shm
 sonara-app/*.db-wal
+
+# Logs
+*.log
+npm-debug.log*
+
+# AI assistant session files
+sonara-app/.claude/
+
+# Leftover test/scratch files
+sonara-app/_ul
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
