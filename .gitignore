@@ -2,7 +2,6 @@
 sonara-app/node_modules/
 
 # Build output
-sonara-app/dist/
 
 # Database files
 sonara-app/*.db
