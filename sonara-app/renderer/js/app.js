@@ -544,6 +544,11 @@ const App = (() => {
       // 7. Load into reader
       currentBookId = id;
       Reader.loadBook(chunks, id, resumeData);
+      // Update player bar book info
+      const _pmTitle = document.getElementById('pbMetaTitle');
+      const _pmAuthor = document.getElementById('pbMetaAuthor');
+      if (_pmTitle) _pmTitle.textContent = pendingBookData.title || '';
+      if (_pmAuthor) _pmAuthor.textContent = pendingBookData.author || '';
       _updateNavPanel(id); // update left panel cover + nav
       Notes.load(id);      // load notes for this book
 

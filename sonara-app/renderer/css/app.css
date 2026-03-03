@@ -43,11 +43,20 @@
 
   /* ── Layout dimensions (resize-aware) ── */
   --topbar-h:  48px;
-  --player-h:  76px;
+  --player-h:  80px;
   --handle-w:  6px;
   --left-w:    clamp(200px, 20vw, 300px);
   --right-w:   clamp(230px, 20vw, 310px);
   --font-reader: 17px;
+
+  /* ── Font families ── */
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans:  'Outfit', sans-serif;
+  --font-mono:  var(--font-mono);
+
+  /* ── Border radius aliases ── */
+  --radius:    12px;
+  --radius-sm: 8px;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -180,7 +189,7 @@ html, body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -213,8 +222,8 @@ body:not(.mobile-layout) .mobile-only {
 /* ── SCROLLBARS ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb { background: rgba(200,169,110,0.25); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(200,169,110,0.45); }
 
 /* ──────────────────────────────────────────────────────────
    TOP BAR
@@ -237,19 +246,21 @@ body:not(.mobile-layout) .mobile-only {
   display: flex; align-items: center; gap: 8px;
   -webkit-app-region: no-drag;
 }
-.logo-icon {
+.logo-icon-wrap {
   width: 28px; height: 28px;
-  border-radius: 6px;
-  object-fit: contain;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #c8a96e, #a07848);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
 .logo-mark {
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 20px; font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: 19px; font-weight: 600;
   color: var(--accent); letter-spacing: -.5px;
 }
 .logo-tag {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px; color: var(--text-muted);
   letter-spacing: 2px; text-transform: uppercase;
   margin-left: 8px;
@@ -257,7 +268,7 @@ body:not(.mobile-layout) .mobile-only {
 .tb-center {
   flex: 1;
   text-align: center;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--text-muted);
   letter-spacing: 1px;
   -webkit-app-region: drag;
@@ -273,7 +284,7 @@ body:not(.mobile-layout) .mobile-only {
   background: var(--accent-dim);
   border: 1px solid var(--accent-border);
   color: var(--accent);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px; font-weight: 500;
   padding: 5px 13px;
   border-radius: 7px; cursor: pointer;
@@ -292,7 +303,7 @@ body:not(.mobile-layout) .mobile-only {
   background: var(--text-muted); transition: all .3s;
 }
 .cp-dot.ok { background: var(--green); box-shadow: 0 0 5px var(--green); }
-.cp-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); letter-spacing: .5px; }
+.cp-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: .5px; }
 .tb-icon-btn {
   width: 32px; height: 32px;
   background: transparent; border: 1px solid var(--border);
@@ -405,14 +416,14 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   flex-shrink: 0;
 }
 .panel-label {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-muted);
   letter-spacing: 2px; text-transform: uppercase;
   display: block; margin-bottom: 5px;
 }
 .lib-stats-mini { display: flex; gap: 6px; align-items: center; }
 .lsm-item {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--text-muted);
 }
 .lsm-item.reading { color: var(--green); }
@@ -443,7 +454,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .les-text { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin-bottom: 14px; }
 .les-btn {
   background: var(--accent-dim); border: 1px solid var(--accent-border);
-  color: var(--accent); font-family: 'Instrument Sans', sans-serif;
+  color: var(--accent); font-family: var(--font-sans);
   font-size: 12px; padding: 7px 16px; border-radius: 8px; cursor: pointer;
   transition: all .2s;
 }
@@ -480,7 +491,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .bc-inner { padding: 9px 11px 8px; }
 .bc-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
 .bc-format {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
   padding: 2px 5px; border-radius: 3px;
 }
@@ -488,7 +499,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .bc-format.epub { background: rgba(168,125,224,.1); border: 1px solid rgba(168,125,224,.2); color: var(--purple); }
 .bc-format.audio { background: rgba(82,200,122,.1); border: 1px solid rgba(82,200,122,.2); color: var(--green); }
 .bc-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   flex: 1;
@@ -496,8 +507,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .book-card.active .bc-title { color: var(--text); }
 .bc-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
 .bc-bottom { display: flex; align-items: center; justify-content: space-between; }
-.bc-pct { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent); }
-.bc-status { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: .5px; }
+.bc-pct { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.bc-status { font-family: var(--font-mono); font-size: 9px; letter-spacing: .5px; }
 .bc-status.unstarted { color: var(--text-muted); }
 .bc-status.reading   { color: var(--green); }
 .bc-status.done      { color: var(--accent); }
@@ -522,7 +533,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   width: 100%;
   display: flex; align-items: center; justify-content: center; gap: 6px;
   background: transparent; border: 1px dashed var(--border2);
-  color: var(--text-muted); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text-muted); font-family: var(--font-sans);
   font-size: 12px; padding: 8px; border-radius: 8px; cursor: pointer;
   transition: all .2s;
 }
@@ -555,7 +566,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   margin-bottom: 22px;
 }
 .rw-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 28px; font-weight: 300;
   margin-bottom: 10px;
 }
@@ -572,18 +583,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .ctb-left { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .ctb-num {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--text-muted);
   flex-shrink: 0;
 }
 .ctb-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 17px; font-weight: 400; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ctb-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .ctb-progress {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--accent);
   letter-spacing: .5px;
 }
@@ -607,7 +618,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .reader-text {
   max-width: 680px;
   margin: 0 auto;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: var(--font-reader);
   line-height: 2;
   color: var(--text-dim);
@@ -691,7 +702,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   color: var(--text-dim);
 }
 .pdf-page-info {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: .5px;
@@ -699,7 +710,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   text-align: center;
 }
 .pdf-zoom-info {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   min-width: 40px;
@@ -883,7 +894,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   animation: spin .8s linear infinite;
 }
 .gen-label {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 20px; color: var(--text);
 }
 .gen-sub { font-size: 13px; color: var(--text-muted); }
@@ -899,7 +910,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .gen-steps { display: flex; align-items: center; gap: 6px; }
 .gs {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px; color: var(--text-muted);
   letter-spacing: 1px; text-transform: uppercase;
   padding: 2px 7px; border-radius: 4px;
@@ -937,18 +948,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   margin-bottom: 10px;
 }
 .rp-section-label {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px; color: var(--text-muted);
   letter-spacing: 2px; text-transform: uppercase;
 }
 .rp-section-count {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-muted);
 }
 .prev-sel-btn {
   display: flex; align-items: center; gap: 4px;
   background: transparent; border: 1px solid var(--accent-border);
-  color: var(--accent); font-family: 'Instrument Sans', sans-serif;
+  color: var(--accent); font-family: var(--font-sans);
   font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
   transition: all .2s;
 }
@@ -966,11 +977,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   flex-shrink: 0;
 }
 .vsb-name { font-size: 12px; color: var(--text); font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vsb-lang { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-muted); }
+.vsb-lang { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); }
 .voice-search-row { display: flex; gap: 6px; margin-bottom: 8px; }
 .voice-srch {
   flex: 1; background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text); font-family: var(--font-sans);
   font-size: 11px; padding: 5px 9px; border-radius: 7px; outline: none;
   transition: border-color .2s;
 }
@@ -978,7 +989,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .voice-srch::placeholder { color: var(--text-muted); }
 .voice-lang {
   background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text); font-family: var(--font-sans);
   font-size: 11px; padding: 5px 7px; border-radius: 7px;
   appearance: none; outline: none; cursor: pointer;
 }
@@ -1021,9 +1032,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .vi-info { flex: 1; min-width: 0; }
 .vi-name { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-item.selected .vi-name { color: var(--text); }
-.vi-lang { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-muted); }
+.vi-lang { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); }
 .vi-badges { display: flex; gap: 3px; flex-shrink: 0; }
-.vi-badge { font-family: 'DM Mono', monospace; font-size: 8px; padding: 1px 4px; border-radius: 3px; }
+.vi-badge { font-family: var(--font-mono); font-size: 8px; padding: 1px 4px; border-radius: 3px; }
 .badge-en      { background: rgba(82,200,122,.08); color: var(--green); border: 1px solid rgba(82,200,122,.2); }
 .badge-local   { background: var(--accent-select); color: var(--accent); border: 1px solid var(--accent-border); }
 .badge-remote  { background: rgba(168,125,224,.08); color: var(--purple); border: 1px solid rgba(168,125,224,.2); }
@@ -1056,12 +1067,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   box-shadow: 0 0 5px var(--accent-glow);
 }
 .ctrl-val {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--accent); width: 34px; text-align: right; flex-shrink: 0;
 }
 .ctrl-select {
   flex: 1; background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text); font-family: var(--font-sans);
   font-size: 11px; padding: 5px 7px; border-radius: 7px;
   appearance: none; outline: none; cursor: pointer;
 }
@@ -1078,25 +1089,27 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .chapters-list::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 .chapter-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 9px; border-radius: 7px; cursor: pointer;
-  transition: all .15s; margin-bottom: 2px;
+  padding: 7px 9px 7px 11px;
+  border-left: 2px solid transparent;
+  margin-left: 8px;
+  cursor: pointer; transition: all .15s; margin-bottom: 2px;
+  border-radius: 0 7px 7px 0;
 }
 .chapter-item:hover { background: var(--accent-hover); }
-.chapter-item.active { background: var(--accent-select); }
+.chapter-item.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(200,169,110,0.06);
+}
 .ci-num {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px; color: var(--text-muted); width: 18px; flex-shrink: 0;
 }
 .ci-name { flex: 1; font-size: 12px; color: var(--text-muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chapter-item.active .ci-name { color: var(--text); }
-.ci-dur { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-muted); }
+.chapter-item.active .ci-name { color: var(--accent); }
+.ci-dur { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); }
 .chapter-item.active .ci-num { color: var(--accent); }
-.ci-dot {
-  width: 4px; height: 4px; border-radius: 50%;
-  background: var(--accent); flex-shrink: 0;
-  display: none;
-}
-.chapter-item.active .ci-dot { display: block; }
+.ci-dot { display: none; }
 .chapters-empty { padding: 20px 12px; font-size: 11px; color: var(--text-muted); text-align: center; }
 
 /* ──────────────────────────────────────────────────────────
@@ -1113,12 +1126,33 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   gap: 16px;
   z-index: 100;
 }
-.pb-wave-wrap {
-  width: 140px; height: 40px;
-  flex-shrink: 0; border-radius: 6px;
-  overflow: hidden; background: var(--surface2);
+.pb-wave-wrap { display: none; }
+#waveCanvas { display: none; }
+
+/* Book info section (player bar left) */
+.pb-book {
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0; min-width: 160px; max-width: 240px;
 }
-#waveCanvas { width: 100%; height: 100%; }
+.pb-cover-placeholder {
+  width: 36px; height: 48px;
+  border-radius: 4px; flex-shrink: 0;
+  background: linear-gradient(135deg, #3a2e1a, #6b4e1e);
+  border: 1px solid rgba(200,169,110,.15);
+}
+.pb-meta { overflow: hidden; }
+.pb-meta-title {
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pb-meta-author {
+  font-family: var(--font-sans);
+  font-size: 10px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
 .pb-controls {
   display: flex; align-items: center; gap: 10px;
   flex-shrink: 0;
@@ -1154,7 +1188,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   box-shadow: 0 0 5px var(--accent-glow);
 }
 .pb-time {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
 }
 .pb-right {
@@ -1162,7 +1196,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   flex-shrink: 0;
 }
 .pb-chapter-label {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-muted);
   max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -1171,7 +1205,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   background: var(--accent-dim);
   border: 1px solid var(--accent-border);
   color: var(--accent);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 11px; font-weight: 500;
   padding: 5px 10px;
   border-radius: 8px;
@@ -1191,7 +1225,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   flex-shrink: 0;
 }
 .pb-speed-pill {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--text-dim);
   background: var(--surface2); border: 1px solid var(--border);
   padding: 4px 10px; border-radius: 14px;
@@ -1230,13 +1264,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .modal-close:hover { background: var(--surface3); color: var(--text); }
 .modal-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 22px; font-weight: 400; margin-bottom: 8px;
 }
 .modal-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; line-height: 1.7; }
 .modal-input {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'DM Mono', monospace;
+  color: var(--text); font-family: var(--font-mono);
   font-size: 12px; padding: 10px 14px; border-radius: 10px;
   outline: none; margin-bottom: 16px; transition: border-color .2s;
 }
@@ -1247,14 +1281,14 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .modal-btn-cancel {
   background: transparent; border: 1px solid var(--border);
-  color: var(--text-muted); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text-muted); font-family: var(--font-sans);
   font-size: 13px; padding: 8px 18px; border-radius: 9px; cursor: pointer;
   transition: all .2s;
 }
 .modal-btn-cancel:hover { border-color: var(--border2); color: var(--text); }
 .modal-btn-primary {
   background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
-  color: var(--play-btn-fg); font-family: 'Instrument Sans', sans-serif;
+  color: var(--play-btn-fg); font-family: var(--font-sans);
   font-size: 13px; font-weight: 500;
   padding: 8px 20px; border: none; border-radius: 9px; cursor: pointer;
   transition: all .2s;
@@ -1265,11 +1299,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sg-label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
 .sg-select {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text); font-family: var(--font-sans);
   font-size: 12px; padding: 7px 9px; border-radius: 8px;
   appearance: none; outline: none; cursor: pointer;
 }
-.sg-value { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
+.sg-value { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 
 /* Resume modal */
 .resume-progress {
@@ -1282,7 +1316,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   height: 100%; background: linear-gradient(90deg, var(--grad-end), var(--grad-start));
   border-radius: 2px; transition: width .5s ease;
 }
-.rp-pct { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--accent); flex-shrink: 0; }
+.rp-pct { font-family: var(--font-mono); font-size: 13px; color: var(--accent); flex-shrink: 0; }
 
 /* ──────────────────────────────────────────────────────────
    TOAST
@@ -1392,7 +1426,7 @@ body.mode-reader  .layout { display: grid; }
   flex-shrink: 0;
 }
 .lib-sidebar-title {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 9px; color: var(--text-muted);
   letter-spacing: 2px; text-transform: uppercase;
 }
@@ -1424,7 +1458,7 @@ body.mode-reader  .layout { display: grid; }
 }
 .collection-item.active .col-name { color: var(--text); }
 .col-count {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; color: var(--text-muted); flex-shrink: 0;
 }
 .collection-item.active .col-count { color: var(--accent); }
@@ -2497,7 +2531,7 @@ body.mode-reader  .layout { display: grid; }
 .lib-search {
   width: 100%; background: var(--surface2);
   border: 1px solid var(--border); color: var(--text);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px; padding: 7px 30px 7px 32px;
   border-radius: 8px; outline: none; transition: border-color .2s;
 }
@@ -2515,7 +2549,7 @@ body.mode-reader  .layout { display: grid; }
 /* Format tabs */
 .lib-format-tabs { display: flex; gap: 2px; }
 .lib-tab {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px; letter-spacing: .5px;
   padding: 5px 12px; border-radius: 6px;
   background: transparent; border: 1px solid transparent;
@@ -2532,7 +2566,7 @@ body.mode-reader  .layout { display: grid; }
 }
 .lib-sort {
   background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-family: 'Instrument Sans', sans-serif;
+  color: var(--text); font-family: var(--font-sans);
   font-size: 11px; padding: 6px 10px; border-radius: 7px;
   appearance: none; outline: none; cursor: pointer;
 }
@@ -2540,7 +2574,7 @@ body.mode-reader  .layout { display: grid; }
   display: flex; align-items: center; gap: 6px;
   background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
   border: none; color: var(--play-btn-fg);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px; font-weight: 500;
   padding: 7px 16px; border-radius: 8px; cursor: pointer;
   transition: all .2s;
@@ -2550,7 +2584,7 @@ body.mode-reader  .layout { display: grid; }
 /* Stats bar */
 .lib-stats-bar { padding: 8px 24px; flex-shrink: 0; }
 .lib-stats-text {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px; color: var(--text-muted); letter-spacing: .5px;
 }
 
@@ -2579,9 +2613,10 @@ body.mode-reader  .layout { display: grid; }
   border-radius: 12px; transition: transform .2s, box-shadow .2s;
 }
 .lib-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 32px rgba(0,0,0,.3);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(200,169,110,0.1);
 }
+.lib-card:hover .lc-cover { border-color: rgba(200,169,110,0.3); }
 
 .lc-cover {
   position: relative; aspect-ratio: 2 / 3;
@@ -2599,12 +2634,12 @@ body.mode-reader  .layout { display: grid; }
   padding: 16px; text-align: center;
 }
 .lc-cover-letter {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 48px; font-weight: 300;
   color: var(--accent); opacity: .3; line-height: 1;
 }
 .lc-cover-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 13px; font-weight: 400; color: var(--text-muted);
   margin-top: 8px;
   display: -webkit-box; -webkit-line-clamp: 3;
@@ -2614,13 +2649,15 @@ body.mode-reader  .layout { display: grid; }
 /* Format badge */
 .lc-format-badge {
   position: absolute; top: 8px; right: 8px;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
-  padding: 2px 6px; border-radius: 4px;
+  padding: 3px 7px; border-radius: 5px;
+  background: rgba(13,14,17,0.85); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
 }
-.lc-format-badge.pdf   { background: var(--accent-select); border: 1px solid var(--accent-border); color: var(--accent); }
-.lc-format-badge.epub  { background: rgba(168,125,224,.15); border: 1px solid rgba(168,125,224,.3); color: var(--purple); }
-.lc-format-badge.audio { background: rgba(82,200,122,.12); border: 1px solid rgba(82,200,122,.25); color: var(--green); }
+.lc-format-badge.pdf   { color: var(--accent); }
+.lc-format-badge.epub  { color: var(--purple); }
+.lc-format-badge.audio { color: var(--green); }
 
 /* Progress bar at bottom of cover */
 .lc-progress-bar {
@@ -2655,7 +2692,7 @@ body.mode-reader  .layout { display: grid; }
 /* Info below cover */
 .lc-info { padding: 10px 4px 4px; }
 .lc-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px; font-weight: 500; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -2668,8 +2705,8 @@ body.mode-reader  .layout { display: grid; }
   display: flex; align-items: center; justify-content: space-between;
   margin-top: 4px;
 }
-.lc-pct { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--accent); }
-.lc-status { font-family: 'DM Mono', monospace; font-size: 9px; }
+.lc-pct { font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
+.lc-status { font-family: var(--font-mono); font-size: 9px; }
 .lc-status.reading   { color: var(--green); }
 .lc-status.done      { color: var(--accent); }
 .lc-status.unstarted { color: var(--text-muted); }
@@ -2704,7 +2741,7 @@ body.mode-reader  .layout { display: grid; }
   margin-bottom: 22px;
 }
 .leh-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 28px; font-weight: 300; margin-bottom: 10px;
 }
 .leh-sub {
@@ -2715,7 +2752,7 @@ body.mode-reader  .layout { display: grid; }
   display: inline-flex; align-items: center; gap: 6px;
   background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
   border: none; color: var(--play-btn-fg);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px; font-weight: 500;
   padding: 10px 22px; border-radius: 10px; cursor: pointer;
   transition: all .2s;
@@ -2797,7 +2834,7 @@ body.mode-reader  .layout { display: grid; }
 }
 .ra-info { max-width: 400px; }
 .ra-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 24px; font-weight: 400; color: var(--text);
   margin-bottom: 4px;
 }
@@ -2805,7 +2842,7 @@ body.mode-reader  .layout { display: grid; }
   font-size: 13px; color: var(--text-muted); margin-bottom: 12px;
 }
 .ra-time {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px; color: var(--accent); letter-spacing: .5px;
 }
 
@@ -2844,7 +2881,7 @@ body.mode-reader  .layout { display: grid; }
   background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
   border: none; border-radius: 8px;
   color: var(--play-btn-fg);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px; font-weight: 500; letter-spacing: .4px;
   cursor: pointer;
   transition: opacity .2s, transform .15s;
@@ -2864,7 +2901,7 @@ body.mode-reader  .layout { display: grid; }
   max-width: 420px;
 }
 .export-modal-book {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-serif);
   font-size: 17px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin: 4px 0 2px;
@@ -2892,7 +2929,7 @@ body.mode-reader  .layout { display: grid; }
   margin-bottom: 10px;
 }
 .export-pct {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 14px; font-weight: 400; color: var(--accent);
 }
 .export-counts {
@@ -3006,7 +3043,7 @@ body.mode-reader  .layout { display: grid; }
   justify-content: space-between;
 }
 .eb-pct {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
   color: var(--accent);
@@ -3185,7 +3222,7 @@ body.mode-reader  .layout { display: grid; }
 }
 .nav-ci-num {
   font-size: 10px;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   color: var(--text-dim);
   flex-shrink: 0;
   width: 20px;
@@ -3203,7 +3240,7 @@ body.mode-reader  .layout { display: grid; }
 .nav-ch-item.active .nav-ci-name { color: var(--accent); font-weight: 500; }
 .nav-ci-dur {
   font-size: 10px;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -3232,8 +3269,8 @@ body.mode-reader  .layout { display: grid; }
 
 .rp-tabs {
   display: flex;
-  gap: 2px;
-  padding: 0 4px 6px;
+  gap: 0;
+  padding: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0;
 }
@@ -3243,27 +3280,29 @@ body.mode-reader  .layout { display: grid; }
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 5px 8px;
+  padding: 11px 8px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.rp-tab:hover { background: var(--surface3, var(--surface2)); color: var(--text); }
+.rp-tab:hover { background: transparent; color: var(--text); }
 .rp-tab.rp-tab-active {
-  background: var(--surface3, var(--surface2));
+  background: transparent;
   color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .rp-tab-badge {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   background: var(--accent);
-  color: #fff;
+  color: #1a1206;
   border-radius: var(--radius-full);
   font-size: 10px;
   font-weight: 700;
@@ -3323,7 +3362,7 @@ body.mode-reader  .layout { display: grid; }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   line-height: 1.5;
   padding: 7px 8px;
@@ -3477,7 +3516,7 @@ body.mode-reader  .layout { display: grid; }
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   line-height: 1.5;
   padding: 6px 8px;

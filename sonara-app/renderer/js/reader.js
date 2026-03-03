@@ -1173,6 +1173,17 @@ const Reader = (() => {
     jumpToChunk(Math.max(0, Math.min(target, chunks.length - 1)));
   }
 
+  function seekBy(seconds) {
+    if (audioMode && audioElement) {
+      audioElement.currentTime = Math.max(0, Math.min(audioElement.currentTime + seconds, audioElement.duration || 0));
+      return;
+    }
+    elapsedTime = Math.max(0, Math.min(elapsedTime + seconds, totalDuration));
+    document.getElementById('pbTimeCur').textContent = _fmt(elapsedTime);
+    const target = Math.floor((elapsedTime / (totalDuration || 1)) * chunks.length);
+    jumpToChunk(Math.max(0, Math.min(target, chunks.length - 1)));
+  }
+
   function cycleSpeed() {
     const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
     const i = speeds.findIndex(s => Math.abs(s - speed) < 0.01);
@@ -1513,8 +1524,12 @@ const Reader = (() => {
     audioElement.removeEventListener('ended', _onAudioEnded);
     audioElement.addEventListener('ended', _onAudioEnded);
 
-    // Update topbar
+    // Update topbar and player bar book info
     document.getElementById('tbCenter').textContent = bookData.title;
+    const pmTitle = document.getElementById('pbMetaTitle');
+    const pmAuthor = document.getElementById('pbMetaAuthor');
+    if (pmTitle) pmTitle.textContent = bookData.title || '';
+    if (pmAuthor) pmAuthor.textContent = bookData.author || '';
 
     // Chapter list (single entry for audiobook)
     document.getElementById('chaptersLabel').textContent = 'Audiobook';
@@ -1586,7 +1601,7 @@ const Reader = (() => {
     initVoices, refreshVoices, filterVoices, renderVoiceList,
     selectVoice, previewVoice, previewSelectedVoice,
     loadBook, loadAudioBook,
-    togglePlay, stop, skipChunk, jumpToChunk, seekAudio,
+    togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
     cycleSpeed, onSpeedChange, onPitchChange,
     applySettings,
     saveProgress: _saveProgress,

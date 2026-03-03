@@ -7,7 +7,7 @@
         content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.anthropic.com https://cdnjs.cloudflare.com; media-src 'self' blob: file:; img-src 'self' data: blob: file:; worker-src 'self' blob: https://cdnjs.cloudflare.com;"/>
   <title>Sonara</title>
   <link rel="stylesheet" href="css/app.css"/>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400&family=Instrument+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Outfit:wght@300;400;500;600&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet"/>
 </head>
 <body>
 
@@ -17,7 +17,11 @@
 <div class="topbar" id="topbar">
   <div class="tb-drag"><!-- draggable region --></div>
   <div class="tb-logo">
-    <img class="logo-icon" src="../main/logo/logo.png" alt="Sonara" />
+    <div class="logo-icon-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+    </div>
     <span class="logo-mark">Sonara</span>
     <span class="logo-tag">Audiobook Player</span>
   </div>
@@ -483,9 +487,16 @@
      BOTTOM PLAYER BAR
 ══════════════════════════════════════════════════════════ -->
 <div class="player-bar" id="playerBar">
-  <!-- Waveform -->
-  <div class="pb-wave-wrap">
-    <canvas id="waveCanvas"></canvas>
+  <!-- Hidden waveform canvas (kept for JS compatibility) -->
+  <canvas id="waveCanvas" style="display:none" width="1" height="1"></canvas>
+
+  <!-- Book info (left section) -->
+  <div class="pb-book" id="pbBookInfo">
+    <div class="pb-cover-placeholder" id="pbCoverPlaceholder"></div>
+    <div class="pb-meta">
+      <div class="pb-meta-title" id="pbMetaTitle">No book open</div>
+      <div class="pb-meta-author" id="pbMetaAuthor"></div>
+    </div>
   </div>
 
   <!-- Controls -->
@@ -493,10 +504,16 @@
     <button class="pb-btn" onclick="Reader.skipChunk(-1)" title="Previous section">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
     </button>
+    <button class="pb-btn" onclick="Reader.seekBy(-10)" title="Rewind 10s">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
+    </button>
     <button class="pb-play-btn" id="pbPlayBtn" onclick="Reader.togglePlay()">
       <svg id="pbPlayIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <polygon points="5 3 19 12 5 21 5 3"/>
       </svg>
+    </button>
+    <button class="pb-btn" onclick="Reader.seekBy(10)" title="Forward 10s">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
     </button>
     <button class="pb-btn" onclick="Reader.skipChunk(1)" title="Next section">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
