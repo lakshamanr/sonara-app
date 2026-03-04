@@ -100,6 +100,35 @@ app.whenReady().then(() => {
       ? cfg.customDbPath
       : path.join(userData, 'sonara.db');
     db.init(dbPath);
+
+    // ── AUTO-HEAL: relink stale file_path entries to current booksDir ──
+    try {
+      const allBooks = db.getAllBooks();
+      for (const book of allBooks) {
+        if (book.file_path && fs.existsSync(book.file_path)) continue; // already OK
+        // Try matching by the stored basename inside the current booksDir
+        const baseName  = path.basename(book.file_path || '');
+        if (!baseName) continue;
+        const candidate = path.join(booksDir, baseName);
+        if (fs.existsSync(candidate)) {
+          db.updateBook(book.id, { file_path: candidate });
+          console.log(`[autoHeal] Relinked "${book.title}" → ${candidate}`);
+        } else {
+          // Also try matching by book.id + original extension (handles renamed files)
+          const ext = path.extname(baseName);
+          if (ext) {
+            const byId = path.join(booksDir, book.id + ext);
+            if (fs.existsSync(byId)) {
+              db.updateBook(book.id, { file_path: byId });
+              console.log(`[autoHeal] Relinked by ID "${book.title}" → ${byId}`);
+            }
+          }
+        }
+      }
+    } catch (healErr) {
+      console.error('[autoHeal] Failed:', healErr.message);
+    }
+
     createWindow();
 
     app.on('activate', () => {
@@ -229,6 +258,21 @@ ipcMain.handle('library:deleteBook', ipcHandler(async (_, id) => {
   }
   db.deleteBook(id);
   return { success: true };
+}));
+
+// ── RE-LINK: pick a new file path for a book whose file moved ─
+ipcMain.handle('library:relinkFile', ipcHandler(async (_, bookId) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Locate missing book file',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Books', extensions: ['pdf', 'epub', 'mp3', 'm4b', 'm4a', 'ogg'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const newPath = result.filePaths[0];
+  db.updateBook(bookId, { file_path: newPath });
+  return db.getBook(bookId);
 }));
 
 // library:bookExists is already handled above via ipcHandler

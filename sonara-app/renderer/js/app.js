@@ -542,7 +542,22 @@ const App = (() => {
       // Check file still exists
       const exists = await window.sonara.file.exists(book.file_path);
       if (!exists) {
-        UI.toast('File missing — please re-add "' + book.title + '"', 'error');
+        const relink = confirm(
+          '"' + book.title + '"\n\n' +
+          'The file is missing from its saved location.\n\n' +
+          'Would you like to locate the file now?'
+        );
+        if (relink) {
+          const updated = await window.sonara.library.relinkFile(id);
+          if (updated) {
+            UI.toast('File re-linked — opening…', 'success');
+            await openBook(id);
+          } else {
+            UI.toast('Re-link cancelled', 'error');
+          }
+        } else {
+          UI.toast('File missing — please re-add "' + book.title + '"', 'error');
+        }
         return;
       }
 

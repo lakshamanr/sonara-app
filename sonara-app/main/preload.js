@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('sonara', {
     deleteBook: (id)       => ipcRenderer.invoke('library:deleteBook', id),
     /** @returns {Promise<boolean>} */
     bookExists: (id)       => ipcRenderer.invoke('library:bookExists', id),
+    /** @returns {Promise<Book|null>} updated book, or null if cancelled */
+    relinkFile: (id)       => ipcRenderer.invoke('library:relinkFile', id),
   },
 
   // ── PROGRESS ─────────────────────────────────────────────
