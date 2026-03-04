@@ -240,7 +240,7 @@ const UI = (() => {
     await window.sonara.settings.set('autoSave',       autoSave);
     await window.sonara.settings.set('theme',          currentTheme);
     await window.sonara.settings.set('ttsSkipChars',   skipChars);
-    if (typeof Reader !== 'undefined') Reader.setSkipChars(skipChars);
+    if (typeof Reader !== 'undefined') { Reader.setSkipChars(skipChars); }
     closeModal('modalSettings');
     toast('Settings saved', 'success');
   }

@@ -32,6 +32,7 @@ const Reader = (() => {
 
   // TTS skip characters — stripped from text before speaking
   let ttsSkipChars   = '';   // raw string of chars; built into regex on use
+  let ttsSkipEnabled = true; // master on/off toggle
 
   // PDF visual mode state
   let pdfMode        = false;
@@ -1033,7 +1034,7 @@ const Reader = (() => {
   // Strips skip-characters from text before speaking so the TTS
   // engine never reads stray markdown / formatting symbols aloud.
   function _cleanTextForTTS(text) {
-    if (!ttsSkipChars || !text) return text;
+    if (!ttsSkipEnabled || !ttsSkipChars || !text) return text;
     const escaped = ttsSkipChars
       .split('')
       .map(c => c.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&'))
@@ -1041,6 +1042,27 @@ const Reader = (() => {
     if (!escaped) return text;
     // Replace each skipped char with a space (avoids word-merging)
     return text.replace(new RegExp(`[${escaped}]`, 'g'), ' ').replace(/ {2,}/g, ' ').trim();
+  }
+
+  function _updateSkipBtn() {
+    const btn = document.getElementById('pbCleanTextBtn');
+    if (!btn) return;
+    btn.classList.toggle('active', ttsSkipEnabled);
+    btn.title = ttsSkipEnabled
+      ? 'Character filter ON — click to disable'
+      : 'Character filter OFF — click to enable';
+  }
+
+  function toggleSkipChars() {
+    ttsSkipEnabled = !ttsSkipEnabled;
+    _updateSkipBtn();
+    window.sonara?.settings.set('ttsSkipEnabled', ttsSkipEnabled);
+    // If currently reading, restart the current chunk with updated filter
+    if (isPlaying) {
+      CloudTTS.stop();
+      speechSynthesis.cancel();
+      _speakChunk(currentChunk);
+    }
   }
 
   function _speakChunk(idx) {
@@ -1360,8 +1382,11 @@ const Reader = (() => {
     const savedVoice     = await window.sonara.settings.get('voice');
     const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
     const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
-    const savedSkipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
-    ttsSkipChars = savedSkipChars || '';
+    const savedSkipChars    = await window.sonara.settings.get('ttsSkipChars', '*_~#');
+    const savedSkipEnabled  = await window.sonara.settings.get('ttsSkipEnabled', true);
+    ttsSkipChars   = savedSkipChars || '';
+    ttsSkipEnabled = savedSkipEnabled !== false; // default true
+    _updateSkipBtn();
 
     speed = parseFloat(savedSpeed) || 1.0;
     pitch = parseFloat(savedPitch) || 1.0;
@@ -1609,7 +1634,9 @@ const Reader = (() => {
     cycleSpeed, onSpeedChange, onPitchChange,
     applySettings,
     /** Update the skip chars at runtime (called from settings save) */
-    setSkipChars: (val) => { ttsSkipChars = val || ''; },
+    setSkipChars:   (val)  => { ttsSkipChars   = val || ''; },
+    setSkipEnabled: (val)  => { ttsSkipEnabled = !!val; _updateSkipBtn(); },
+    toggleSkipChars,
     saveProgress: _saveProgress,
     saveBookmark,
     getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice }),
