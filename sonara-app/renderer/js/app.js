@@ -98,12 +98,6 @@ const UI = (() => {
       const el = document.getElementById('syncDbPath');
       if (el) { el.textContent = dbPath || '(default)'; el.title = dbPath || ''; }
     } catch {}
-    // Load Books folder path
-    try {
-      const booksDir = await window.sonara.books.getDir();
-      const el = document.getElementById('syncBooksDir');
-      if (el) { el.textContent = booksDir || '(default)'; el.title = booksDir || ''; }
-    } catch {}
     // Load TTS skip chars
     try {
       const skipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
@@ -283,7 +277,6 @@ const UI = (() => {
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
-    chooseBooksDir, resetBooksDir, openBooksDir,
     ttsAddPreset: (chars) => {
       const el = document.getElementById('settingTtsSkipChars');
       if (!el) return;

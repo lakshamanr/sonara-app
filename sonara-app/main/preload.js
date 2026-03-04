@@ -90,14 +90,10 @@ contextBridge.exposeInMainWorld('sonara', {
 
   // ── BOOKS FOLDER ────────────────────────────────────────
   books: {
-    /** @returns {Promise<string>} current books folder path */
-    getDir:    ()    => ipcRenderer.invoke('books:getDir'),
-    /** @returns {Promise<string|null>} new folder path, or null if cancelled */
-    chooseDir: ()    => ipcRenderer.invoke('books:chooseDir'),
-    /** @returns {Promise<string>} default userData/books path */
-    resetDir:  ()    => ipcRenderer.invoke('books:resetDir'),
-    /** @returns {Promise<string>} opens folder in Explorer, returns path */
-    openDir:   ()    => ipcRenderer.invoke('books:openDir'),
+    /** @returns {Promise<string>} books folder path (always userData/books) */
+    getDir:  ()  => ipcRenderer.invoke('books:getDir'),
+    /** @returns {Promise<string>} open the folder in Explorer */
+    openDir: ()  => ipcRenderer.invoke('books:openDir'),
   },
 
   // ── FILE / DIALOG ─────────────────────────────────────────
