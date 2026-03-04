@@ -83,13 +83,19 @@ app.whenReady().then(() => {
     const userData = app.getPath('userData');
     _userData   = userData;
     _configPath = path.join(userData, 'sonara-config.json');
-    booksDir  = path.join(userData, 'books');
     coversDir = path.join(userData, 'covers');
-    fs.mkdirSync(booksDir, { recursive: true });
     fs.mkdirSync(coversDir, { recursive: true });
 
-    // Determine DB location — custom cloud folder or default userData
+    // Read config first — it controls both the DB path and the books folder
     const cfg    = _readConfig();
+
+    // Determine books folder — custom cloud folder or default userData/books
+    booksDir = (cfg.customBooksDir && fs.existsSync(cfg.customBooksDir))
+      ? cfg.customBooksDir
+      : path.join(userData, 'books');
+    fs.mkdirSync(booksDir, { recursive: true });
+
+    // Determine DB location — custom cloud folder or default userData
     const dbPath = (cfg.customDbPath && fs.existsSync(cfg.customDbPath))
       ? cfg.customDbPath
       : path.join(userData, 'sonara.db');
@@ -506,6 +512,84 @@ ipcMain.handle('db:import', async () => {
   const data = JSON.parse(raw);
   const stats = db.importAll(data);
   return stats;
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — BOOKS FOLDER
+// ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('books:getDir', () => booksDir);
+
+/** Let user pick a folder — move all book files there, update DB, save config */
+ipcMain.handle('books:chooseDir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Choose Books Folder (e.g. OneDrive, Dropbox, Google Drive)',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+
+  const newDir = result.filePaths[0];
+  if (newDir === booksDir) return booksDir;
+
+  fs.mkdirSync(newDir, { recursive: true });
+
+  // Copy every book file to the new folder and record DB updates
+  const allBooks = db.getAllBooks();
+  const moved = [];
+  for (const book of allBooks) {
+    if (!book.file_path || !fs.existsSync(book.file_path)) continue;
+    const fileName = path.basename(book.file_path);
+    const newPath  = path.join(newDir, fileName);
+    try {
+      fs.copyFileSync(book.file_path, newPath);
+      db.updateBook(book.id, { file_path: newPath });
+      moved.push({ oldPath: book.file_path });
+    } catch (e) {
+      console.error(`[books:chooseDir] Could not move ${book.file_path}:`, e.message);
+    }
+  }
+  // Remove originals only after all copies and DB updates succeed
+  for (const { oldPath } of moved) {
+    try { fs.unlinkSync(oldPath); } catch {}
+  }
+
+  booksDir = newDir;
+  _writeConfig({ customBooksDir: newDir });
+  return newDir;
+});
+
+/** Reset books folder to default userData/books — moves files back */
+ipcMain.handle('books:resetDir', () => {
+  const defaultDir = path.join(_userData, 'books');
+  if (defaultDir === booksDir) return defaultDir;
+
+  fs.mkdirSync(defaultDir, { recursive: true });
+
+  const allBooks = db.getAllBooks();
+  const moved = [];
+  for (const book of allBooks) {
+    if (!book.file_path || !fs.existsSync(book.file_path)) continue;
+    const fileName = path.basename(book.file_path);
+    const newPath  = path.join(defaultDir, fileName);
+    try {
+      fs.copyFileSync(book.file_path, newPath);
+      db.updateBook(book.id, { file_path: newPath });
+      moved.push({ oldPath: book.file_path });
+    } catch {}
+  }
+  for (const { oldPath } of moved) {
+    try { fs.unlinkSync(oldPath); } catch {}
+  }
+
+  booksDir = defaultDir;
+  _writeConfig({ customBooksDir: null });
+  return defaultDir;
+});
+
+/** Open the books folder in the system file explorer */
+ipcMain.handle('books:openDir', () => {
+  shell.openPath(booksDir);
+  return booksDir;
 });
 
 // ── TURSO HTTP HELPERS ────────────────────────────────────────────────────

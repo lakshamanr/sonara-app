@@ -98,6 +98,12 @@ const UI = (() => {
       const el = document.getElementById('syncDbPath');
       if (el) { el.textContent = dbPath || '(default)'; el.title = dbPath || ''; }
     } catch {}
+    // Load Books folder path
+    try {
+      const booksDir = await window.sonara.books.getDir();
+      const el = document.getElementById('syncBooksDir');
+      if (el) { el.textContent = booksDir || '(default)'; el.title = booksDir || ''; }
+    } catch {}
     // Load Turso config
     try {
       const { url, token } = await window.sonara.db.getTursoConfig();
@@ -129,6 +135,33 @@ const UI = (() => {
       if (el) { el.textContent = def; el.title = def; }
       toast('Database reset to default location', 'success');
     } catch (err) { toast('Reset failed: ' + err.message, 'error'); }
+  }
+
+  // ── BOOKS FOLDER FUNCTIONS ────────────────────────────────────────
+
+  async function chooseBooksDir() {
+    try {
+      const newDir = await window.sonara.books.chooseDir();
+      if (!newDir) return;
+      const el = document.getElementById('syncBooksDir');
+      if (el) { el.textContent = newDir; el.title = newDir; }
+      toast('Books folder moved — place this folder in your cloud sync to access books across devices', 'success', 5000);
+    } catch (err) { toast('Could not move books folder: ' + err.message, 'error'); }
+  }
+
+  async function resetBooksDir() {
+    if (!confirm('Move all books back to the default app data folder?')) return;
+    try {
+      const def = await window.sonara.books.resetDir();
+      const el  = document.getElementById('syncBooksDir');
+      if (el) { el.textContent = def; el.title = def; }
+      toast('Books folder reset to default location', 'success');
+    } catch (err) { toast('Reset failed: ' + err.message, 'error'); }
+  }
+
+  async function openBooksDir() {
+    try { await window.sonara.books.openDir(); }
+    catch (err) { toast('Could not open folder: ' + err.message, 'error'); }
   }
 
   async function exportDb() {
@@ -233,6 +266,7 @@ const UI = (() => {
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
+    chooseBooksDir, resetBooksDir, openBooksDir,
     setTheme: applyTheme, _applyThemeVisual: setTheme,
     showResumeDialog, resumeBook, startFromBeginning
   };
