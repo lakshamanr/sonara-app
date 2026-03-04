@@ -1394,6 +1394,26 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .sync-status.ok  { color: var(--green); }
 .sync-status.err { color: var(--red); }
 
+/* TTS preset chips */
+.tts-preset-chips {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 5px; margin-top: 8px;
+}
+.tts-preset-label {
+  font-size: 10px; color: var(--text-muted);
+  font-family: var(--font-mono); letter-spacing: .5px; margin-right: 2px;
+}
+.tts-preset-chip {
+  font-size: 11px; font-family: var(--font-mono);
+  padding: 3px 9px; border-radius: var(--radius-full);
+  border: 1px solid var(--border2);
+  background: var(--surface2); color: var(--text-dim);
+  cursor: pointer; transition: all .15s;
+}
+.tts-preset-chip:hover { border-color: var(--accent-border); color: var(--accent); background: var(--accent-dim); }
+.tts-preset-chip--clear { border-color: rgba(224,82,82,.25); color: var(--red); background: rgba(224,82,82,.06); }
+.tts-preset-chip--clear:hover { background: rgba(224,82,82,.15); border-color: rgba(224,82,82,.4); color: var(--red); }
+
 /* Resume modal */
 .resume-progress {
   display: flex; align-items: center; gap: 10px; margin-bottom: 16px;

@@ -104,6 +104,12 @@ const UI = (() => {
       const el = document.getElementById('syncBooksDir');
       if (el) { el.textContent = booksDir || '(default)'; el.title = booksDir || ''; }
     } catch {}
+    // Load TTS skip chars
+    try {
+      const skipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
+      const el = document.getElementById('settingTtsSkipChars');
+      if (el) el.value = skipChars || '';
+    } catch {}
     // Load Turso config
     try {
       const { url, token } = await window.sonara.db.getTursoConfig();
@@ -226,12 +232,15 @@ const UI = (() => {
   }
 
   async function saveSettings() {
-    const fontSize = document.getElementById('settingFontSize').value;
-    const autoSave = document.getElementById('settingAutoSave').value;
+    const fontSize  = document.getElementById('settingFontSize').value;
+    const autoSave  = document.getElementById('settingAutoSave').value;
+    const skipChars = (document.getElementById('settingTtsSkipChars')?.value || '').trim();
     document.documentElement.style.setProperty('--font-reader', fontSize + 'px');
-    await window.sonara.settings.set('fontSize', fontSize);
-    await window.sonara.settings.set('autoSave', autoSave);
-    await window.sonara.settings.set('theme', currentTheme);
+    await window.sonara.settings.set('fontSize',       fontSize);
+    await window.sonara.settings.set('autoSave',       autoSave);
+    await window.sonara.settings.set('theme',          currentTheme);
+    await window.sonara.settings.set('ttsSkipChars',   skipChars);
+    if (typeof Reader !== 'undefined') Reader.setSkipChars(skipChars);
     closeModal('modalSettings');
     toast('Settings saved', 'success');
   }
@@ -267,6 +276,19 @@ const UI = (() => {
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
     chooseBooksDir, resetBooksDir, openBooksDir,
+    ttsAddPreset: (chars) => {
+      const el = document.getElementById('settingTtsSkipChars');
+      if (!el) return;
+      const current = el.value;
+      // Add only chars not already present
+      let added = '';
+      for (const c of chars) { if (!current.includes(c)) added += c; }
+      el.value = current + added;
+    },
+    ttsClearPreset: () => {
+      const el = document.getElementById('settingTtsSkipChars');
+      if (el) el.value = '';
+    },
     setTheme: applyTheme, _applyThemeVisual: setTheme,
     showResumeDialog, resumeBook, startFromBeginning
   };

@@ -30,6 +30,9 @@ const Reader = (() => {
   let audioElement   = null;
   let audioBookData  = null;
 
+  // TTS skip characters — stripped from text before speaking
+  let ttsSkipChars   = '';   // raw string of chars; built into regex on use
+
   // PDF visual mode state
   let pdfMode        = false;
   let pdfZoom        = 1.0;
@@ -1026,6 +1029,20 @@ const Reader = (() => {
     _clearWordHighlight();
   }
 
+  // ── TTS TEXT CLEANER ─────────────────────────────────────
+  // Strips skip-characters from text before speaking so the TTS
+  // engine never reads stray markdown / formatting symbols aloud.
+  function _cleanTextForTTS(text) {
+    if (!ttsSkipChars || !text) return text;
+    const escaped = ttsSkipChars
+      .split('')
+      .map(c => c.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&'))
+      .join('');
+    if (!escaped) return text;
+    // Replace each skipped char with a space (avoids word-merging)
+    return text.replace(new RegExp(`[${escaped}]`, 'g'), ' ').replace(/ {2,}/g, ' ').trim();
+  }
+
   function _speakChunk(idx) {
     if (idx >= chunks.length) {
       // Book finished
@@ -1063,7 +1080,7 @@ const Reader = (() => {
       _pickDefaultVoice();
     }
 
-    const chunkText = chunks[idx].text;
+    const chunkText = _cleanTextForTTS(chunks[idx].text);
 
     // ── EDGE TTS (Neural voice) ──
     if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
@@ -1090,7 +1107,7 @@ const Reader = (() => {
   }
 
   function _speakChunkWithSystem(idx) {
-    const chunkText = chunks[idx].text;
+    const chunkText = _cleanTextForTTS(chunks[idx].text);
     const u = new SpeechSynthesisUtterance(chunkText);
     u.rate   = speed;
     u.pitch  = pitch;
@@ -1340,9 +1357,11 @@ const Reader = (() => {
   async function applySettings() {
     if (!window.sonara) return;
 
-    const savedVoice = await window.sonara.settings.get('voice');
-    const savedSpeed = await window.sonara.settings.get('speed', 1.0);
-    const savedPitch = await window.sonara.settings.get('pitch', 1.0);
+    const savedVoice     = await window.sonara.settings.get('voice');
+    const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
+    const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
+    const savedSkipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
+    ttsSkipChars = savedSkipChars || '';
 
     speed = parseFloat(savedSpeed) || 1.0;
     pitch = parseFloat(savedPitch) || 1.0;
@@ -1589,6 +1608,8 @@ const Reader = (() => {
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
     cycleSpeed, onSpeedChange, onPitchChange,
     applySettings,
+    /** Update the skip chars at runtime (called from settings save) */
+    setSkipChars: (val) => { ttsSkipChars = val || ''; },
     saveProgress: _saveProgress,
     saveBookmark,
     getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice }),

@@ -614,6 +614,24 @@
         <span class="sg-value" id="settingVersion">1.0.0</span>
       </div>
 
+      <!-- ── TTS VOICE CLEANUP ── -->
+      <div class="sg-section-head sg-section-head--full">TTS Voice Cleanup</div>
+      <div class="sg-item sg-item--full">
+        <label class="sg-label">Skip Characters</label>
+        <p class="sg-hint">Characters typed below will be silently removed before the voice reads any text — useful to stop the TTS engine from saying asterisks, underscores or other formatting symbols.</p>
+        <input type="text" class="sync-input" id="settingTtsSkipChars"
+               placeholder="e.g.  * _ ~ # [ ] { } ( )"
+               style="font-family:var(--font-mono);letter-spacing:2px;" />
+        <div class="tts-preset-chips">
+          <span class="tts-preset-label">Presets:</span>
+          <button class="tts-preset-chip" onclick="UI.ttsAddPreset('*_~#')">Markdown</button>
+          <button class="tts-preset-chip" onclick="UI.ttsAddPreset('[]{}()')">Brackets</button>
+          <button class="tts-preset-chip" onclick="UI.ttsAddPreset('|^=+<>')">Symbols</button>
+          <button class="tts-preset-chip" onclick="UI.ttsAddPreset('*_~#[]{}()|^=+<>\\/')">All Common</button>
+          <button class="tts-preset-chip tts-preset-chip--clear" onclick="UI.ttsClearPreset()">Clear</button>
+        </div>
+      </div>
+
       <!-- ── DATABASE & SYNC ── -->
       <div class="sg-section-head sg-section-head--full">Database &amp; Sync</div>
 
