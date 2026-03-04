@@ -110,6 +110,12 @@ const UI = (() => {
       const el = document.getElementById('settingTtsSkipChars');
       if (el) el.value = skipChars || '';
     } catch {}
+    // Load TTS skip words
+    try {
+      const skipWords = await window.sonara.settings.get('ttsSkipWords', '');
+      const el = document.getElementById('settingTtsSkipWords');
+      if (el) el.value = skipWords || '';
+    } catch {}
     // Load Turso config
     try {
       const { url, token } = await window.sonara.db.getTursoConfig();
@@ -235,12 +241,14 @@ const UI = (() => {
     const fontSize  = document.getElementById('settingFontSize').value;
     const autoSave  = document.getElementById('settingAutoSave').value;
     const skipChars = (document.getElementById('settingTtsSkipChars')?.value || '').trim();
+    const skipWords = (document.getElementById('settingTtsSkipWords')?.value || '').trim();
     document.documentElement.style.setProperty('--font-reader', fontSize + 'px');
     await window.sonara.settings.set('fontSize',       fontSize);
     await window.sonara.settings.set('autoSave',       autoSave);
     await window.sonara.settings.set('theme',          currentTheme);
     await window.sonara.settings.set('ttsSkipChars',   skipChars);
-    if (typeof Reader !== 'undefined') { Reader.setSkipChars(skipChars); }
+    await window.sonara.settings.set('ttsSkipWords',   skipWords);
+    if (typeof Reader !== 'undefined') { Reader.setSkipChars(skipChars); Reader.setSkipWords(skipWords); }
     closeModal('modalSettings');
     toast('Settings saved', 'success');
   }
@@ -280,7 +288,6 @@ const UI = (() => {
       const el = document.getElementById('settingTtsSkipChars');
       if (!el) return;
       const current = el.value;
-      // Add only chars not already present
       let added = '';
       for (const c of chars) { if (!current.includes(c)) added += c; }
       el.value = current + added;
@@ -288,6 +295,17 @@ const UI = (() => {
     ttsClearPreset: () => {
       const el = document.getElementById('settingTtsSkipChars');
       if (el) el.value = '';
+    },
+    ttsAddWords: (words) => {
+      const el = document.getElementById('settingTtsSkipWords');
+      if (!el) return;
+      const existing = el.value.split(',').map(w => w.trim()).filter(Boolean);
+      const toAdd    = words.split(',').map(w => w.trim()).filter(Boolean);
+      const merged   = [...existing];
+      for (const w of toAdd) {
+        if (!merged.some(e => e.toLowerCase() === w.toLowerCase())) merged.push(w);
+      }
+      el.value = merged.join(', ');
     },
     setTheme: applyTheme, _applyThemeVisual: setTheme,
     showResumeDialog, resumeBook, startFromBeginning

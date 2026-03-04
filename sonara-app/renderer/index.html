@@ -623,7 +623,7 @@
       <div class="sg-section-head sg-section-head--full">TTS Voice Cleanup</div>
       <div class="sg-item sg-item--full">
         <label class="sg-label">Skip Characters</label>
-        <p class="sg-hint">Characters typed below will be silently removed before the voice reads any text — useful to stop the TTS engine from saying asterisks, underscores or other formatting symbols.</p>
+        <p class="sg-hint">These characters are silently removed before speaking — stops the TTS from reading asterisks, underscores or markdown symbols aloud.</p>
         <input type="text" class="sync-input" id="settingTtsSkipChars"
                placeholder="e.g.  * _ ~ # [ ] { } ( )"
                style="font-family:var(--font-mono);letter-spacing:2px;" />
@@ -634,6 +634,17 @@
           <button class="tts-preset-chip" onclick="UI.ttsAddPreset('|^=+<>')">Symbols</button>
           <button class="tts-preset-chip" onclick="UI.ttsAddPreset('*_~#[]{}()|^=+<>\\/')">All Common</button>
           <button class="tts-preset-chip tts-preset-chip--clear" onclick="UI.ttsClearPreset()">Clear</button>
+        </div>
+      </div>
+      <div class="sg-item sg-item--full">
+        <label class="sg-label">Skip Words</label>
+        <p class="sg-hint">Comma-separated words to skip while reading. Whole words only, case-insensitive. E.g. <code style="font-family:var(--font-mono);font-size:10px;color:var(--accent)">chapter, figure, table, note</code></p>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" class="sync-input" id="settingTtsSkipWords"
+                 placeholder="chapter, section, figure, table"
+                 style="flex:1;margin:0;" />
+          <button class="tts-preset-chip" onclick="UI.ttsAddWords('chapter,section,figure,table,note,example')" style="white-space:nowrap;">Common</button>
+          <button class="tts-preset-chip tts-preset-chip--clear" onclick="document.getElementById('settingTtsSkipWords').value=''">Clear</button>
         </div>
       </div>
 

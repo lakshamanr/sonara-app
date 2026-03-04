@@ -1309,7 +1309,29 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   position: relative;
   animation: slideUp .25s ease;
 }
-.modal-wide { max-width: 520px; }
+.modal-wide {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 60px);
+  padding-bottom: 0;
+}
+.modal-wide .settings-grid {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200,169,110,.2) transparent;
+}
+.modal-wide .settings-grid::-webkit-scrollbar { width: 4px; }
+.modal-wide .settings-grid::-webkit-scrollbar-thumb { background: rgba(200,169,110,.25); border-radius: 2px; }
+.modal-wide .modal-actions {
+  flex-shrink: 0;
+  padding: 16px 0 22px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
 .modal-close {
   position: absolute; top: 16px; right: 16px;
   width: 26px; height: 26px; border-radius: 50%;

@@ -33,6 +33,7 @@ const Reader = (() => {
   // TTS skip characters — stripped from text before speaking
   let ttsSkipChars   = '';   // raw string of chars; built into regex on use
   let ttsSkipEnabled = true; // master on/off toggle
+  let ttsSkipWords   = '';   // comma-separated words to skip (whole-word, case-insensitive)
 
   // PDF visual mode state
   let pdfMode        = false;
@@ -1034,14 +1035,28 @@ const Reader = (() => {
   // Strips skip-characters from text before speaking so the TTS
   // engine never reads stray markdown / formatting symbols aloud.
   function _cleanTextForTTS(text) {
-    if (!ttsSkipEnabled || !ttsSkipChars || !text) return text;
-    const escaped = ttsSkipChars
-      .split('')
-      .map(c => c.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&'))
-      .join('');
-    if (!escaped) return text;
-    // Replace each skipped char with a space (avoids word-merging)
-    return text.replace(new RegExp(`[${escaped}]`, 'g'), ' ').replace(/ {2,}/g, ' ').trim();
+    if (!ttsSkipEnabled || !text) return text;
+    // 1. Strip specified characters
+    if (ttsSkipChars) {
+      const escaped = ttsSkipChars
+        .split('')
+        .map(c => c.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&'))
+        .join('');
+      if (escaped) text = text.replace(new RegExp(`[${escaped}]`, 'g'), ' ');
+    }
+    // 2. Strip whole words (case-insensitive, word-boundary safe)
+    if (ttsSkipWords) {
+      const words = ttsSkipWords
+        .split(',')
+        .map(w => w.trim())
+        .filter(Boolean)
+        .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      if (words.length) {
+        const wordPattern = new RegExp(`\\b(${words.join('|')})\\b`, 'gi');
+        text = text.replace(wordPattern, ' ');
+      }
+    }
+    return text.replace(/ {2,}/g, ' ').trim();
   }
 
   function _updateSkipBtn() {
@@ -1384,8 +1399,10 @@ const Reader = (() => {
     const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
     const savedSkipChars    = await window.sonara.settings.get('ttsSkipChars', '*_~#');
     const savedSkipEnabled  = await window.sonara.settings.get('ttsSkipEnabled', true);
+    const savedSkipWords    = await window.sonara.settings.get('ttsSkipWords', '');
     ttsSkipChars   = savedSkipChars || '';
     ttsSkipEnabled = savedSkipEnabled !== false; // default true
+    ttsSkipWords   = savedSkipWords  || '';
     _updateSkipBtn();
 
     speed = parseFloat(savedSpeed) || 1.0;
@@ -1635,6 +1652,7 @@ const Reader = (() => {
     applySettings,
     /** Update the skip chars at runtime (called from settings save) */
     setSkipChars:   (val)  => { ttsSkipChars   = val || ''; },
+    setSkipWords:   (val)  => { ttsSkipWords   = val || ''; },
     setSkipEnabled: (val)  => { ttsSkipEnabled = !!val; _updateSkipBtn(); },
     toggleSkipChars,
     saveProgress: _saveProgress,
