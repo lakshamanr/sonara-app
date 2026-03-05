@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage } = require('electron');
 
 const path  = require('path');
 const fs    = require('fs');
@@ -34,6 +34,90 @@ function getEdgeTTS() {
 let mainWindow;
 let booksDir;   // where we copy user files
 let coversDir;  // where we save extracted cover images
+
+// ─── TRAY & MINI PLAYER ────────────────────────────────────
+let tray       = null;
+let miniPlayer = null;
+let _playerState = { isPlaying: false, title: '', chapterTitle: '', percent: 0 };
+
+function createTray() {
+  const iconPath = path.join(__dirname, 'logo', 'logo.png');
+  let icon;
+  try {
+    icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  } catch {
+    icon = nativeImage.createEmpty();
+  }
+  tray = new Tray(icon);
+  tray.setToolTip('Sonara');
+  tray.setContextMenu(_buildTrayMenu());
+  tray.on('click', () => {
+    if (!mainWindow) return;
+    mainWindow.isVisible() ? mainWindow.focus() : mainWindow.show();
+  });
+  tray.on('double-click', () => {
+    if (!mainWindow) return;
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+function _buildTrayMenu() {
+  const playing = _playerState.isPlaying;
+  const bookLabel = _playerState.title ? `« ${_playerState.title.slice(0, 30)}${_playerState.title.length > 30 ? '…' : ''} »` : 'No book playing';
+  return Menu.buildFromTemplate([
+    { label: 'Sonara', enabled: false },
+    { type: 'separator' },
+    { label: playing ? '⏸  Pause' : '▶  Play',
+      click: () => mainWindow?.webContents.send('player:command', 'toggle') },
+    { label: '⏮  Previous',
+      click: () => mainWindow?.webContents.send('player:command', 'prev') },
+    { label: '⏭  Next',
+      click: () => mainWindow?.webContents.send('player:command', 'next') },
+    { type: 'separator' },
+    { label: bookLabel, enabled: false },
+    { type: 'separator' },
+    { label: 'Show / Hide',
+      click: () => {
+        if (!mainWindow) return;
+        mainWindow.isVisible() ? mainWindow.hide() : (mainWindow.show(), mainWindow.focus());
+      }
+    },
+    { label: '🎵  Mini Player', click: () => _toggleMiniPlayer() },
+    { type: 'separator' },
+    { label: 'Quit Sonara', click: () => { tray?.destroy(); app.quit(); } }
+  ]);
+}
+
+function createMiniPlayer() {
+  miniPlayer = new BrowserWindow({
+    width: 340, height: 84,
+    frame: false, transparent: false,
+    alwaysOnTop: true, skipTaskbar: true,
+    resizable: false, maximizable: false,
+    show: false,
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  });
+  miniPlayer.loadFile(path.join(__dirname, 'mini-player.html'));
+  miniPlayer.on('closed', () => { miniPlayer = null; });
+}
+
+function _toggleMiniPlayer() {
+  if (!miniPlayer || miniPlayer.isDestroyed()) {
+    createMiniPlayer();
+    miniPlayer.once('ready-to-show', () => {
+      miniPlayer.show();
+      miniPlayer.webContents.send('player:state', _playerState);
+    });
+    return;
+  }
+  if (miniPlayer.isVisible()) {
+    miniPlayer.hide();
+  } else {
+    miniPlayer.show();
+    miniPlayer.webContents.send('player:state', _playerState);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  IPC STANDARD RESPONSE WRAPPER
@@ -148,6 +232,7 @@ app.whenReady().then(() => {
     }
 
     createWindow();
+    createTray();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -159,7 +244,8 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // With a system tray we keep the app alive when all windows are closed.
+  if (process.platform !== 'darwin' && !tray) app.quit();
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -206,8 +292,12 @@ function createWindow() {
     try { mainWindow.setBounds(savedBounds); } catch {}
   }
 
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
     db.setSetting('windowBounds', mainWindow.getBounds());
+    if (tray) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
   });
 }
 
@@ -220,7 +310,27 @@ ipcMain.handle('win:maximize',  () => {
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
 ipcMain.handle('win:close',     () => mainWindow && mainWindow.close());
-ipcMain.handle('win:isMaximized', () => mainWindow ? mainWindow.isMaximized() : false);
+ipcMain.handle('win:isMaximized',  () => mainWindow ? mainWindow.isMaximized() : false);
+ipcMain.handle('win:alwaysOnTop', (_, val) => { mainWindow?.setAlwaysOnTop(!!val); return !!val; });
+
+// ─── PLAYER STATE (from renderer → tray & mini player update) ─
+ipcMain.on('player:updateState', (_, state) => {
+  _playerState = { ..._playerState, ...state };
+  tray?.setContextMenu(_buildTrayMenu());
+  if (miniPlayer && !miniPlayer.isDestroyed() && miniPlayer.isVisible()) {
+    miniPlayer.webContents.send('player:state', _playerState);
+  }
+});
+
+// Mini player toggle from renderer
+ipcMain.on('miniPlayer:toggle', () => _toggleMiniPlayer());
+
+// Commands from mini player buttons → forward to renderer
+ipcMain.on('mini:play',  () => mainWindow?.webContents.send('player:command', 'toggle'));
+ipcMain.on('mini:prev',  () => mainWindow?.webContents.send('player:command', 'prev'));
+ipcMain.on('mini:next',  () => mainWindow?.webContents.send('player:command', 'next'));
+ipcMain.on('mini:close', () => miniPlayer?.hide());
+ipcMain.on('mini:open',  () => { mainWindow?.show(); mainWindow?.focus(); });
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — LIBRARY

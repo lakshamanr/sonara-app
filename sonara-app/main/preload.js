@@ -63,8 +63,7 @@ contextBridge.exposeInMainWorld('sonara', {
     minimize:    () => ipcRenderer.invoke('win:minimize'),
     maximize:    () => ipcRenderer.invoke('win:maximize'),
     close:       () => ipcRenderer.invoke('win:close'),
-    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
-  },
+    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),    alwaysOnTop: (val) => ipcRenderer.invoke('win:alwaysOnTop', val),  },
 
   // ── DATABASE SYNC ─────────────────────────────────────────
   db: {
@@ -191,5 +190,20 @@ contextBridge.exposeInMainWorld('sonara', {
     writeText:  (data)             => ipcRenderer.invoke('notes:writeText',  data),
     /** @returns {Promise<{success:true}>} */
     writePdf:   (data)             => ipcRenderer.invoke('notes:writePdf',   data),
-  },});
+  },
+
+  // ── PLAYER STATE BRIDGE (renderer ↔ tray / mini player) ───────────
+  player: {
+    /** Push current playback state to tray + mini player */
+    updateState: (state) => ipcRenderer.send('player:updateState', state),
+    /** Listen for tray/mini-player commands: 'toggle' | 'prev' | 'next' */
+    onCommand:   (cb)    => ipcRenderer.on('player:command', (_, cmd) => cb(cmd)),
+  },
+
+  // ── MINI PLAYER WINDOW ───────────────────────────────────
+  miniPlayer: {
+    /** Toggle the mini floating player window */
+    toggle: () => ipcRenderer.send('miniPlayer:toggle'),
+  },
+});
 

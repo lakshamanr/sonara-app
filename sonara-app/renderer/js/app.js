@@ -1224,9 +1224,22 @@ const App = (() => {
     });
   }
 
+  // ── PIN / ALWAYS ON TOP ───────────────────────────────────────────────────
+  let _pinned = false;
+  async function togglePin() {
+    _pinned = !_pinned;
+    await window.sonara?.win?.alwaysOnTop(_pinned);
+    const btn = document.getElementById('pbPinBtn');
+    if (btn) btn.classList.toggle('active', _pinned);
+    if (typeof UI !== 'undefined') {
+      UI.toast(_pinned ? 'Window pinned on top' : 'Window unpinned', '');
+    }
+  }
+
   return {
     init, addBook, openBook, clearCurrentBook,
     showLibrary, showReader,
+    togglePin,
     _classifyExisting: _autoClassifyBook,
     get currentBookId() { return currentBookId; }
   };

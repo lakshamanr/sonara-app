@@ -1015,6 +1015,7 @@ const Reader = (() => {
       _speakChunk(currentChunk);
     }
     _startTimer();
+    _pushPlayerState();
   }
 
   function _pause() {
@@ -1024,6 +1025,7 @@ const Reader = (() => {
     CloudTTS.pause();
     _stopTimer();
     _saveProgress();
+    _pushPlayerState();
   }
 
   function stop() {
@@ -1041,6 +1043,7 @@ const Reader = (() => {
     _stopTimer();
     _updatePlayIcon(false);
     _clearWordHighlight();
+    _pushPlayerState();
   }
 
   // ── TTS TEXT CLEANER ─────────────────────────────────────
@@ -1208,6 +1211,7 @@ const Reader = (() => {
       _updateChapterTitleBar(next);
       _highlightChapterItem(next);
     }
+    _pushPlayerState();
   }
 
   function jumpToChunk(idx) {
@@ -1465,6 +1469,15 @@ const Reader = (() => {
   async function applySettings() {
     if (!window.sonara) return;
 
+    // Wire tray / mini-player commands (only once)
+    if (!applySettings._cmdWired) {
+      applySettings._cmdWired = true;
+      window.sonara.player?.onCommand(cmd => {
+        if      (cmd === 'toggle') togglePlay();
+        else if (cmd === 'prev')   skipChunk(-1);
+        else if (cmd === 'next')   skipChunk(1);
+      });
+    }
     const savedVoice     = await window.sonara.settings.get('voice');
     const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
     const savedPitch     = await window.sonara.settings.get('pitch', 1.0);

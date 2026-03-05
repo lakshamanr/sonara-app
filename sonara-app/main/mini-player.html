@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; border-radius:14px; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #111118;
+      color: #e2e8f0;
+      border: 1px solid rgba(129,140,248,0.25);
+      border-radius: 14px;
+      user-select: none;
+    }
+    .widget {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px 10px 12px;
+      height: 82px;
+      -webkit-app-region: drag;
+    }
+    .no-drag { -webkit-app-region: no-drag; }
+
+    /* Cover art / icon */
+    .cover {
+      width: 50px; height: 50px; border-radius: 9px;
+      background: linear-gradient(135deg,#1e1e3f,#2d2d5f);
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+
+    /* Meta text */
+    .meta { flex:1; min-width:0; }
+    .title {
+      font-size: 12px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: #e2e8f0;
+    }
+    .chapter {
+      font-size: 10px; color: #7c8ba0;
+      margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .progress-track {
+      height: 3px; background: #1e1e3f; border-radius: 2px; margin-top: 7px;
+    }
+    .progress-fill {
+      height: 100%; background: linear-gradient(90deg,#6366f1,#818cf8);
+      border-radius: 2px; transition: width .6s linear;
+    }
+
+    /* Controls */
+    .controls { display:flex; align-items:center; gap:3px; }
+    .btn {
+      width:28px; height:28px; border:none; background:transparent;
+      color:#7c8ba0; cursor:pointer; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      transition: background .15s, color .15s;
+    }
+    .btn:hover { background:rgba(255,255,255,.08); color:#e2e8f0; }
+    .btn.play {
+      background: #4f46e5; color:#fff; width:34px; height:34px;
+      border-radius:50%; box-shadow: 0 0 10px rgba(99,102,241,.4);
+    }
+    .btn.play:hover { background:#6366f1; }
+
+    /* Top row close & pin buttons */
+    .corner-btns {
+      position:absolute; top:6px; right:8px;
+      display:flex; gap:4px;
+    }
+    .corner-btn {
+      background:none; border:none; cursor:pointer;
+      color:#475569; font-size:10px;
+      padding:2px 5px; border-radius:4px;
+      transition:color .15s, background .15s;
+    }
+    .corner-btn:hover { color:#e2e8f0; background:rgba(255,255,255,.06); }
+    .corner-btn.pinned { color:#818cf8; }
+  </style>
+</head>
+<body>
+  <div class="corner-btns">
+    <button class="corner-btn" id="openBtn" title="Open Sonara">↗</button>
+    <button class="corner-btn" id="closeBtn" title="Close mini player">✕</button>
+  </div>
+
+  <div class="widget" id="widget">
+    <div class="cover no-drag" id="cover">🎧</div>
+    <div class="meta">
+      <div class="title" id="titleEl">No book playing</div>
+      <div class="chapter" id="chapterEl">Open a book in Sonara to start</div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    </div>
+    <div class="controls no-drag">
+      <button class="btn" id="prevBtn" title="Previous section">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="19 20 9 12 19 4 19 20"/>
+          <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5"/>
+        </svg>
+      </button>
+      <button class="btn play" id="playBtn" title="Play / Pause">
+        <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </button>
+      <button class="btn" id="nextBtn" title="Next section">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 4 15 12 5 20 5 4"/>
+          <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    document.getElementById('prevBtn').onclick  = () => ipcRenderer.send('mini:prev');
+    document.getElementById('nextBtn').onclick  = () => ipcRenderer.send('mini:next');
+    document.getElementById('playBtn').onclick  = () => ipcRenderer.send('mini:play');
+    document.getElementById('closeBtn').onclick = () => ipcRenderer.send('mini:close');
+    document.getElementById('openBtn').onclick  = () => ipcRenderer.send('mini:open');
+
+    const PAUSE_SVG = '<rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/>';
+    const PLAY_SVG  = '<polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/>';
+
+    ipcRenderer.on('player:state', (_, state) => {
+      document.getElementById('titleEl').textContent   = state.title   || 'No book playing';
+      document.getElementById('chapterEl').textContent = state.chapterTitle || (state.title ? 'Playing' : 'Open a book in Sonara');
+      document.getElementById('progressFill').style.width = (state.percent || 0) + '%';
+      document.getElementById('playIcon').innerHTML  = state.isPlaying ? PAUSE_SVG : PLAY_SVG;
+    });
+  </script>
+</body>
+</html>
