@@ -5,6 +5,54 @@ All notable changes to Sonara will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-03-05
+
+### 🎉 New Features
+
+#### System Tray
+- Sonara now lives in the system tray — close the window without quitting the app
+- Tray context menu: Play/Pause, Previous, Next, Show/Hide, Mini Player, Quit
+- Tray menu updates live with current book title and play/pause state
+
+#### Mini Floating Player
+- 340×100px always-on-top frameless window (toggle via player bar or tray menu)
+- Shows book title, chapter, progress bar, and Prev/Play-Pause/Next controls
+- Drag anywhere on the top bar to reposition; close or open main window from it
+- Spawns at bottom-right corner of screen; stays in sync with main window in real time
+
+#### Pin / Always-on-Top
+- New pin button in the player bar keeps the main window above all other windows
+- Accent-coloured when active; persists until manually toggled off
+
+#### Kindle Support (MOBI / AZW3)
+- Open `.mobi` and `.azw3` Kindle files directly — no conversion needed
+- PalmDOC LZ77 decompression for MOBI6; KF8/AZW3 HTML extraction
+- DRM detection with a friendly error message
+- Chapter detection, natural text chunking (~5 500 chars), same reader as EPUB
+
+#### Reader Display Settings
+- Font family picker: Serif · Sans · Georgia · Mono (segmented button group)
+- Font size slider: 14–32 px (default 17 px)
+- Line spacing slider: 1.4–2.8 (default 2.0)
+- Reading width slider: 480–900 px (default 680 px)
+- All settings persist across sessions via the settings database
+
+#### Smart Auto-Classify
+- Heuristics-first genre detection (title keywords) — instant, no network needed
+- Falls back to Open Library API then Google Books API
+- Up to 2 genre collections created and coloured automatically per book
+
+#### Delete Collection Modal
+- Dedicated modal confirms deletion, shows book count, and reassures books are kept
+
+### 🐛 Bug Fixes
+- Fixed `_pushPlayerState` missing definition causing all books to fail to load after tray feature commit
+- Fixed mini player `ready-to-show` race condition (window never appeared on first open)
+- Fixed unclickable close/open buttons in mini player (missing `no-drag` on corner button container)
+- Fixed stale/empty book title in mini player (state pushed before `pbMetaTitle` was set)
+
+---
+
 ## [2.0.0] - 2025-02-12
 
 ### 🎉 Major Features Added

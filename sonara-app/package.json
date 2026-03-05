@@ -1,6 +1,6 @@
 {
   "name": "sonara",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Professional Audiobook Player with PDF Highlighting, TTS, and Smart Library Management",
   "main": "main/main.js",
   "scripts": {
