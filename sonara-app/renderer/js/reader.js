@@ -975,6 +975,15 @@ const Reader = (() => {
   }
 
   // ── PLAYBACK ─────────────────────────────────────────────
+
+  // Push current player state to main process (updates tray menu + mini player)
+  function _pushPlayerState() {
+    const title        = document.getElementById('pbMetaTitle')?.textContent?.trim() || '';
+    const chapterTitle = chunks[currentChunk]?.title || '';
+    const percent      = chunks.length ? Math.round((currentChunk / chunks.length) * 100) : 0;
+    window.sonara?.player?.updateState({ isPlaying, title, chapterTitle, percent });
+  }
+
   function togglePlay() {
     if (audioMode) {
       _toggleAudioPlay();
