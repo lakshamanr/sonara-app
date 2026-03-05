@@ -91,9 +91,11 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── BOOKS FOLDER ────────────────────────────────────────
   books: {
     /** @returns {Promise<string>} books folder path (always userData/books) */
-    getDir:  ()  => ipcRenderer.invoke('books:getDir'),
+    getDir:    ()       => ipcRenderer.invoke('books:getDir'),
     /** @returns {Promise<string>} open the folder in Explorer */
-    openDir: ()  => ipcRenderer.invoke('books:openDir'),
+    openDir:   ()       => ipcRenderer.invoke('books:openDir'),
+    /** @returns {Promise<string[]>} up to 2 normalised genre names */
+    classify:  (title)  => ipcRenderer.invoke('books:classify', title),
   },
 
   // ── FILE / DIALOG ─────────────────────────────────────────

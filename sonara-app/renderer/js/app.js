@@ -544,13 +544,46 @@ const App = (() => {
       fileSize:   fileInfo.size
     };
 
+    const bookTitle = pendingBookData.title; // capture before process clears it
     const silent = !openAfter;
     if (AUDIO_FORMATS.includes(fileInfo.format)) {
       await _processAudioFile(id, fileInfo, silent);
     } else {
       await _processFile(id, fileInfo, silent);
     }
+    // Fire-and-forget genre classification (non-blocking)
+    _autoClassifyBook(id, bookTitle);
     return 'added';
+  }
+
+  // ── AUTO-CLASSIFY INTO COLLECTIONS ────────────────────────────
+  const _GENRE_COLORS = {
+    'Science Fiction': '#6366f1', 'Fantasy':   '#8b5cf6', 'Mystery':  '#1e40af',
+    'Thriller':        '#dc2626', 'Horror':    '#312e81', 'Romance':  '#ec4899',
+    'Historical':      '#92400e', 'Biography': '#0891b2', 'History':  '#7c2d12',
+    'Science':         '#059669', 'Technology':'#0ea5e9', 'Self-Help':'#f59e0b',
+    'Psychology':      '#a855f7', 'Philosophy':'#6b7280', 'Business': '#16a34a',
+    'Politics':        '#1d4ed8', 'Religion':  '#c2410c', 'Children': '#f97316',
+    'Poetry':          '#be185d', 'Drama':     '#7c3aed', 'Fiction':  '#64748b',
+  };
+
+  async function _autoClassifyBook(bookId, title) {
+    try {
+      const genres = await window.sonara.books.classify(title);
+      if (!genres || !genres.length) return;
+      const allCols = await window.sonara.collections.getAll();
+      for (const genre of genres) {
+        let col = allCols.find(c => c.name.toLowerCase() === genre.toLowerCase());
+        if (!col) {
+          col = await window.sonara.collections.create(genre, _GENRE_COLORS[genre] || '#64748b');
+          allCols.push(col);
+        }
+        await window.sonara.collections.addBook(bookId, col.id);
+      }
+      Library.load(); // refresh so collections sidebar updates
+    } catch (e) {
+      console.log('[autoClassify] skipped:', e.message);
+    }
   }
 
   // ── OPEN BOOK FROM LIBRARY ───────────────────────────────

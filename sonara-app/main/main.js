@@ -586,6 +586,83 @@ ipcMain.handle('books:openDir', () => {
   return booksDir;
 });
 
+/**
+ * Auto-classify a book title using Open Library API,
+ * falling back to Google Books. Returns up to 2 normalised genre strings.
+ */
+ipcMain.handle('books:classify', ipcHandler(async (_, title) => {
+  function httpsGet(url) {
+    return new Promise((resolve, reject) => {
+      const https = require('https');
+      const req = https.get(url, { headers: { 'User-Agent': 'Sonara/2.0' } }, res => {
+        let data = '';
+        res.on('data', d => data += d);
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('bad JSON')); } });
+      });
+      req.on('error', reject);
+      req.setTimeout(6000, () => { req.destroy(); reject(new Error('timeout')); });
+    });
+  }
+
+  const GENRE_MAP = [
+    { genre: 'Science Fiction', keys: ['science fiction','sci-fi','space opera','cyberpunk','dystopian','speculative fiction','alternate history'] },
+    { genre: 'Fantasy',         keys: ['fantasy','magic','fairy tale','mythology','sword and sorcery','epic fantasy'] },
+    { genre: 'Mystery',         keys: ['mystery','detective','crime fiction','whodunit','noir','cozy mystery'] },
+    { genre: 'Thriller',        keys: ['thriller','suspense','spy','espionage','action'] },
+    { genre: 'Horror',          keys: ['horror','ghost stories','supernatural fiction','occult'] },
+    { genre: 'Romance',         keys: ['romance','love stories','romantic fiction'] },
+    { genre: 'Historical',      keys: ['historical fiction','historical novel','histor'] },
+    { genre: 'Biography',       keys: ['biography','autobiography','memoir','personal narrative','true account'] },
+    { genre: 'History',         keys: [' history','world history','ancient history','military history','social history'] },
+    { genre: 'Science',         keys: ['popular science','natural history','astronomy','physics','chemistry','biology','mathematics','geology','ecology'] },
+    { genre: 'Technology',      keys: ['technology','computer science','programming','software','artificial intelligence','engineering','computers'] },
+    { genre: 'Self-Help',       keys: ['self-help','personal development','motivational','success','productivity','life skills','self improvement'] },
+    { genre: 'Psychology',      keys: ['psychology','cognitive science','behavior','mental health','neuroscience','psychiatry'] },
+    { genre: 'Philosophy',      keys: ['philosophy','ethics','logic','metaphysics','epistemology'] },
+    { genre: 'Business',        keys: ['business','economics','management','entrepreneurship','finance','investing','leadership','marketing'] },
+    { genre: 'Politics',        keys: ['politics','political science','government','social science','public policy'] },
+    { genre: 'Religion',        keys: ['religion','spirituality','theology','christianity','islam','buddhism','hinduism','faith'] },
+    { genre: 'Children',        keys: ['juvenile fiction',"children's literature",'picture books','young adult','middle grade'] },
+    { genre: 'Poetry',          keys: ['poetry','verse','poems','poetic'] },
+    { genre: 'Drama',           keys: ['drama','plays','theater','theatre'] },
+    { genre: 'Fiction',         keys: ['fiction','novel','short stories'] },
+  ];
+
+  function normalise(subjects) {
+    const found = [];
+    const lc = subjects.map(s => s.toLowerCase());
+    for (const { genre, keys } of GENRE_MAP) {
+      if (found.length >= 2) break;
+      if (keys.some(k => lc.some(s => s.includes(k)))) found.push(genre);
+    }
+    return found;
+  }
+
+  const q = encodeURIComponent(title.replace(/[\(\)\[\]]/g, '').trim());
+
+  // 1. Open Library
+  try {
+    const data = await httpsGet(`https://openlibrary.org/search.json?title=${q}&fields=subject&limit=1`);
+    const subjects = data.docs?.[0]?.subject || [];
+    if (subjects.length) {
+      const genres = normalise(subjects);
+      if (genres.length) return genres;
+    }
+  } catch (e) { console.log('[classify] Open Library error:', e.message); }
+
+  // 2. Google Books fallback
+  try {
+    const data = await httpsGet(`https://www.googleapis.com/books/v1/volumes?q=intitle:${q}&maxResults=1`);
+    const cats = data.items?.[0]?.volumeInfo?.categories || [];
+    if (cats.length) {
+      const genres = normalise(cats);
+      if (genres.length) return genres;
+    }
+  } catch (e) { console.log('[classify] Google Books error:', e.message); }
+
+  return [];
+}));
+
 // ─────────────────────────────────────────────────────────────
 //  IPC — TURSO HTTP HELPERS
 
