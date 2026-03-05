@@ -315,26 +315,24 @@ ipcMain.handle('settings:getAll', ipcHandler(() => db.getAllSettings()));
 ipcMain.handle('dialog:openFile', async () => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Select a book or audiobook file',
+      title: 'Select book or audiobook files',
       filters: [
         { name: 'All Supported', extensions: ['pdf', 'epub', 'mp3', 'm4b', 'm4a', 'ogg'] },
         { name: 'Books',         extensions: ['pdf', 'epub'] },
         { name: 'Audiobooks',    extensions: ['mp3', 'm4b', 'm4a', 'ogg'] }
       ],
-      properties: ['openFile']
+      properties: ['openFile', 'multiSelections']
     });
-    if (result.canceled || !result.filePaths.length) {
-      return null;
-    }
-    const filePath = result.filePaths[0];
-    const stat = fs.statSync(filePath);
-    const fileInfo = {
-      path:     filePath,
-      name:     path.basename(filePath),
-      size:     stat.size,
-      format:   path.extname(filePath).toLowerCase().slice(1)
-    };
-    return fileInfo;
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths.map(filePath => {
+      const stat = fs.statSync(filePath);
+      return {
+        path:   filePath,
+        name:   path.basename(filePath),
+        size:   stat.size,
+        format: path.extname(filePath).toLowerCase().slice(1)
+      };
+    });
   } catch (err) {
     return null;
   }

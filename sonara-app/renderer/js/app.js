@@ -474,56 +474,83 @@ const App = (() => {
   // ── ADD BOOK ─────────────────────────────────────────────
   async function addBook() {
     try {
-      const fileInfo = await window.sonara.dialog.openFile();
-      if (!fileInfo) return;
+      const files = await window.sonara.dialog.openFile(); // returns array
+      if (!files || !files.length) return;
 
-      // Check file size (warn if > 50MB, reject if > 200MB)
-      const sizeMB = fileInfo.size / (1024 * 1024);
-
-      if (sizeMB > 200) {
-        UI.toast('File too large (' + sizeMB.toFixed(0) + 'MB). Maximum size is 200MB.', 'error');
-        return;
-      }
-      
-      if (sizeMB > 50) {
-        const proceed = confirm(
-          'This file is quite large (' + sizeMB.toFixed(1) + 'MB).\\n\\n' +
-          'Processing may take several minutes and use significant memory.\\n\\n' +
-          'Consider using a smaller file if possible.\\n\\n' +
-          'Continue anyway?'
-        );
-        if (!proceed) return;
-      }
-
-      // Generate stable ID from name + size
-      const rawId = fileInfo.name + '_' + fileInfo.size;
-      const id    = btoa(rawId).replace(/[^a-zA-Z0-9]/g,'').slice(0, 20);
-
-      // Check if book already exists
-      const exists = await window.sonara.library.bookExists(id);
-      if (exists) {
-        UI.toast('This book is already in your library', 'error');
-        await openBook(id); // Just open it instead
-        return;
-      }
-
-      pendingBookData = {
-        id,
-        title:      fileInfo.name.replace(/\.(pdf|epub|mp3|m4b|m4a|ogg)$/i, '').replace(/[-_]/g, ' '),
-        format:     fileInfo.format,
-        sourcePath: fileInfo.path,
-        fileName:   fileInfo.name,
-        fileSize:   fileInfo.size
-      };
-
-      if (AUDIO_FORMATS.includes(fileInfo.format)) {
-        await _processAudioFile(id, fileInfo);
+      if (files.length === 1) {
+        // Single file — existing behaviour (opens reader after processing)
+        await _addSingleBook(files[0], true);
       } else {
-        await _processFile(id, fileInfo);
+        // Batch — add silently, stay in library, show summary toast
+        let added = 0, skipped = 0, failed = 0;
+        for (let i = 0; i < files.length; i++) {
+          const fi = files[i];
+          UI.toast('Adding ' + (i + 1) + ' of ' + files.length + ': ' +
+            fi.name.replace(/\.[^.]+$/, ''), 'success', 2500);
+          const result = await _addSingleBook(fi, false);
+          if      (result === 'added')  added++;
+          else if (result === 'exists') skipped++;
+          else                          failed++;
+        }
+        await Library.load();
+        const parts = [];
+        if (added)   parts.push(added   + ' book' + (added   !== 1 ? 's' : '') + ' added');
+        if (skipped) parts.push(skipped + ' already in library');
+        if (failed)  parts.push(failed  + ' failed');
+        UI.toast(parts.join(', '), added > 0 ? 'success' : 'error', 4000);
       }
     } catch (err) {
       UI.toast('Failed to add book: ' + err.message, 'error');
     }
+  }
+
+  // ── ADD SINGLE BOOK (shared by single and batch) ──────────
+  async function _addSingleBook(fileInfo, openAfter) {
+    // Size checks
+    const sizeMB = fileInfo.size / (1024 * 1024);
+    if (sizeMB > 200) {
+      UI.toast('Skipped “' + fileInfo.name + '” — too large (' + sizeMB.toFixed(0) + 'MB, max 200MB)', 'error');
+      return 'failed';
+    }
+    if (openAfter && sizeMB > 50) {
+      const proceed = confirm(
+        'This file is quite large (' + sizeMB.toFixed(1) + 'MB).\n\n' +
+        'Processing may take several minutes and use significant memory.\n\n' +
+        'Consider using a smaller file if possible.\n\nContinue anyway?'
+      );
+      if (!proceed) return 'cancelled';
+    }
+
+    // Generate stable ID
+    const rawId = fileInfo.name + '_' + fileInfo.size;
+    const id    = btoa(rawId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+
+    // Already in library?
+    const exists = await window.sonara.library.bookExists(id);
+    if (exists) {
+      if (openAfter) {
+        UI.toast('This book is already in your library', 'error');
+        await openBook(id);
+      }
+      return 'exists';
+    }
+
+    pendingBookData = {
+      id,
+      title:      fileInfo.name.replace(/\.(pdf|epub|mp3|m4b|m4a|ogg)$/i, '').replace(/[-_]/g, ' '),
+      format:     fileInfo.format,
+      sourcePath: fileInfo.path,
+      fileName:   fileInfo.name,
+      fileSize:   fileInfo.size
+    };
+
+    const silent = !openAfter;
+    if (AUDIO_FORMATS.includes(fileInfo.format)) {
+      await _processAudioFile(id, fileInfo, silent);
+    } else {
+      await _processFile(id, fileInfo, silent);
+    }
+    return 'added';
   }
 
   // ── OPEN BOOK FROM LIBRARY ───────────────────────────────
@@ -600,33 +627,34 @@ const App = (() => {
   }
 
   // ── PROCESS FILE ─────────────────────────────────────────
-  async function _processFile(id, fileInfo) {
+  // silent=true: batch mode — no overlay, no reader switch, caller handles library refresh
+  async function _processFile(id, fileInfo, silent = false) {
     if (isGenerating) {
       UI.toast('Please wait, a book is already being processed…', 'error');
       return;
     }
     isGenerating = true;
 
-    // Switch to reader view first so the generating overlay is visible
-    showReader();
-
-    // Show generating overlay
     const overlay = document.getElementById('generatingOverlay');
-    overlay.style.display = 'flex';
-    document.getElementById('readerWelcome').style.display   = 'none';
-    document.getElementById('chapterTitlebar').style.display = 'none';
-    document.getElementById('readerTextWrap').style.display  = 'none';
-    document.getElementById('readerPdfWrap').style.display   = 'none';
+    if (!silent) {
+      // Switch to reader view so the generating overlay is visible
+      showReader();
+      overlay.style.display = 'flex';
+      document.getElementById('readerWelcome').style.display   = 'none';
+      document.getElementById('chapterTitlebar').style.display = 'none';
+      document.getElementById('readerTextWrap').style.display  = 'none';
+      document.getElementById('readerPdfWrap').style.display   = 'none';
+    }
 
-    _setGenStep('extract','active'); _setGenProgress(5, 'Reading file…', fileInfo.name);
+    if (!silent) { _setGenStep('extract','active'); _setGenProgress(5, 'Reading file…', fileInfo.name); }
 
     try {
       // 1. Read file as base64
       const base64 = await window.sonara.file.read(fileInfo.path);
       if (!base64) throw new Error('Could not read file');
 
-      _setGenStep('extract','done'); _setGenStep('clean','active');
-      _setGenProgress(20, 'Extracting text…', 'Parsing ' + fileInfo.format.toUpperCase());
+      if (!silent) { _setGenStep('extract','done'); _setGenStep('clean','active');
+        _setGenProgress(20, 'Extracting text…', 'Parsing ' + fileInfo.format.toUpperCase()); }
 
       // 2. Parse
       let chunks;
@@ -638,9 +666,9 @@ const App = (() => {
 
       if (!chunks || !chunks.length) throw new Error('No readable text found in file');
 
-      _setGenStep('clean','done'); _setGenStep('ai','active');
-      _setGenProgress(52, 'Cleaning text…', chunks.length + ' sections');
-      await _sleep(200);
+      if (!silent) { _setGenStep('clean','done'); _setGenStep('ai','active');
+        _setGenProgress(52, 'Cleaning text…', chunks.length + ' sections');
+        await _sleep(200); }
 
       // 3. Claude enhancement (optional, first 3 chunks only)
       const claudeKey = UI.getClaudeKey();
@@ -657,9 +685,9 @@ const App = (() => {
         }
       }
 
-      _setGenStep('ai','done'); _setGenStep('tts','active');
-      _setGenProgress(78, 'Setting up voice…', '');
-      await _sleep(200);
+      if (!silent) { _setGenStep('ai','done'); _setGenStep('tts','active');
+        _setGenProgress(78, 'Setting up voice…', '');
+        await _sleep(200); }
 
       // 4. Estimate duration
       const words       = chunks.reduce((s, c) => s + c.text.split(/\s+/).length, 0);
@@ -721,34 +749,28 @@ const App = (() => {
       } catch (coverErr) {
       }
 
-      // 7. Load into reader
-      currentBookId = id;
-      Reader.loadBook(chunks, id, resumeData);
-      // Update player bar book info
-      const _pmTitle = document.getElementById('pbMetaTitle');
-      const _pmAuthor = document.getElementById('pbMetaAuthor');
-      if (_pmTitle) _pmTitle.textContent = pendingBookData.title || '';
-      if (_pmAuthor) _pmAuthor.textContent = pendingBookData.author || '';
-      _updateNavPanel(id); // update left panel cover + nav
-      Notes.load(id);      // load notes for this book
-
-      // Save as last-opened book for auto-load on next startup
-      await window.sonara.settings.set('lastBookId', id);
-
-      // Refresh library - ensure it updates
-      await Library.load();
-      await _sleep(100); // Give time for DOM to update
-      Library.setActiveCard(id);
-
-      // Hide overlay, show reader
-      overlay.style.display = 'none';
-      showReader();
-
-      UI.toast(pendingBookData.title + ' — press play to listen!', 'success');
+      if (!silent) {
+        // 7. Load into reader
+        currentBookId = id;
+        Reader.loadBook(chunks, id, resumeData);
+        const _pmTitle  = document.getElementById('pbMetaTitle');
+        const _pmAuthor = document.getElementById('pbMetaAuthor');
+        if (_pmTitle)  _pmTitle.textContent  = pendingBookData.title  || '';
+        if (_pmAuthor) _pmAuthor.textContent = pendingBookData.author || '';
+        _updateNavPanel(id);
+        Notes.load(id);
+        await window.sonara.settings.set('lastBookId', id);
+        await Library.load();
+        await _sleep(100);
+        Library.setActiveCard(id);
+        overlay.style.display = 'none';
+        showReader();
+        UI.toast(pendingBookData.title + ' — press play to listen!', 'success');
+      }
 
     } catch (err) {
-      overlay.style.display = 'none';
-      document.getElementById('readerWelcome').style.display = 'flex';
+      if (!silent && overlay) overlay.style.display = 'none';
+      if (!silent) document.getElementById('readerWelcome').style.display = 'flex';
       UI.toast('Error: ' + err.message, 'error');
     } finally {
       isGenerating   = false;
@@ -757,21 +779,22 @@ const App = (() => {
   }
 
   // ── PROCESS AUDIO FILE ────────────────────────────────────
-  async function _processAudioFile(id, fileInfo) {
+  // silent=true: batch mode — no overlay, caller handles library refresh
+  async function _processAudioFile(id, fileInfo, silent = false) {
     if (isGenerating) {
       UI.toast('Please wait, a book is already being processed…', 'error');
       return;
     }
     isGenerating = true;
 
-    // Switch to reader view first so the generating overlay is visible
-    showReader();
-
     const overlay = document.getElementById('generatingOverlay');
-    overlay.style.display = 'flex';
-    document.getElementById('readerWelcome').style.display = 'none';
+    if (!silent) {
+      showReader();
+      overlay.style.display = 'flex';
+      document.getElementById('readerWelcome').style.display = 'none';
+    }
 
-    _setGenStep('extract', 'active'); _setGenProgress(10, 'Importing audiobook...', fileInfo.name);
+    if (!silent) { _setGenStep('extract', 'active'); _setGenProgress(10, 'Importing audiobook...', fileInfo.name); }
 
     try {
       // 1. Save to library (copies the file)
@@ -786,7 +809,7 @@ const App = (() => {
         totalSeconds: 0
       };
       const saved = await window.sonara.library.addBook(bookRecord);
-      _setGenProgress(40, 'Reading audio metadata...', '');
+      if (!silent) _setGenProgress(40, 'Reading audio metadata...', '');
 
       // 2. Get duration from the copied file
       const duration = await _getAudioDuration(saved.file_path);
@@ -795,19 +818,19 @@ const App = (() => {
         total_seconds: Math.round(duration)
       });
 
-      _setGenStep('extract', 'done'); _setGenStep('done', 'active');
-      _setGenProgress(100, 'Ready!', '');
-      await _sleep(200);
-
-      // 3. Update library and stay in library view
-      currentBookId = id;
-      overlay.style.display = 'none';
-      await Library.load();
-      showLibrary();
-      UI.toast(pendingBookData.title + ' added to library!', 'success');
+      if (!silent) {
+        _setGenStep('extract', 'done'); _setGenStep('done', 'active');
+        _setGenProgress(100, 'Ready!', '');
+        await _sleep(200);
+        currentBookId = id;
+        overlay.style.display = 'none';
+        await Library.load();
+        showLibrary();
+        UI.toast(pendingBookData.title + ' added to library!', 'success');
+      }
 
     } catch (err) {
-      overlay.style.display = 'none';
+      if (!silent && overlay) overlay.style.display = 'none';
       UI.toast('Error: ' + err.message, 'error');
     } finally {
       isGenerating = false;
