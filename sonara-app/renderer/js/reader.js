@@ -1482,9 +1482,10 @@ const Reader = (() => {
     if (!applySettings._cmdWired) {
       applySettings._cmdWired = true;
       window.sonara.player?.onCommand(cmd => {
-        if      (cmd === 'toggle') togglePlay();
-        else if (cmd === 'prev')   skipChunk(-1);
-        else if (cmd === 'next')   skipChunk(1);
+        if      (cmd === 'toggle')      togglePlay();
+        else if (cmd === 'prev')        skipChunk(-1);
+        else if (cmd === 'next')        skipChunk(1);
+        else if (cmd === '__pushState') _pushPlayerState();
       });
     }
     const savedVoice     = await window.sonara.settings.get('voice');
@@ -1683,6 +1684,9 @@ const Reader = (() => {
     if (navCount) navCount.textContent = '1';
     if (navList)  navList.innerHTML =
       '<div class="nav-ch-item active" id="nav-ch-item-0"><span class="nav-ci-name">' + _escHtml(bookData.title) + '</span></div>';
+
+    // Sync tray + mini player
+    _pushPlayerState();
   }
 
   function _onAudioMeta() {

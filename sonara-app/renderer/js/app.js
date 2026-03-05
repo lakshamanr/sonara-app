@@ -801,6 +801,8 @@ const App = (() => {
         const _pmAuthor = document.getElementById('pbMetaAuthor');
         if (_pmTitle)  _pmTitle.textContent  = pendingBookData.title  || '';
         if (_pmAuthor) _pmAuthor.textContent = pendingBookData.author || '';
+        // Sync mini player / tray with the newly loaded book title
+        window.sonara?.player?.updateState({ title: pendingBookData.title || '', isPlaying: false, percent: 0 });
         _updateNavPanel(id);
         Notes.load(id);
         await window.sonara.settings.set('lastBookId', id);

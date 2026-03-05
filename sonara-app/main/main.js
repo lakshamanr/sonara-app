@@ -90,25 +90,37 @@ function _buildTrayMenu() {
 }
 
 function createMiniPlayer() {
+  // Position bottom-right of primary display
+  const { width: sw, height: sh } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+  const w = 340, h = 84;
+
   miniPlayer = new BrowserWindow({
-    width: 340, height: 84,
+    width: w, height: h,
+    x: sw - w - 16, y: sh - h - 16,
     frame: false, transparent: false,
     alwaysOnTop: true, skipTaskbar: true,
     resizable: false, maximizable: false,
     show: false,
+    backgroundColor: '#111118',
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
+
+  // Register ready-to-show BEFORE loadFile to avoid race condition
+  miniPlayer.once('ready-to-show', () => {
+    miniPlayer.show();
+    // Push current state into the mini player
+    miniPlayer.webContents.send('player:state', _playerState);
+    // Also ask renderer for a fresh state push (title may have changed)
+    mainWindow?.webContents.send('player:command', '__pushState');
+  });
+
   miniPlayer.loadFile(path.join(__dirname, 'mini-player.html'));
   miniPlayer.on('closed', () => { miniPlayer = null; });
 }
 
 function _toggleMiniPlayer() {
   if (!miniPlayer || miniPlayer.isDestroyed()) {
-    createMiniPlayer();
-    miniPlayer.once('ready-to-show', () => {
-      miniPlayer.show();
-      miniPlayer.webContents.send('player:state', _playerState);
-    });
+    createMiniPlayer(); // ready-to-show + show handled inside createMiniPlayer
     return;
   }
   if (miniPlayer.isVisible()) {
@@ -116,6 +128,7 @@ function _toggleMiniPlayer() {
   } else {
     miniPlayer.show();
     miniPlayer.webContents.send('player:state', _playerState);
+    mainWindow?.webContents.send('player:command', '__pushState');
   }
 }
 
