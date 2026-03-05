@@ -95,7 +95,12 @@ contextBridge.exposeInMainWorld('sonara', {
     /** @returns {Promise<string>} open the folder in Explorer */
     openDir:   ()       => ipcRenderer.invoke('books:openDir'),
     /** @returns {Promise<string[]>} up to 2 normalised genre names */
-    classify:  (title)  => ipcRenderer.invoke('books:classify', title),
+    classify:  (title)    => ipcRenderer.invoke('books:classify', title),
+    /**
+     * Parse a MOBI or AZW3 file; returns { title, chunks }
+     * @returns {Promise<{title: string, chunks: Array}>}
+     */
+    parseMOBI: (filePath) => ipcRenderer.invoke('books:parseMOBI', filePath),
   },
 
   // ── FILE / DIALOG ─────────────────────────────────────────

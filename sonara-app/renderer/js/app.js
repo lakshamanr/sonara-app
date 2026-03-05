@@ -255,7 +255,7 @@ const UI = (() => {
       const chunkIdx = progress?.chunk_index || 0;
       document.getElementById('resumeTitle').textContent = 'Resume "' + book.title + '"?';
       document.getElementById('resumeSub').textContent =
-        'You were at ' + pct + '% — ' + (book.format === 'epub' ? 'Chapter' : 'Page') + ' ' + (chunkIdx + 1);
+        'You were at ' + pct + '% — ' + (['epub', 'mobi', 'azw3'].includes(book.format) ? 'Chapter' : 'Page') + ' ' + (chunkIdx + 1);
       document.getElementById('resumeBarFill').style.width = pct + '%';
       document.getElementById('resumePct').textContent = pct + '%';
       openModal('modalResume');
@@ -537,7 +537,7 @@ const App = (() => {
 
     pendingBookData = {
       id,
-      title:      fileInfo.name.replace(/\.(pdf|epub|mp3|m4b|m4a|ogg)$/i, '').replace(/[-_]/g, ' '),
+      title:      fileInfo.name.replace(/\.(pdf|epub|mobi|azw3?|mp3|m4b|m4a|ogg)$/i, '').replace(/[-_]/g, ' '),
       format:     fileInfo.format,
       sourcePath: fileInfo.path,
       fileName:   fileInfo.name,
@@ -701,6 +701,9 @@ const App = (() => {
       let chunks;
       if (fileInfo.format === 'epub') {
         chunks = await Parser.parseEPUB(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting chapters…', p + '%'));
+      } else if (fileInfo.format === 'mobi' || fileInfo.format === 'azw3') {
+        // MOBI/AZW3 parsing happens in the main process (needs Node.js Buffer)
+        chunks = await Parser.parseMOBI(fileInfo.path, p => _setGenProgress(20 + p * 0.3, 'Extracting Kindle content…', p + '%'));
       } else {
         chunks = await Parser.parsePDF(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting pages…', p + '%'));
       }

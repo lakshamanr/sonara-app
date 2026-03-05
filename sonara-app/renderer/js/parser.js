@@ -322,6 +322,23 @@ const Parser = (() => {
     }
   }
 
+  // ── MOBI / AZW3 (Kindle) ─────────────────────────────────
+  /**
+   * Parse a MOBI or AZW3 file. Parsing is done in the main process via IPC
+   * (Node.js Buffer access required). Progress is reported in three steps
+   * since parsing is synchronous on the main side.
+   */
+  async function parseMOBI(filePath, onProgress) {
+    onProgress && onProgress(10);
+    const result = await window.sonara.books.parseMOBI(filePath);
+    onProgress && onProgress(80);
+    if (!result || !result.chunks || !result.chunks.length) {
+      throw new Error('No readable text found in MOBI/AZW3 file.');
+    }
+    onProgress && onProgress(100);
+    return result.chunks; // [{ title, text, page, source }]
+  }
+
   // ── PUBLIC ───────────────────────────────────────────────
-  return { parsePDF, parseEPUB, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
+  return { parsePDF, parseEPUB, parseMOBI, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
 })();

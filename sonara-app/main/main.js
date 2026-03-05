@@ -284,7 +284,7 @@ ipcMain.handle('library:relinkFile', ipcHandler(async (_, bookId) => {
     title: 'Locate missing book file',
     properties: ['openFile'],
     filters: [
-      { name: 'Books', extensions: ['pdf', 'epub', 'mp3', 'm4b', 'm4a', 'ogg'] }
+      { name: 'Books', extensions: ['pdf', 'epub', 'mobi', 'azw3', 'mp3', 'm4b', 'm4a', 'ogg'] }
     ]
   });
   if (result.canceled || !result.filePaths.length) return null;
@@ -317,8 +317,9 @@ ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Select book or audiobook files',
       filters: [
-        { name: 'All Supported', extensions: ['pdf', 'epub', 'mp3', 'm4b', 'm4a', 'ogg'] },
-        { name: 'Books',         extensions: ['pdf', 'epub'] },
+        { name: 'All Supported', extensions: ['pdf', 'epub', 'mobi', 'azw3', 'mp3', 'm4b', 'm4a', 'ogg'] },
+        { name: 'Books',         extensions: ['pdf', 'epub', 'mobi', 'azw3'] },
+        { name: 'Kindle Books',  extensions: ['mobi', 'azw3'] },
         { name: 'Audiobooks',    extensions: ['mp3', 'm4b', 'm4a', 'ogg'] }
       ],
       properties: ['openFile', 'multiSelections']
@@ -587,6 +588,15 @@ ipcMain.handle('books:openDir', () => {
 });
 
 /**
+ * Parse a MOBI or AZW3 (Kindle) file. Runs in the main process using the
+ * bundled mobi-parser module (no DRM supported). Returns { title, chunks }.
+ */
+ipcMain.handle('books:parseMOBI', ipcHandler(async (_, filePath) => {
+  const { parseMobi } = require('./mobi-parser');
+  const buf = fs.readFileSync(filePath);
+  return parseMobi(buf); // { title: string, chunks: [{title,text,page,source}] }
+}));
+
 /**
  * Auto-classify a book title. Uses LOCAL keyword heuristics first (instant,
  * works offline). Falls back to Open Library then Google Books only when
