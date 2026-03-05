@@ -432,6 +432,44 @@
           </div>
         </div>
 
+        <!-- DISPLAY -->
+        <div class="rp-section">
+          <div class="rp-section-header">
+            <span class="rp-section-label">Display</span>
+          </div>
+          <!-- Font family -->
+          <div class="ctrl-row" style="margin-bottom:10px;align-items:flex-start;">
+            <label class="ctrl-label" style="padding-top:4px">Font</label>
+            <div class="font-btn-group" id="fontBtnGroup">
+              <button class="font-btn active" data-font="serif"   onclick="Reader.onFontChange('serif')">Serif</button>
+              <button class="font-btn"        data-font="sans"    onclick="Reader.onFontChange('sans')">Sans</button>
+              <button class="font-btn"        data-font="georgia" onclick="Reader.onFontChange('georgia')">Georgia</button>
+              <button class="font-btn"        data-font="mono"    onclick="Reader.onFontChange('mono')">Mono</button>
+            </div>
+          </div>
+          <!-- Font size -->
+          <div class="ctrl-row">
+            <label class="ctrl-label">Size</label>
+            <input type="range" class="ctrl-range" id="fontSizeSlider" min="14" max="32" step="1" value="17"
+              oninput="Reader.onFontSizeChange(this.value)"/>
+            <span class="ctrl-val" id="fontSizeVal">17px</span>
+          </div>
+          <!-- Line spacing -->
+          <div class="ctrl-row">
+            <label class="ctrl-label">Space</label>
+            <input type="range" class="ctrl-range" id="lineHeightSlider" min="1.4" max="2.8" step="0.1" value="2.0"
+              oninput="Reader.onLineHeightChange(this.value)"/>
+            <span class="ctrl-val" id="lineHeightVal">2.0</span>
+          </div>
+          <!-- Reading width -->
+          <div class="ctrl-row">
+            <label class="ctrl-label">Width</label>
+            <input type="range" class="ctrl-range" id="readerWidthSlider" min="480" max="900" step="20" value="680"
+              oninput="Reader.onReaderWidthChange(this.value)"/>
+            <span class="ctrl-val" id="readerWidthVal">680</span>
+          </div>
+        </div>
+
         <!-- EXPORT -->
         <div class="rp-section">
           <div class="rp-section-header">

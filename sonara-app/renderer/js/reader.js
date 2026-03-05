@@ -11,6 +11,18 @@ const Reader = (() => {
   let isPlaying      = false;
   let speed          = 1.0;
   let pitch          = 1.0;
+
+  // ── Reader display preferences ─────────────────────────
+  const FONT_MAP = {
+    serif:   "'Playfair Display', Georgia, serif",
+    sans:    "'Outfit', system-ui, sans-serif",
+    georgia: "Georgia, 'Times New Roman', serif",
+    mono:    "'Courier New', Courier, monospace",
+  };
+  let readerFont      = 'serif';
+  let readerFontSize  = 17;     // px
+  let readerLineH     = 2.0;
+  let readerMaxWidth  = 680;    // px
   let chosenVoice    = null;
   let voiceList      = [];
   let totalDuration  = 0;
@@ -1270,6 +1282,65 @@ const Reader = (() => {
     window.sonara?.settings.set('pitch', pitch);
   }
 
+  // ── DISPLAY / TYPOGRAPHY CONTROLS ─────────────────────────
+  function _applyReadingStyle() {
+    const el = document.getElementById('readerText');
+    if (!el) return;
+    el.style.fontFamily  = FONT_MAP[readerFont] || FONT_MAP.serif;
+    el.style.fontSize    = readerFontSize + 'px';
+    el.style.lineHeight  = readerLineH;
+    el.style.maxWidth    = readerMaxWidth + 'px';
+  }
+
+  function _syncFontUI() {
+    document.querySelectorAll('.font-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.font === readerFont);
+    });
+    const sizeEl  = document.getElementById('fontSizeSlider');
+    const sizeVal = document.getElementById('fontSizeVal');
+    const lhEl    = document.getElementById('lineHeightSlider');
+    const lhVal   = document.getElementById('lineHeightVal');
+    const wEl     = document.getElementById('readerWidthSlider');
+    const wVal    = document.getElementById('readerWidthVal');
+    if (sizeEl)  sizeEl.value            = readerFontSize;
+    if (sizeVal) sizeVal.textContent     = readerFontSize + 'px';
+    if (lhEl)    lhEl.value             = readerLineH.toFixed(1);
+    if (lhVal)   lhVal.textContent      = readerLineH.toFixed(1);
+    if (wEl)     wEl.value              = readerMaxWidth;
+    if (wVal)    wVal.textContent       = readerMaxWidth + 'px';
+  }
+
+  function onFontChange(font) {
+    readerFont = font;
+    _applyReadingStyle();
+    _syncFontUI();
+    window.sonara?.settings.set('readerFont', font);
+  }
+
+  function onFontSizeChange(val) {
+    readerFontSize = parseInt(val, 10);
+    _applyReadingStyle();
+    const el = document.getElementById('fontSizeVal');
+    if (el) el.textContent = readerFontSize + 'px';
+    window.sonara?.settings.set('readerFontSize', readerFontSize);
+  }
+
+  function onLineHeightChange(val) {
+    readerLineH = parseFloat(parseFloat(val).toFixed(1));
+    _applyReadingStyle();
+    const el = document.getElementById('lineHeightVal');
+    if (el) el.textContent = readerLineH.toFixed(1);
+    window.sonara?.settings.set('readerLineH', readerLineH);
+  }
+
+  function onReaderWidthChange(val) {
+    readerMaxWidth = parseInt(val, 10);
+    _applyReadingStyle();
+    const el = document.getElementById('readerWidthVal');
+    if (el) el.textContent = readerMaxWidth + 'px';
+    window.sonara?.settings.set('readerMaxWidth', readerMaxWidth);
+  }
+
   // ── TIMER ─────────────────────────────────────────────────
   function _startTimer() {
     _stopTimer();
@@ -1413,6 +1484,14 @@ const Reader = (() => {
     document.getElementById('pbSpeedLabel').textContent = speed.toFixed(1) + '×';
     document.getElementById('pitchSlider').value  = pitch;
     document.getElementById('pitchVal').textContent = pitch.toFixed(1);
+
+    // ── Restore display/typography preferences ──
+    readerFont     = (await window.sonara.settings.get('readerFont',     'serif'))  || 'serif';
+    readerFontSize =  parseInt(await window.sonara.settings.get('readerFontSize', 17),  10) || 17;
+    readerLineH    =  parseFloat(await window.sonara.settings.get('readerLineH',  2.0)) || 2.0;
+    readerMaxWidth =  parseInt(await window.sonara.settings.get('readerMaxWidth', 680), 10) || 680;
+    _applyReadingStyle();
+    _syncFontUI();
     
     // Try to restore saved voice (global setting - persists across all books)
     if (savedVoice) {
@@ -1649,6 +1728,7 @@ const Reader = (() => {
     loadBook, loadAudioBook,
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
     cycleSpeed, onSpeedChange, onPitchChange,
+    onFontChange, onFontSizeChange, onLineHeightChange, onReaderWidthChange,
     applySettings,
     /** Update the skip chars at runtime (called from settings save) */
     setSkipChars:   (val)  => { ttsSkipChars   = val || ''; },
