@@ -210,6 +210,7 @@ const Library = (() => {
     menu.innerHTML =
       '<div class="lib-ctx-item" data-action="open">Open</div>' +
       '<div class="lib-ctx-item" data-action="assign">Add to Collection</div>' +
+      '<div class="lib-ctx-item" data-action="classify">✨ Auto-classify</div>' +
       '<div class="lib-ctx-sep"></div>' +
       '<div class="lib-ctx-item danger" data-action="delete">Remove from Library</div>';
 
@@ -225,9 +226,13 @@ const Library = (() => {
     menu.addEventListener('click', async (ev) => {
       const action = ev.target.closest('.lib-ctx-item')?.dataset.action;
       _closeContextMenu();
-      if (action === 'open')   App.openBook(bookId).catch(err => console.error('openBook error:', err));
-      if (action === 'assign') showAssignModal(bookId);
-      if (action === 'delete') deleteBook(bookId);
+      if (action === 'open')     App.openBook(bookId).catch(err => console.error('openBook error:', err));
+      if (action === 'assign')   showAssignModal(bookId);
+      if (action === 'classify') {
+        UI.toast('Classifying…', 'success', 2000);
+        App._classifyExisting(bookId, book.title);
+      }
+      if (action === 'delete')   deleteBook(bookId);
     });
 
     // Close on outside click

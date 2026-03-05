@@ -567,8 +567,15 @@ const App = (() => {
     'Poetry':          '#be185d', 'Drama':     '#7c3aed', 'Fiction':  '#64748b',
   };
 
-  async function _autoClassifyBook(bookId, title) {
+  async function _autoClassifyBook(bookId, hintTitle) {
     try {
+      // Use the saved DB title (user may have edited it), fall back to hint
+      let title = hintTitle;
+      try {
+        const saved = await window.sonara.library.getBook(bookId);
+        if (saved?.title) title = saved.title;
+      } catch {}
+
       const genres = await window.sonara.books.classify(title);
       if (!genres || !genres.length) return;
       const allCols = await window.sonara.collections.getAll();
@@ -580,7 +587,8 @@ const App = (() => {
         }
         await window.sonara.collections.addBook(bookId, col.id);
       }
-      Library.load(); // refresh so collections sidebar updates
+      Library.load();
+      UI.toast('Auto-categorised → ' + genres.join(', '), 'success', 3000);
     } catch (e) {
       console.log('[autoClassify] skipped:', e.message);
     }
@@ -1216,6 +1224,7 @@ const App = (() => {
   return {
     init, addBook, openBook, clearCurrentBook,
     showLibrary, showReader,
+    _classifyExisting: _autoClassifyBook,
     get currentBookId() { return currentBookId; }
   };
 })();

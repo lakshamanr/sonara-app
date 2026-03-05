@@ -587,10 +587,98 @@ ipcMain.handle('books:openDir', () => {
 });
 
 /**
- * Auto-classify a book title using Open Library API,
- * falling back to Google Books. Returns up to 2 normalised genre strings.
+/**
+ * Auto-classify a book title. Uses LOCAL keyword heuristics first (instant,
+ * works offline). Falls back to Open Library then Google Books only when
+ * no heuristic genre is found. Returns up to 2 normalised genre strings.
  */
 ipcMain.handle('books:classify', ipcHandler(async (_, title) => {
+  const lc = title.toLowerCase().replace(/[\(\)\[\]\.]/g, ' ').replace(/\s+/g, ' ');
+
+  // ── 1. LOCAL TITLE HEURISTICS (primary — instant, no network) ──
+  const TITLE_RULES = [
+    { genre: 'Technology', patterns: [
+      'javascript','typescript','python','java ','c# ','c++ ','golang','rust ','swift ','kotlin',
+      'programming','developer','software','coding','algorithm','data structure','design pattern',
+      'architecture','microservice',' api ','rest ','graphql','machine learning','deep learning',
+      'neural network','artificial intelligence',' ai ','database',' sql ','nosql','mongodb',
+      'postgresql','web dev','frontend','backend','fullstack','devops','cloud ','aws ','azure ',
+      'docker','kubernetes','linux','unix','bash ','react ','angular','vue ','node ','django',
+      'flask ','spring ','ajax','html ','css ','object orient','functional program','clean code',
+      'refactor','agile','scrum','test driven','tdd','cybersecurity','blockchain','data science',
+      'head first','eloquent','pragmatic','you don\'t know','learning ',
+    ]},
+    { genre: 'Science', patterns: [
+      'physics','quantum','relativity','astronomy','cosmolog','astrophysics','universe ',
+      'chemistry','biology','genetics','evolution','ecology','climate change','natural history',
+      'mathematics','calculus','geometry','topology','number theory','neuroscience',' brain ',
+      'geology','pandemic','popular science','brief history of time','cosmos',
+    ]},
+    { genre: 'Self-Help', patterns: [
+      'self-help','self help','self improvement','seven habits','7 habits','atomic habit',
+      'think and grow','power of','rich dad','motivation','productivity','mindset','mindfulness',
+      'meditation','happiness','confidence','discipline','mastery','deep work','essentialism',
+      'stoic','willpower','procrastinat','time management','goal setting',
+    ]},
+    { genre: 'Business', patterns: [
+      'business','entrepreneur','startup','management','leadership','strategy','marketing',
+      'sales','finance','economics','investment',' wealth ','zero to one','good to great',
+      'lean startup','innovate','disruption','negotiation','influence','brand ',
+    ]},
+    { genre: 'Psychology', patterns: [
+      'psychology','thinking fast','thinking slow','behavior','behaviour','cognitive','emotion ',
+      'mental health','personality','body language','social influence','anxiety','depression',
+      'trauma','bias','heuristic','freud','jung','decision making',
+    ]},
+    { genre: 'Biography', patterns: [
+      'biography','autobiography','memoir','my life','my story','life of ','becoming ',
+      'long walk to freedom','confessions','diaries','letters of',
+    ]},
+    { genre: 'History', patterns: [
+      ' history','world war','revolution','empire ','ancient ','medieval ','civilization',
+      'chronicle','dynasty','kingdom ','sapiens','colonial','the rise','the fall',
+    ]},
+    { genre: 'Philosophy', patterns: [
+      'philosophy','philosophi','ethics','virtue','stoicism','nietzsche','plato','aristotle',
+      'kant','hegel','socrates','metaphysics','existentialism','republic ',
+    ]},
+    { genre: 'Religion', patterns: [
+      'bible','quran','gospel','prayer','faith ','jesus','allah','buddhist','hindu',
+      'spiritual','religion','church','monastery','sermon','divine',
+    ]},
+    { genre: 'Fantasy', patterns: [
+      'fantasy','dragon ','wizard','magic ','elf ','hobbit','the ring','sword ','quest ',
+      'realm ','throne','sorcerer','enchant','dungeon','chronicles of','wheel of time',
+    ]},
+    { genre: 'Science Fiction', patterns: [
+      'science fiction','sci-fi','starship','alien ','robot ','android ','cyborg','dystopi',
+      'cyberpunk','time travel',' mars ','interstellar','dune ','singularity','the matrix',
+    ]},
+    { genre: 'Mystery', patterns: [
+      'mystery','detective','murder ','the killer','crime ','investigation','sherlock',
+      'hercule poirot','whodunit','cold case','true crime',
+    ]},
+    { genre: 'Thriller', patterns: [
+      'thriller','conspiracy','spy ','the agent','assassin','mission ','hunt ','operative',
+    ]},
+    { genre: 'Romance', patterns: [
+      'romance','love story','falling in love','passion',' affair','wedding ','bride ',
+    ]},
+    { genre: 'Children', patterns: [
+      'children\'s','for kids','picture book','young adult','middle grade','harry potter',
+    ]},
+    { genre: 'Poetry', patterns: ['poetry','collection of poems','selected poems','verse '] },
+    { genre: 'Fiction',   patterns: ['fiction','novel ','short stories','novella'] },
+  ];
+
+  const found = [];
+  for (const { genre, patterns } of TITLE_RULES) {
+    if (found.length >= 2) break;
+    if (patterns.some(p => lc.includes(p))) found.push(genre);
+  }
+  if (found.length) return found;
+
+  // ── 2. ONLINE FALLBACK (Open Library → Google Books) ──
   function httpsGet(url) {
     return new Promise((resolve, reject) => {
       const https = require('https');
@@ -600,65 +688,51 @@ ipcMain.handle('books:classify', ipcHandler(async (_, title) => {
         res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('bad JSON')); } });
       });
       req.on('error', reject);
-      req.setTimeout(6000, () => { req.destroy(); reject(new Error('timeout')); });
+      req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
     });
   }
 
-  const GENRE_MAP = [
-    { genre: 'Science Fiction', keys: ['science fiction','sci-fi','space opera','cyberpunk','dystopian','speculative fiction','alternate history'] },
-    { genre: 'Fantasy',         keys: ['fantasy','magic','fairy tale','mythology','sword and sorcery','epic fantasy'] },
-    { genre: 'Mystery',         keys: ['mystery','detective','crime fiction','whodunit','noir','cozy mystery'] },
-    { genre: 'Thriller',        keys: ['thriller','suspense','spy','espionage','action'] },
-    { genre: 'Horror',          keys: ['horror','ghost stories','supernatural fiction','occult'] },
-    { genre: 'Romance',         keys: ['romance','love stories','romantic fiction'] },
-    { genre: 'Historical',      keys: ['historical fiction','historical novel','histor'] },
-    { genre: 'Biography',       keys: ['biography','autobiography','memoir','personal narrative','true account'] },
-    { genre: 'History',         keys: [' history','world history','ancient history','military history','social history'] },
-    { genre: 'Science',         keys: ['popular science','natural history','astronomy','physics','chemistry','biology','mathematics','geology','ecology'] },
-    { genre: 'Technology',      keys: ['technology','computer science','programming','software','artificial intelligence','engineering','computers'] },
-    { genre: 'Self-Help',       keys: ['self-help','personal development','motivational','success','productivity','life skills','self improvement'] },
-    { genre: 'Psychology',      keys: ['psychology','cognitive science','behavior','mental health','neuroscience','psychiatry'] },
-    { genre: 'Philosophy',      keys: ['philosophy','ethics','logic','metaphysics','epistemology'] },
-    { genre: 'Business',        keys: ['business','economics','management','entrepreneurship','finance','investing','leadership','marketing'] },
-    { genre: 'Politics',        keys: ['politics','political science','government','social science','public policy'] },
-    { genre: 'Religion',        keys: ['religion','spirituality','theology','christianity','islam','buddhism','hinduism','faith'] },
-    { genre: 'Children',        keys: ['juvenile fiction',"children's literature",'picture books','young adult','middle grade'] },
-    { genre: 'Poetry',          keys: ['poetry','verse','poems','poetic'] },
-    { genre: 'Drama',           keys: ['drama','plays','theater','theatre'] },
-    { genre: 'Fiction',         keys: ['fiction','novel','short stories'] },
+  const API_GENRE_MAP = [
+    { genre: 'Science Fiction', keys: ['science fiction','sci-fi','cyberpunk','dystopian'] },
+    { genre: 'Fantasy',         keys: ['fantasy','magic'] },
+    { genre: 'Mystery',         keys: ['mystery','detective','crime fiction'] },
+    { genre: 'Thriller',        keys: ['thriller','suspense'] },
+    { genre: 'Horror',          keys: ['horror','supernatural'] },
+    { genre: 'Romance',         keys: ['romance','love stories'] },
+    { genre: 'Biography',       keys: ['biography','autobiography','memoir'] },
+    { genre: 'History',         keys: ['history'] },
+    { genre: 'Science',         keys: ['popular science','astronomy','physics','chemistry','biology','mathematics'] },
+    { genre: 'Technology',      keys: ['technology','computer','programming','software','artificial intelligence'] },
+    { genre: 'Self-Help',       keys: ['self-help','personal development','productivity'] },
+    { genre: 'Psychology',      keys: ['psychology','cognitive'] },
+    { genre: 'Philosophy',      keys: ['philosophy','ethics'] },
+    { genre: 'Business',        keys: ['business','economics','management','finance'] },
+    { genre: 'Religion',        keys: ['religion','spirituality','theology'] },
+    { genre: 'Fiction',         keys: ['fiction','novel'] },
   ];
 
   function normalise(subjects) {
-    const found = [];
-    const lc = subjects.map(s => s.toLowerCase());
-    for (const { genre, keys } of GENRE_MAP) {
-      if (found.length >= 2) break;
-      if (keys.some(k => lc.some(s => s.includes(k)))) found.push(genre);
+    const out = [];
+    const lcs = subjects.map(s => s.toLowerCase());
+    for (const { genre, keys } of API_GENRE_MAP) {
+      if (out.length >= 2) break;
+      if (keys.some(k => lcs.some(s => s.includes(k)))) out.push(genre);
     }
-    return found;
+    return out;
   }
 
   const q = encodeURIComponent(title.replace(/[\(\)\[\]]/g, '').trim());
-
-  // 1. Open Library
   try {
     const data = await httpsGet(`https://openlibrary.org/search.json?title=${q}&fields=subject&limit=1`);
-    const subjects = data.docs?.[0]?.subject || [];
-    if (subjects.length) {
-      const genres = normalise(subjects);
-      if (genres.length) return genres;
-    }
-  } catch (e) { console.log('[classify] Open Library error:', e.message); }
+    const genres = normalise(data.docs?.[0]?.subject || []);
+    if (genres.length) return genres;
+  } catch {}
 
-  // 2. Google Books fallback
   try {
     const data = await httpsGet(`https://www.googleapis.com/books/v1/volumes?q=intitle:${q}&maxResults=1`);
-    const cats = data.items?.[0]?.volumeInfo?.categories || [];
-    if (cats.length) {
-      const genres = normalise(cats);
-      if (genres.length) return genres;
-    }
-  } catch (e) { console.log('[classify] Google Books error:', e.message); }
+    const genres = normalise(data.items?.[0]?.volumeInfo?.categories || []);
+    if (genres.length) return genres;
+  } catch {}
 
   return [];
 }));
