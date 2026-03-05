@@ -1364,6 +1364,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   transition: all .2s;
 }
 .modal-btn-cancel:hover { border-color: var(--border2); color: var(--text); }
+.modal-btn-danger {
+  background: #dc2626; color: #fff; font-family: var(--font-sans);
+  font-size: 13px; font-weight: 500;
+  padding: 8px 20px; border: none; border-radius: 9px; cursor: pointer;
+  transition: all .2s;
+}
+.modal-btn-danger:hover { background: #b91c1c; box-shadow: 0 4px 14px rgba(220,38,38,.4); }
 .modal-btn-primary {
   background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
   color: var(--play-btn-fg); font-family: var(--font-sans);

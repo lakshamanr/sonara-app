@@ -329,14 +329,37 @@ const Library = (() => {
     }
   }
 
+  let _deleteColResolve = null;
+
   async function _deleteCollection(id) {
     const col = collections.find(c => c.id === id);
     if (!col) return;
-    if (!confirm('Delete collection "' + col.name + '"?\nBooks will not be deleted.')) return;
+    const bookCount = bookCollectionMap[id]?.size || 0;
+
+    // Populate and open the confirmation modal
+    document.getElementById('delColName').textContent      = col.name;
+    document.getElementById('delColDot').style.background  = col.color || '#888';
+    document.getElementById('delColBookCount').textContent = bookCount;
+    document.getElementById('delColSub').textContent =
+      'You are about to delete “' + col.name + '”.';
+
+    const confirmed = await new Promise(resolve => {
+      _deleteColResolve = resolve;
+      document.getElementById('delColConfirmBtn').onclick = () => { resolve(true);  UI.closeModal('modalDeleteCollection'); };
+      UI.openModal('modalDeleteCollection');
+    });
+    _deleteColResolve = null;
+    if (!confirmed) return;
+
     await window.sonara.collections.delete(id);
     if (activeCollection === id) _setActiveCollection('all');
-    UI.toast('Collection deleted', '');
+    UI.toast('Collection “' + col.name + '” deleted — ' + bookCount + ' book(s) kept', 'success', 3500);
     await load();
+  }
+
+  function closeDeleteColModal() {
+    if (_deleteColResolve) { _deleteColResolve(false); _deleteColResolve = null; }
+    UI.closeModal('modalDeleteCollection');
   }
 
   // ── ASSIGN TO COLLECTION ──────────────────────────────────
@@ -623,6 +646,7 @@ const Library = (() => {
     load, render: renderGrid, renderGrid, refreshCard, addBookToList,
     deleteBook, setActiveCard, onShow,
     showCreateCollectionModal, showAssignModal, saveAssignments,
+    closeDeleteColModal,
     getBooks: () => books
   };
 })();
