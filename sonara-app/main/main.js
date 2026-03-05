@@ -92,11 +92,11 @@ function _buildTrayMenu() {
 function createMiniPlayer() {
   // Position bottom-right of primary display
   const { width: sw, height: sh } = require('electron').screen.getPrimaryDisplay().workAreaSize;
-  const w = 340, h = 84;
+  const w = 340, h = 100;
 
   miniPlayer = new BrowserWindow({
-    width: w, height: h,
-    x: sw - w - 16, y: sh - h - 16,
+    width: w, height: 100,
+    x: sw - w - 16, y: sh - 100 - 16,
     frame: false, transparent: false,
     alwaysOnTop: true, skipTaskbar: true,
     resizable: false, maximizable: false,
