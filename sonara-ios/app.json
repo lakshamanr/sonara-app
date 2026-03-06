@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Sonara",
+    "slug": "sonara",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
+    "scheme": "sonara",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sonara.audiobook",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSDocumentsFolderUsageDescription": "Sonara needs access to your documents to import PDF and EPUB books.",
+        "NSMicrophoneUsageDescription": "Sonara does not use the microphone.",
+        "UIBackgroundModes": [
+          "audio",
+          "fetch"
+        ],
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "PDF Document",
+            "LSItemContentTypes": ["com.adobe.pdf"],
+            "LSHandlerRank": "Alternate"
+          },
+          {
+            "CFBundleTypeName": "EPUB Document",
+            "LSItemContentTypes": ["org.idpf.epub-container"],
+            "LSHandlerRank": "Alternate"
+          },
+          {
+            "CFBundleTypeName": "Audio File",
+            "LSItemContentTypes": ["public.mp3", "com.apple.m4a-audio", "public.mpeg-4-audio"],
+            "LSHandlerRank": "Alternate"
+          }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": []
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0f"
+      },
+      "package": "com.sonara.audiobook",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ],
+      "expo-av",
+      [
+        "react-native-track-player",
+        {}
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "sonara-audiobook-ios"
+      }
+    }
+  }
+}

@@ -31,6 +31,9 @@ function getEdgeTTS() {
   return edgeTTS;
 }
 
+// ffmpeg helper for audiobook conversion
+const ffmpegHelper = require('./ffmpeg-helper');
+
 let mainWindow;
 let booksDir;   // where we copy user files
 let coversDir;  // where we save extracted cover images
@@ -189,6 +192,9 @@ app.whenReady().then(() => {
     // Books folder is always userData/books (no cloud folder option)
     booksDir = path.join(userData, 'books');
     fs.mkdirSync(booksDir, { recursive: true });
+
+    // Initialise ffmpeg helper (sets the managed binary directory)
+    ffmpegHelper.init(userData);
 
     // ── ONE-TIME MIGRATION: if a customBooksDir was previously configured,
     //    copy any book files from there into userData/books, then clear the key.
@@ -579,6 +585,38 @@ ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
   } catch (err) {
     throw err;
   }
+});
+
+// ────────────────────────────────────────────────────────────
+//  IPC — FFMPEG & AUDIOBOOK CONVERSION
+// ────────────────────────────────────────────────────────────
+ipcMain.handle('ffmpeg:isAvailable', () => ffmpegHelper.isAvailable());
+
+ipcMain.handle('ffmpeg:ensureAvailable', async () => {
+  const ffmpegPath = await ffmpegHelper.ensureAvailable((pct, status) => {
+    mainWindow?.webContents.send('ffmpeg:progress', { percent: pct, status });
+  });
+  return ffmpegPath;
+});
+
+ipcMain.handle('export:saveDialogM4B', async (_, defaultName) => {
+  const safe = (defaultName || 'Sonara Audiobook').replace(/[<>:"|\/\\|?*]/g, '_');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Audiobook as M4B',
+    defaultPath: path.join(app.getPath('downloads'), safe + '.m4b'),
+    filters:     [{ name: 'M4B Audiobook', extensions: ['m4b'] }]
+  });
+  return result.canceled ? null : result.filePath;
+});
+
+ipcMain.handle('export:convertToM4B', async (_, opts) => {
+  // opts: { inputPath, outputPath, coverPath, title, artist, album, genre }
+  return await ffmpegHelper.convertToM4B({
+    ...opts,
+    onProgress: (pct, status) => {
+      mainWindow?.webContents.send('export:m4bProgress', { percent: pct, status });
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────

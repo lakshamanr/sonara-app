@@ -1,7 +1,8 @@
 /* ══════════════════════════════════════════════════════════
-   EXPORT.JS — Export book as MP3 audiobook
+   EXPORT.JS — Export book as MP3 audiobook / Convert to M4B
    Uses Microsoft Edge Neural TTS (via main process IPC).
    Splits chunks → synthesizes → concatenates → saves .mp3
+   Also supports MP3 → M4B audiobook conversion via ffmpeg.
 ══════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -45,7 +46,7 @@ const ExportMP3 = (() => {
     return parts;
   }
 
-  // ── START EXPORT ──────────────────────────────────────────
+  // ── START EXPORT (MP3) ────────────────────────────────────
   async function start() {
     if (_inProgress) {
       UI.toast('Export already in progress — please wait or cancel it', 'error');
@@ -152,6 +153,121 @@ const ExportMP3 = (() => {
     }
   }
 
+  // ── CONVERT TO AUDIOBOOK (M4B) ────────────────────────────
+  async function convertToAudiobook() {
+    if (_inProgress) {
+      UI.toast('Export already in progress — please wait or cancel it', 'error');
+      return;
+    }
+
+    // Get current book info
+    let bookTitle = 'Sonara Audiobook';
+    let bookAuthor = '';
+    let bookCoverPath = null;
+    let bookFilePath = null;
+    let bookFormat = null;
+
+    try {
+      if (App.currentBookId) {
+        const book = await window.sonara.library.getBook(App.currentBookId);
+        if (book) {
+          bookTitle = book.title || bookTitle;
+          bookAuthor = book.author || '';
+          bookFilePath = book.file_path;
+          bookFormat = book.format;
+        }
+        // Try to get cover image path
+        try {
+          bookCoverPath = await window.sonara.cover.getPath(App.currentBookId);
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // Validate: need an MP3 source file for conversion
+    if (!bookFilePath) {
+      UI.toast('No book is open — open a book first', 'error');
+      return;
+    }
+
+    // Check if the source is an audio file (mp3, m4a, etc.)
+    const audioExts = ['mp3', 'm4a', 'ogg'];
+    const isAudioFile = audioExts.includes(bookFormat);
+
+    if (!isAudioFile) {
+      // For non-audio books, we first need to export as MP3, then convert
+      UI.toast('First export the book as MP3, then use Convert to Audiobook on the exported file', 'error', 6000);
+      return;
+    }
+
+    // Step 1: Ensure ffmpeg is available (download if needed)
+    _showModal(bookTitle, 0, 'ffmpeg');
+    _cancelled = false;
+    _inProgress = true;
+
+    _updateProgress(0, 100, 'Checking ffmpeg…');
+
+    try {
+      const ffmpegReady = await window.sonara.ffmpeg.isAvailable();
+
+      if (!ffmpegReady) {
+        _updateProgress(0, 100, 'Downloading ffmpeg (first time only)…');
+
+        // Listen for download progress
+        const progressHandler = (data) => {
+          _updateProgress(data.percent, 100, data.status || 'Downloading ffmpeg…');
+        };
+        window.sonara.ffmpeg.onProgress(progressHandler);
+
+        try {
+          await window.sonara.ffmpeg.ensureAvailable();
+        } catch (err) {
+          _inProgress = false;
+          _hideModal();
+          UI.toast('Failed to download ffmpeg: ' + err.message, 'error', 6000);
+          return;
+        }
+      }
+
+      // Step 2: Show save dialog for M4B
+      _hideModal();
+      const savePath = await window.sonara.export.saveDialogM4B(bookTitle);
+      if (!savePath) {
+        _inProgress = false;
+        return; // user cancelled
+      }
+
+      // Step 3: Convert
+      _showModal(bookTitle, 0, 'M4B Converter');
+      _updateProgress(5, 100, 'Converting to audiobook…');
+
+      // Listen for conversion progress
+      const m4bProgressHandler = (data) => {
+        _updateProgress(data.percent, 100, data.status || 'Converting…');
+      };
+      window.sonara.export.onM4BProgress(m4bProgressHandler);
+
+      await window.sonara.export.convertToM4B({
+        inputPath:  bookFilePath,
+        outputPath: savePath,
+        coverPath:  bookCoverPath,
+        title:      bookTitle,
+        artist:     bookAuthor,
+        album:      bookTitle,
+        genre:      'Audiobook'
+      });
+
+      _inProgress = false;
+      _hideModal();
+      const fname = savePath.split('\\').pop().split('/').pop();
+      UI.toast(`✓ Audiobook saved: ${fname}`, 'success', 6000);
+
+    } catch (err) {
+      _inProgress = false;
+      _hideModal();
+      UI.toast('Conversion failed: ' + err.message, 'error', 6000);
+    }
+  }
+
   // ── CANCEL ────────────────────────────────────────────────
   function cancel() {
     if (_inProgress) {
@@ -199,5 +315,5 @@ const ExportMP3 = (() => {
     return voiceId;
   }
 
-  return { start, cancel };
+  return { start, cancel, convertToAudiobook };
 })();

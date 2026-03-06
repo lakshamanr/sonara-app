@@ -173,6 +173,32 @@ contextBridge.exposeInMainWorld('sonara', {
      * @returns {Promise<{success:true}>}
      */
     writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
+    /**
+     * Show save dialog for M4B audiobook.
+     * @returns {Promise<string|null>} file path, or null if cancelled
+     */
+    saveDialogM4B: (title) => ipcRenderer.invoke('export:saveDialogM4B', title),
+    /**
+     * Convert MP3 to M4B audiobook using ffmpeg.
+     * @param {object} opts - { inputPath, outputPath, coverPath, title, artist, album, genre }
+     * @returns {Promise<{success:true, outputPath:string}>}
+     */
+    convertToM4B: (opts) => ipcRenderer.invoke('export:convertToM4B', opts),
+    /**
+     * Listen for M4B conversion progress events.
+     * @param {function} cb - callback({ percent, status })
+     */
+    onM4BProgress: (cb) => ipcRenderer.on('export:m4bProgress', (_, data) => cb(data)),
+  },
+
+  // ── FFMPEG ──────────────────────────────────────────────
+  ffmpeg: {
+    /** @returns {Promise<boolean>} whether ffmpeg is available */
+    isAvailable:     ()   => ipcRenderer.invoke('ffmpeg:isAvailable'),
+    /** Download ffmpeg if needed. @returns {Promise<string>} path to binary */
+    ensureAvailable: ()   => ipcRenderer.invoke('ffmpeg:ensureAvailable'),
+    /** Listen for ffmpeg download progress events */
+    onProgress:      (cb) => ipcRenderer.on('ffmpeg:progress', (_, data) => cb(data)),
   },
   // ── NOTES ───────────────────────────────────────
   notes: {

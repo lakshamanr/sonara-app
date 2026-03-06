@@ -483,7 +483,14 @@
             </svg>
             Export to MP3
           </button>
+          <button class="export-mp3-btn" id="exportM4BBtn" onclick="ExportMP3.convertToAudiobook()" style="margin-top:6px;background:rgba(168,125,224,0.12);border-color:rgba(168,125,224,0.25);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+            </svg>
+            Convert to Audiobook (.m4b)
+          </button>
           <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
+          <p class="export-tip" style="margin-top:2px;">Convert to Audiobook creates an M4B file with metadata &amp; cover art (requires audio book in library). ffmpeg is downloaded automatically on first use.</p>
         </div>
 
       </div>
