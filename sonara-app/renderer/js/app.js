@@ -592,6 +592,31 @@ const App = (() => {
     }
   }
 
+  async function classifyAll() {
+    let books;
+    try { books = await window.sonara.library.getAll(); } catch { return; }
+    if (!books || !books.length) { UI.toast('No books to classify', 'success', 2000); return; }
+
+    const btn = document.getElementById('libClassifyAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Classifying…'; }
+
+    let done = 0;
+    for (const book of books) {
+      await _autoClassifyBook(book.id, book.title);
+      done++;
+      if (btn) btn.textContent = `Classifying… (${done}/${books.length})`;
+      // small delay to avoid hammering the IPC channel
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Classify All';
+    }
+    Library.load();
+    UI.toast(`✨ Classified ${done} book${done !== 1 ? 's' : ''}`, 'success', 3500);
+  }
+
   // ── OPEN BOOK FROM LIBRARY ───────────────────────────────
   async function openBook(id) {
     try {
@@ -1249,6 +1274,7 @@ const App = (() => {
     init, addBook, openBook, clearCurrentBook,
     showLibrary, showReader,
     togglePin,
+    classifyAll,
     _classifyExisting: _autoClassifyBook,
     get currentBookId() { return currentBookId; }
   };

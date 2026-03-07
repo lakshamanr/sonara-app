@@ -2781,6 +2781,20 @@ body.mode-reader  .layout { display: grid; }
 }
 .lib-add-btn:hover { box-shadow: 0 4px 14px var(--accent-glow); transform: translateY(-1px); }
 
+.lib-classify-all-btn {
+  display: flex; align-items: center; gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  padding: 6px 13px; border-radius: 8px; cursor: pointer;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.lib-classify-all-btn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+.lib-classify-all-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
 /* Stats bar */
 .lib-stats-bar { padding: 8px 24px; flex-shrink: 0; }
 .lib-stats-text {
