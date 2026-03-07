@@ -32,8 +32,9 @@ function getEdgeTTS() {
 }
 
 let mainWindow;
-let booksDir;   // where we copy user files
-let coversDir;  // where we save extracted cover images
+let booksDir;       // where we copy user files
+let coversDir;      // where we save extracted cover images
+let sonaraDataDir;  // single unified data folder for everything
 
 // ─── TRAY & MINI PLAYER ────────────────────────────────────
 let tray       = null;
@@ -85,7 +86,7 @@ function _buildTrayMenu() {
     },
     { label: '🎵  Mini Player', click: () => _toggleMiniPlayer() },
     { type: 'separator' },
-    { label: 'Quit Sonara', click: () => { tray?.destroy(); app.quit(); } }
+    { label: 'Quit Sonara', click: () => { if (tray && !tray.isDestroyed()) { tray.destroy(); tray = null; } app.quit(); } }
   ]);
 }
 
@@ -195,20 +196,64 @@ function _writeConfig(updates) {
 app.whenReady().then(() => {
   try {
     const userData = app.getPath('userData');
-    _userData   = userData;
-    _configPath = path.join(userData, 'sonara-config.json');
-    coversDir = path.join(userData, 'covers');
+    _userData = userData;
+
+    // ── UNIFIED DATA FOLDER ──────────────────────────────────
+    // All app data lives under a single "Sonara-Data" folder so
+    // the user can back up or move everything in one step.
+    sonaraDataDir = path.join(userData, 'Sonara-Data');
+    fs.mkdirSync(sonaraDataDir, { recursive: true });
+
+    // ── ONE-TIME MIGRATION: move existing scattered data files
+    //    into the unified Sonara-Data folder (runs once silently).
+    const _migrateFile = (src, dest) => {
+      try {
+        if (fs.existsSync(src) && !fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+          fs.unlinkSync(src);
+          console.log(`[migrate] ${path.basename(src)} → Sonara-Data/`);
+        }
+      } catch (e) { console.error('[migrate]', e.message); }
+    };
+    const _migrateDir = (srcDir, destDir) => {
+      try {
+        if (!fs.existsSync(srcDir)) return;
+        fs.mkdirSync(destDir, { recursive: true });
+        for (const entry of fs.readdirSync(srcDir)) {
+          const src = path.join(srcDir, entry);
+          if (!fs.statSync(src).isFile()) continue;
+          const dest = path.join(destDir, entry);
+          if (!fs.existsSync(dest)) {
+            try { fs.copyFileSync(src, dest); fs.unlinkSync(src); } catch {}
+          }
+        }
+      } catch (e) { console.error('[migrateDir]', e.message); }
+    };
+
+    // Config: migrate old userData/sonara-config.json first (before reading it)
+    _migrateFile(
+      path.join(userData, 'sonara-config.json'),
+      path.join(sonaraDataDir, 'sonara-config.json')
+    );
+    _configPath = path.join(sonaraDataDir, 'sonara-config.json');
+
+    // Covers: migrate userData/covers/* → Sonara-Data/covers/
+    const newCoversDir = path.join(sonaraDataDir, 'covers');
+    _migrateDir(path.join(userData, 'covers'), newCoversDir);
+    coversDir = newCoversDir;
     fs.mkdirSync(coversDir, { recursive: true });
 
-    // Read config — only used for customDbPath now; books folder is always local
-    const cfg    = _readConfig();
-
-    // Books folder is always userData/books (no cloud folder option)
-    booksDir = path.join(userData, 'books');
+    // Books: migrate userData/books/* → Sonara-Data/books/
+    const newBooksDir = path.join(sonaraDataDir, 'books');
+    _migrateDir(path.join(userData, 'books'), newBooksDir);
+    booksDir = newBooksDir;
     fs.mkdirSync(booksDir, { recursive: true });
 
-    // ── ONE-TIME MIGRATION: if a customBooksDir was previously configured,
-    //    copy any book files from there into userData/books, then clear the key.
+    // Read config (already migrated above)
+    const cfg = _readConfig();
+
+    // ONE-TIME MIGRATION: if a customBooksDir was previously configured,
+    // copy any book files from there into the unified books folder, then clear the key.
     try {
       if (cfg.customBooksDir && fs.existsSync(cfg.customBooksDir)) {
         const oldDir = cfg.customBooksDir;
@@ -229,10 +274,16 @@ app.whenReady().then(() => {
       console.error('[migrate] Migration error:', migrErr.message);
     }
 
-    // Determine DB location — custom cloud folder or default userData
+    // DB: migrate userData/sonara.db → Sonara-Data/sonara.db
+    _migrateFile(
+      path.join(userData, 'sonara.db'),
+      path.join(sonaraDataDir, 'sonara.db')
+    );
+
+    // Determine DB location — custom cloud folder or unified Sonara-Data folder
     const dbPath = (cfg.customDbPath && fs.existsSync(cfg.customDbPath))
       ? cfg.customDbPath
-      : path.join(userData, 'sonara.db');
+      : path.join(sonaraDataDir, 'sonara.db');
     db.init(dbPath);
 
     // ── AUTO-HEAL: relink stale file_path entries to booksDir (local) ──
@@ -346,7 +397,7 @@ ipcMain.handle('win:alwaysOnTop', (_, val) => { mainWindow?.setAlwaysOnTop(!!val
 // ─── PLAYER STATE (from renderer → tray & mini player update) ─
 ipcMain.on('player:updateState', (_, state) => {
   _playerState = { ..._playerState, ...state };
-  tray?.setContextMenu(_buildTrayMenu());
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(_buildTrayMenu());
   if (miniPlayer && !miniPlayer.isDestroyed() && miniPlayer.isVisible()) {
     miniPlayer.webContents.send('player:state', _playerState);
   }
@@ -834,10 +885,10 @@ ipcMain.handle('db:choosePath', async () => {
   return newDbPath;
 });
 
-/** Reset to default userData path */
+/** Reset to default Sonara-Data path */
 ipcMain.handle('db:resetPath', () => {
   _writeConfig({ customDbPath: null });
-  const defaultPath = path.join(_userData, 'sonara.db');
+  const defaultPath = path.join(sonaraDataDir, 'sonara.db');
   db.reopen(defaultPath);
   return defaultPath;
 });
@@ -875,10 +926,19 @@ ipcMain.handle('db:import', async () => {
 
 ipcMain.handle('books:getDir', () => booksDir);
 
+/** Return the unified Sonara-Data folder path */
+ipcMain.handle('data:getDir', () => sonaraDataDir);
+
 /** Open the books folder in the system file explorer */
 ipcMain.handle('books:openDir', () => {
   shell.openPath(booksDir);
   return booksDir;
+});
+
+/** Open the unified Sonara-Data folder in the system file explorer */
+ipcMain.handle('data:openDir', () => {
+  shell.openPath(sonaraDataDir);
+  return sonaraDataDir;
 });
 
 /**

@@ -89,9 +89,9 @@ contextBridge.exposeInMainWorld('sonara', {
 
   // ── BOOKS FOLDER ────────────────────────────────────────
   books: {
-    /** @returns {Promise<string>} books folder path (always userData/books) */
+    /** @returns {Promise<string>} books folder path */
     getDir:    ()       => ipcRenderer.invoke('books:getDir'),
-    /** @returns {Promise<string>} open the folder in Explorer */
+    /** @returns {Promise<string>} open the books folder in Explorer */
     openDir:   ()       => ipcRenderer.invoke('books:openDir'),
     /** @returns {Promise<string[]>} up to 2 normalised genre names */
     classify:  (title)    => ipcRenderer.invoke('books:classify', title),
@@ -100,6 +100,14 @@ contextBridge.exposeInMainWorld('sonara', {
      * @returns {Promise<{title: string, chunks: Array}>}
      */
     parseMOBI: (filePath) => ipcRenderer.invoke('books:parseMOBI', filePath),
+  },
+
+  // ── UNIFIED DATA FOLDER ──────────────────────────────────
+  data: {
+    /** @returns {Promise<string>} path to the unified Sonara-Data folder */
+    getDir: () => ipcRenderer.invoke('data:getDir'),
+    /** @returns {Promise<string>} open Sonara-Data folder in Explorer */
+    openDir: () => ipcRenderer.invoke('data:openDir'),
   },
 
   // ── FILE / DIALOG ─────────────────────────────────────────

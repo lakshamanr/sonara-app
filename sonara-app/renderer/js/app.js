@@ -98,6 +98,12 @@ const UI = (() => {
       const el = document.getElementById('syncDbPath');
       if (el) { el.textContent = dbPath || '(default)'; el.title = dbPath || ''; }
     } catch {}
+    // Load unified data folder path
+    try {
+      const dataPath = await window.sonara.data.getDir();
+      const el = document.getElementById('dataFolderPath');
+      if (el) { el.textContent = dataPath || ''; el.title = dataPath || ''; }
+    } catch {}
     // Load TTS skip chars
     try {
       const skipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
@@ -141,6 +147,12 @@ const UI = (() => {
       if (el) { el.textContent = def; el.title = def; }
       toast('Database reset to default location', 'success');
     } catch (err) { toast('Reset failed: ' + err.message, 'error'); }
+  }
+
+  async function openDataFolder() {
+    try {
+      await window.sonara.data.openDir();
+    } catch (err) { toast('Could not open data folder: ' + err.message, 'error'); }
   }
 
   // ── BOOKS FOLDER FUNCTIONS ────────────────────────────────────────
@@ -276,7 +288,7 @@ const UI = (() => {
     toast, openModal, closeModal,
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
-    chooseDbPath, resetDbPath, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
+    chooseDbPath, resetDbPath, openDataFolder, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
     ttsAddPreset: (chars) => {
       const el = document.getElementById('settingTtsSkipChars');
       if (!el) return;
