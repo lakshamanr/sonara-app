@@ -832,6 +832,16 @@
   </div>
 </div>
 
+<!-- Format Picker Modal (shown when a grouped book card is clicked) -->
+<div class="modal-overlay" id="modalFormatPicker">
+  <div class="modal format-picker-modal">
+    <div class="modal-close" onclick="UI.closeModal('modalFormatPicker')">&#x2715;</div>
+    <h2 class="modal-title" id="fpTitle"></h2>
+    <p class="modal-sub" id="fpCount"></p>
+    <div class="fp-list" id="fpList"></div>
+  </div>
+</div>
+
 <!-- Set Cover Image Modal -->
 <div class="modal-overlay" id="modalSetCover">
   <div class="modal set-cover-modal">

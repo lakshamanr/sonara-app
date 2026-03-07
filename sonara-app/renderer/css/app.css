@@ -3069,6 +3069,88 @@ body.mode-reader  .layout { display: grid; }
 .lib-ctx-item.danger:hover { background: rgba(224,82,82,.1); }
 .lib-ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
+/* ── GROUPED BOOK CARD ─────────────────────────────────── */
+.lib-card-group { position: relative; margin-bottom: 10px; }
+
+.lcg-stack {
+  position: absolute; border-radius: 12px;
+  background: var(--surface2, #1e1e1e);
+  border: 1px solid var(--border);
+  left: 0; right: 0; top: 0; bottom: 0;
+}
+.lcg-stack-1 { transform: translate(4px, 5px);  z-index: -1; opacity: 0.65; }
+.lcg-stack-2 { transform: translate(8px, 10px); z-index: -2; opacity: 0.35; }
+
+.lcg-badges {
+  position: absolute;
+  bottom: 32px; left: 6px; right: 6px;
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.lcg-badge {
+  /* override absolute positioning from .lc-format-badge */
+  position: static !important;
+}
+.lcg-count { font-size: 11px; color: var(--accent); font-weight: 600; }
+
+/* ── FORMAT PICKER MODAL ──────────────────────────────── */
+.format-picker-modal { max-width: 420px; }
+
+.fp-list {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 16px 0 4px;
+  max-height: 55vh; overflow-y: auto;
+}
+.fp-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface2, #1a1a1a);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color .15s, background .15s;
+}
+.fp-item:hover { border-color: var(--accent); background: rgba(200,169,110,.06); }
+
+.fp-icon {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; flex-shrink: 0;
+  background: var(--surface);
+}
+.fp-icon svg { width: 18px; height: 18px; stroke: var(--accent); }
+.fp-icon-pdf  svg { stroke: var(--accent); }
+.fp-icon-epub svg, .fp-icon-mobi svg, .fp-icon-azw3 svg { stroke: var(--purple, #a78bfa); }
+.fp-icon-audio svg, .fp-icon-mp3 svg, .fp-icon-m4b svg,
+.fp-icon-m4a  svg, .fp-icon-ogg svg { stroke: var(--green,  #4ade80); }
+
+.fp-info { flex: 1; min-width: 0; }
+.fp-format {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  margin-bottom: 5px;
+}
+.fp-ext { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.fp-progress-bar {
+  height: 3px; background: var(--border); border-radius: 2px;
+  overflow: hidden; margin-bottom: 4px;
+}
+.fp-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--grad-end), var(--grad-start));
+  border-radius: 2px;
+}
+.fp-meta { font-size: 11px; color: var(--text-muted); }
+
+.fp-open-btn {
+  padding: 7px 16px;
+  background: linear-gradient(135deg, var(--grad-start), var(--grad-end));
+  color: var(--play-btn-fg, #000);
+  border: none; border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; flex-shrink: 0;
+  transition: opacity .15s, transform .1s;
+}
+.fp-open-btn:hover  { opacity: .85; transform: translateY(-1px); }
+.fp-open-btn:active { opacity: 1;   transform: translateY(0); }
+
 /* ── SET COVER IMAGE MODAL ───────────────────────────────── */
 .set-cover-modal { max-width: 420px; }
 

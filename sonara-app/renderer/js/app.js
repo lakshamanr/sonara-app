@@ -506,9 +506,10 @@ const App = (() => {
 
   // ── ADD SINGLE BOOK (shared by single and batch) ──────────
   async function _addSingleBook(fileInfo, openAfter) {
-    // Generate stable ID
-    const rawId = fileInfo.name + '_' + fileInfo.size;
-    const id    = btoa(rawId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
+    // Generate stable ID — include format explicitly so ".pdf" and ".mp3"
+    // of the same title never collide (btoa prefix was shared for long titles)
+    const rawId = fileInfo.format + '_' + fileInfo.name + '_' + fileInfo.size;
+    const id    = btoa(unescape(encodeURIComponent(rawId))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
 
     // Already in library?
     const exists = await window.sonara.library.bookExists(id);

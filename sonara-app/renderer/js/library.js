@@ -16,6 +16,7 @@ const Library = (() => {
   let _assignBookId = null;     // for assign-to-collection modal
   let _editCollectionId = null; // for edit collection modal
   let _contextMenu = null;      // active context menu element
+  let _currentGroupKey = null;  // for format picker modal
 
   const AUDIO_FORMATS = ['mp3', 'm4b', 'm4a', 'ogg'];
 
@@ -123,7 +124,8 @@ const Library = (() => {
       return;
     }
 
-    grid.innerHTML = filtered.map(b => _coverCardHTML(b)).join('');
+    const groups = _buildGroups(filtered);
+    grid.innerHTML = groups.map(g => g.books.length > 1 ? _groupCardHTML(g) : _coverCardHTML(g.books[0])).join('');
     _attachCardListeners();
   }
 
@@ -170,6 +172,93 @@ const Library = (() => {
       '</div></div>';
   }
 
+  // ── TITLE NORMALISATION & GROUPING ──────────────────────
+  function _normalizeTitle(title) {
+    return (title || '')
+      .toLowerCase()
+      .replace(/[_\-–—]+/g, ' ')                        // separators → space
+      .replace(/[^\w\s]/g, ' ')                          // other punctuation → space
+      .replace(/\b(the|a|an)\b/g, ' ')                  // drop leading articles
+      .replace(/\b(unabridged|audiobook|audio\s*book|narrated\s*by|complete|full)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function _buildGroups(filtered) {
+    const groupMap = new Map();
+    for (const book of filtered) {
+      const key = _normalizeTitle(book.title);
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key).push(book);
+    }
+    const seen = new Set();
+    const result = [];
+    for (const book of filtered) {
+      const key = _normalizeTitle(book.title);
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ key, books: groupMap.get(key) });
+      }
+    }
+    return result;
+  }
+
+  // ── GROUP CARD HTML ───────────────────────────────────────
+  function _groupCardHTML(group) {
+    const grpBooks = group.books;
+    const rep   = grpBooks.find(b => b.cover_path) || grpBooks[0];
+    const pct   = Math.max(...grpBooks.map(b => b.percent || 0));
+    const title = _escHtml(rep.title);
+    const hasActive = grpBooks.some(b => b.status === 'reading');
+
+    let coverHTML;
+    if (rep.cover_path) {
+      coverHTML = '<img class="lc-cover-img" src="file:///' + _escHtml(rep.cover_path.replace(/\\/g, '/')) + '" alt="" />';
+    } else {
+      const style  = _generatePlaceholderStyle(rep.title);
+      const letter = _escHtml((rep.title || '?')[0].toUpperCase());
+      coverHTML = '<div class="lc-cover-placeholder" style="' + style + '">' +
+        '<span class="lc-cover-letter">' + letter + '</span>' +
+        '<span class="lc-cover-title">' + title + '</span></div>';
+    }
+
+    const badges = grpBooks.map(b => {
+      const isAudio = AUDIO_FORMATS.includes(b.format);
+      const label   = isAudio ? 'AUDIO' : b.format.toUpperCase();
+      const cls     = isAudio ? 'audio' : b.format;
+      return '<span class="lc-format-badge lcg-badge ' + cls + '">' + label + '</span>';
+    }).join('');
+
+    return '<div class="lib-card lib-card-group" data-group-key="' + _escHtml(group.key) + '">' +
+      '<div class="lcg-stack lcg-stack-2"></div>' +
+      '<div class="lcg-stack lcg-stack-1"></div>' +
+      '<button class="lc-menu-btn" data-menu-group="' + _escHtml(group.key) + '" title="More options">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">' +
+          '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' +
+        '</svg></button>' +
+      '<div class="lc-cover">' +
+        coverHTML +
+        '<div class="lcg-badges">' + badges + '</div>' +
+        '<div class="lc-progress-bar"><div class="lc-progress-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="lc-hover-overlay">' +
+          '<button class="lc-play-btn" title="Choose Format">' +
+            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+              '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>' +
+              '<line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>' +
+              '<line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>' +
+            '</svg>' +
+          '</button></div>' +
+      '</div>' +
+      '<div class="lc-info">' +
+        '<div class="lc-title" title="' + title + '">' + title + '</div>' +
+        (rep.author ? '<div class="lc-author">' + _escHtml(rep.author) + '</div>' : '') +
+        '<div class="lc-meta">' +
+          '<span class="lcg-count">' + grpBooks.length + ' formats</span>' +
+          (hasActive ? '<span class="lc-status reading">In progress</span>' : '') +
+        '</div>' +
+      '</div></div>';
+  }
+
   function _generatePlaceholderStyle(title) {
     let hash = 0;
     for (let i = 0; i < title.length; i++) {
@@ -182,20 +271,32 @@ const Library = (() => {
   }
 
   function _attachCardListeners() {
-    // Card click -> open book
-    document.querySelectorAll('.lib-card').forEach(card => {
+    // Single card click -> open book
+    document.querySelectorAll('.lib-card:not(.lib-card-group)').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('.lc-menu-btn')) return;
-        const id = card.dataset.bookId;
-        App.openBook(id).catch(err => console.error('openBook error:', err));
+        App.openBook(card.dataset.bookId).catch(err => console.error('openBook error:', err));
       });
     });
-    // Menu button -> context menu
-    document.querySelectorAll('.lc-menu-btn').forEach(btn => {
+    // Group card click -> format picker
+    document.querySelectorAll('.lib-card-group').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.lc-menu-btn')) return;
+        _showFormatPicker(card.dataset.groupKey);
+      });
+    });
+    // Single card menu button
+    document.querySelectorAll('.lc-menu-btn[data-menu-id]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const id = btn.dataset.menuId;
-        _showContextMenu(e, id);
+        _showContextMenu(e, btn.dataset.menuId);
+      });
+    });
+    // Group card menu button
+    document.querySelectorAll('.lc-menu-btn[data-menu-group]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _showGroupContextMenu(e, btn.dataset.menuGroup);
       });
     });
   }
@@ -246,6 +347,105 @@ const Library = (() => {
 
   function _closeContextMenu() {
     if (_contextMenu) { _contextMenu.remove(); _contextMenu = null; }
+  }
+
+  // ── GROUP CONTEXT MENU ────────────────────────────────────
+  function _showGroupContextMenu(e, key) {
+    _closeContextMenu();
+    const grpBooks = _buildGroups(_getFilteredBooks()).find(g => g.key === key)?.books || [];
+    if (!grpBooks.length) return;
+    const rep = grpBooks.find(b => b.cover_path) || grpBooks[0];
+
+    const menu = document.createElement('div');
+    menu.className = 'lib-context-menu';
+    menu.innerHTML =
+      '<div class="lib-ctx-item" data-action="open">Choose Format…</div>' +
+      '<div class="lib-ctx-item" data-action="classify">✨ Auto-classify</div>' +
+      '<div class="lib-ctx-item" data-action="setcover">🖼 Set Cover Image</div>' +
+      '<div class="lib-ctx-sep"></div>' +
+      '<div class="lib-ctx-item danger" data-action="deletegroup">Remove All Versions</div>';
+
+    document.body.appendChild(menu);
+    const x = Math.min(e.clientX, window.innerWidth - 210);
+    const y = Math.min(e.clientY, window.innerHeight - 180);
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+    _contextMenu = menu;
+
+    menu.addEventListener('click', async (ev) => {
+      const action = ev.target.closest('.lib-ctx-item')?.dataset.action;
+      _closeContextMenu();
+      if (action === 'open')        _showFormatPicker(key);
+      if (action === 'classify') { UI.toast('Classifying…', 'success', 2000); App._classifyExisting(rep.id, rep.title); }
+      if (action === 'setcover')    setCoverImage(rep.id);
+      if (action === 'deletegroup') {
+        const titles = grpBooks.map(b => b.format.toUpperCase()).join(', ');
+        if (!confirm('Remove all ' + grpBooks.length + ' versions of "' + rep.title + '" (' + titles + ') from your library?')) return;
+        for (const b of grpBooks) {
+          await window.sonara.library.deleteBook(b.id);
+          const last = await window.sonara.settings.get('lastBookId', null);
+          if (last === b.id) await window.sonara.settings.set('lastBookId', '');
+          if (App.currentBookId === b.id) App.clearCurrentBook();
+        }
+        await load();
+        UI.toast(grpBooks.length + ' versions removed', '');
+      }
+    });
+    setTimeout(() => { document.addEventListener('click', _closeContextMenu, { once: true }); }, 10);
+  }
+
+  // ── FORMAT PICKER MODAL ───────────────────────────────────
+  function _showFormatPicker(key) {
+    _currentGroupKey = key;
+    const groups  = _buildGroups(_getFilteredBooks());
+    const group   = groups.find(g => g.key === key);
+    if (!group) return;
+
+    const rep = group.books[0];
+    document.getElementById('fpTitle').textContent = rep.title;
+    document.getElementById('fpCount').textContent = group.books.length + ' version' + (group.books.length > 1 ? 's' : '') + ' available';
+
+    const listEl = document.getElementById('fpList');
+    listEl.innerHTML = group.books.map(b => {
+      const isAudio   = AUDIO_FORMATS.includes(b.format);
+      const fmtLabel  = isAudio ? 'Audiobook' : b.format.toUpperCase();
+      const fmtClass  = isAudio ? 'audio' : b.format;
+      const pct       = b.percent || 0;
+      const statusLbl = { unstarted: 'Not started', reading: 'In progress', done: 'Completed' }[b.status] || '';
+
+      let iconSvg;
+      if (isAudio) {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+      } else if (b.format === 'epub' || b.format === 'mobi' || b.format === 'azw3') {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+      } else {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+      }
+
+      let coverThumb = '';
+      if (b.cover_path) {
+        coverThumb = '<img class="fp-thumb" src="file:///' + b.cover_path.replace(/\\/g, '/') + '" alt=""/>';
+      }
+
+      return '<div class="fp-item" data-book-id="' + b.id + '">' +
+        '<div class="fp-icon fp-icon-' + fmtClass + '">' + iconSvg + '</div>' +
+        '<div class="fp-info">' +
+          '<div class="fp-format">' + fmtLabel + ' <span class="fp-ext">.' + b.format + '</span></div>' +
+          '<div class="fp-progress-bar"><div class="fp-progress-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="fp-meta">' + pct + '% &middot; ' + statusLbl + '</div>' +
+        '</div>' +
+        '<button class="fp-open-btn" data-book-id="' + b.id + '">Open</button>' +
+      '</div>';
+    }).join('');
+
+    listEl.querySelectorAll('.fp-open-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        UI.closeModal('modalFormatPicker');
+        await App.openBook(btn.dataset.bookId);
+      });
+    });
+
+    UI.openModal('modalFormatPicker');
   }
 
   // ── SET COVER IMAGE MODAL ─────────────────────────────────
