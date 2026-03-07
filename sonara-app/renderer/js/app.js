@@ -1,4 +1,4 @@
-/* ══════════════════════════════════════════════════════════
+﻿/* ══════════════════════════════════════════════════════════
    APP.JS — Main orchestrator, UI helpers, Claude, init
 ══════════════════════════════════════════════════════════ */
 'use strict';
@@ -506,21 +506,6 @@ const App = (() => {
 
   // ── ADD SINGLE BOOK (shared by single and batch) ──────────
   async function _addSingleBook(fileInfo, openAfter) {
-    // Size checks
-    const sizeMB = fileInfo.size / (1024 * 1024);
-    if (sizeMB > 200) {
-      UI.toast('Skipped “' + fileInfo.name + '” — too large (' + sizeMB.toFixed(0) + 'MB, max 200MB)', 'error');
-      return 'failed';
-    }
-    if (openAfter && sizeMB > 50) {
-      const proceed = confirm(
-        'This file is quite large (' + sizeMB.toFixed(1) + 'MB).\n\n' +
-        'Processing may take several minutes and use significant memory.\n\n' +
-        'Consider using a smaller file if possible.\n\nContinue anyway?'
-      );
-      if (!proceed) return 'cancelled';
-    }
-
     // Generate stable ID
     const rawId = fileInfo.name + '_' + fileInfo.size;
     const id    = btoa(rawId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
