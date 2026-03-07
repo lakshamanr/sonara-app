@@ -832,6 +832,38 @@
   </div>
 </div>
 
+<!-- Set Cover Image Modal -->
+<div class="modal-overlay" id="modalSetCover">
+  <div class="modal set-cover-modal">
+    <div class="modal-close" onclick="UI.closeModal('modalSetCover')" id="setCoverCloseBtn">&#x2715;</div>
+    <h2 class="modal-title">Set Cover Image</h2>
+    <p class="modal-sub" id="setCoverSub">Choose a cover for this book</p>
+
+    <div class="sc-drop-zone" id="scDropZone">
+      <div class="sc-preview-wrap" id="scPreviewWrap" style="display:none">
+        <img class="sc-preview-img" id="scPreviewImg" src="" alt="Cover preview"/>
+        <button class="sc-clear-btn" id="scClearBtn" title="Remove">&#x2715;</button>
+      </div>
+      <div class="sc-placeholder" id="scPlaceholder">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.4">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <span class="sc-drop-label">Drop an image here</span>
+        <span class="sc-drop-or">or</span>
+        <button class="sc-browse-btn" id="scBrowseBtn">Browse files</button>
+        <span class="sc-formats">JPG, PNG, WebP, GIF</span>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalSetCover')">Cancel</button>
+      <button class="modal-btn-primary" id="scSaveBtn" disabled>Set Cover</button>
+    </div>
+  </div>
+</div>
+
 <!-- Export Progress Badge (✔ non-blocking — floats above player bar) -->
 <div class="export-badge" id="exportBadge" style="display:none">
   <div class="eb-head">

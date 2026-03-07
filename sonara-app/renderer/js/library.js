@@ -42,6 +42,7 @@ const Library = (() => {
       if (!_initialized) {
         _initSearchAndFilters();
         _initCollectionListeners();
+        _initSetCoverModal();
         _initialized = true;
       }
 
@@ -211,6 +212,7 @@ const Library = (() => {
       '<div class="lib-ctx-item" data-action="open">Open</div>' +
       '<div class="lib-ctx-item" data-action="assign">Add to Collection</div>' +
       '<div class="lib-ctx-item" data-action="classify">✨ Auto-classify</div>' +
+      '<div class="lib-ctx-item" data-action="setcover">🖼 Set Cover Image</div>' +
       '<div class="lib-ctx-sep"></div>' +
       '<div class="lib-ctx-item danger" data-action="delete">Remove from Library</div>';
 
@@ -232,6 +234,7 @@ const Library = (() => {
         UI.toast('Classifying…', 'success', 2000);
         App._classifyExisting(bookId, book.title);
       }
+      if (action === 'setcover') setCoverImage(bookId);
       if (action === 'delete')   deleteBook(bookId);
     });
 
@@ -243,6 +246,102 @@ const Library = (() => {
 
   function _closeContextMenu() {
     if (_contextMenu) { _contextMenu.remove(); _contextMenu = null; }
+  }
+
+  // ── SET COVER IMAGE MODAL ─────────────────────────────────
+  let _setCoverId   = null;
+  let _setCoverPath = null; // chosen image path
+
+  async function setCoverImage(bookId) {
+    _setCoverId   = bookId;
+    _setCoverPath = null;
+    const book = books.find(b => b.id === bookId);
+    document.getElementById('setCoverSub').textContent =
+      'Choose a cover for "' + _escHtml(book?.title || '') + '"';
+    _scReset();
+    UI.openModal('modalSetCover');
+  }
+
+  function _scReset() {
+    _setCoverPath = null;
+    document.getElementById('scPreviewWrap').style.display = 'none';
+    document.getElementById('scPlaceholder').style.display = 'flex';
+    document.getElementById('scPreviewImg').src = '';
+    document.getElementById('scSaveBtn').disabled = true;
+  }
+
+  function _scSetPreview(filePath) {
+    _setCoverPath = filePath;
+    const img = document.getElementById('scPreviewImg');
+    img.src = 'file:///' + filePath.replace(/\\/g, '/');
+    document.getElementById('scPreviewWrap').style.display = 'flex';
+    document.getElementById('scPlaceholder').style.display = 'none';
+    document.getElementById('scSaveBtn').disabled = false;
+  }
+
+  async function _scSave() {
+    if (!_setCoverId || !_setCoverPath) return;
+    try {
+      await window.sonara.cover.saveFromFile(_setCoverId, _setCoverPath);
+      UI.closeModal('modalSetCover');
+      UI.toast('Cover image updated!', 'success');
+      await load();
+    } catch (err) {
+      UI.toast('Could not save cover: ' + (err.message || err), 'error');
+    }
+  }
+
+  function _initSetCoverModal() {
+    const dropZone   = document.getElementById('scDropZone');
+    const browseBtn  = document.getElementById('scBrowseBtn');
+    const clearBtn   = document.getElementById('scClearBtn');
+    const saveBtn    = document.getElementById('scSaveBtn');
+
+    // Browse button → file picker dialog
+    browseBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const imagePath = await window.sonara.dialog.openImage();
+      if (imagePath) _scSetPreview(imagePath);
+    });
+
+    // Click anywhere on drop zone → file picker
+    dropZone.addEventListener('click', async (e) => {
+      if (e.target.closest('#scBrowseBtn') || e.target.closest('#scClearBtn')) return;
+      if (document.getElementById('scPreviewWrap').style.display !== 'none') return;
+      const imagePath = await window.sonara.dialog.openImage();
+      if (imagePath) _scSetPreview(imagePath);
+    });
+
+    // Clear preview
+    clearBtn.addEventListener('click', (e) => { e.stopPropagation(); _scReset(); });
+
+    // Save button
+    saveBtn.addEventListener('click', _scSave);
+
+    // Drag-and-drop
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer?.files?.[0];
+      if (file && file.type.startsWith('image/')) {
+        // Use file URL path for local files
+        const url = URL.createObjectURL(file);
+        // We need the real path — Electron exposes it via file.path
+        if (file.path) {
+          _scSetPreview(file.path);
+          URL.revokeObjectURL(url);
+        } else {
+          // Fallback: show blob preview only (no save path)
+          document.getElementById('scPreviewImg').src = url;
+          document.getElementById('scPreviewWrap').style.display = 'flex';
+          document.getElementById('scPlaceholder').style.display = 'none';
+          document.getElementById('scSaveBtn').disabled = true;
+          UI.toast('Drag-and-drop works best with local files. Use Browse instead.', 'error', 3000);
+        }
+      }
+    });
   }
 
   // ── RENDER COLLECTIONS SIDEBAR ────────────────────────────
@@ -651,7 +750,7 @@ const Library = (() => {
     load, render: renderGrid, renderGrid, refreshCard, addBookToList,
     deleteBook, setActiveCard, onShow,
     showCreateCollectionModal, showAssignModal, saveAssignments,
-    closeDeleteColModal,
+    closeDeleteColModal, setCoverImage,
     getBooks: () => books
   };
 })();

@@ -842,7 +842,16 @@ const App = (() => {
       const saved = await window.sonara.library.addBook(bookRecord);
       if (!silent) _setGenProgress(40, 'Reading audio metadata...', '');
 
-      // 2. Get duration from the copied file
+      // 2. Extract embedded cover art from ID3/MP4 tags
+      try {
+        await window.sonara.audio.extractCover({
+          bookId: id,
+          filePath: saved.file_path,
+          format: fileInfo.format
+        });
+      } catch { /* no cover — not critical */ }
+
+      // 3. Get duration from the copied file
       const duration = await _getAudioDuration(saved.file_path);
       await window.sonara.library.updateBook(id, {
         duration_seconds: duration,

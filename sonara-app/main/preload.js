@@ -105,7 +105,9 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── FILE / DIALOG ─────────────────────────────────────────
   dialog: {
     /** @returns {Promise<FileInfo|null>} */
-    openFile: () => ipcRenderer.invoke('dialog:openFile'),
+    openFile:  () => ipcRenderer.invoke('dialog:openFile'),
+    /** @returns {Promise<string|null>} chosen image file path */
+    openImage: () => ipcRenderer.invoke('dialog:openImage'),
   },
   file: {
     /** @returns {Promise<string|null>} base64 encoded file contents */
@@ -144,9 +146,18 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── COVERS ───────────────────────────────────────────────
   cover: {
     /** @returns {Promise<string>} saved cover file path */
-    save:    (data) => ipcRenderer.invoke('cover:save', data),
+    save:         (data)              => ipcRenderer.invoke('cover:save', data),
     /** @returns {Promise<string|null>} */
-    getPath: (bId)  => ipcRenderer.invoke('cover:getPath', bId),
+    getPath:      (bId)               => ipcRenderer.invoke('cover:getPath', bId),
+    /** @returns {Promise<string>} saved cover path */
+    saveFromFile: (bookId, imagePath) => ipcRenderer.invoke('cover:saveFromFile', { bookId, imagePath }),
+  },
+
+  // ── AUDIO ────────────────────────────────────────────────
+  audio: {
+    /** Extract embedded cover art from an audio file and save it.
+     *  @returns {Promise<string|null>} saved cover path or null */
+    extractCover: (data) => ipcRenderer.invoke('audio:extractCover', data),
   },
 
   // ── EDGE TTS (Neural voices — no API key required) ────────

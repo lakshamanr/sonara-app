@@ -155,6 +155,23 @@ function ipcHandler(fn) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  SINGLE INSTANCE LOCK
+// ─────────────────────────────────────────────────────────────
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // A second instance was launched — focus the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 //  CONFIG FILE (stored separately from the DB so we can read before init)
 // ─────────────────────────────────────────────────────────────
 let _userData = '';
@@ -462,6 +479,29 @@ ipcMain.handle('dialog:openFile', async () => {
   }
 });
 
+ipcMain.handle('dialog:openImage', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose Cover Image',
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
+      properties: ['openFile']
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  } catch { return null; }
+});
+
+ipcMain.handle('cover:saveFromFile', async (_, { bookId, imagePath }) => {
+  try {
+    const ext = path.extname(imagePath).toLowerCase();
+    const safeExt = ['.jpg','.jpeg','.png','.webp','.gif'].includes(ext) ? ext : '.jpg';
+    const coverPath = path.join(coversDir, bookId + safeExt);
+    fs.copyFileSync(imagePath, coverPath);
+    db.updateBook(bookId, { cover_path: coverPath });
+    return coverPath;
+  } catch (err) { throw err; }
+});
+
 ipcMain.handle('file:read', (_, filePath) => {
   try {
     if (!fs.existsSync(filePath)) {
@@ -539,6 +579,137 @@ ipcMain.handle('cover:getPath', (_, bookId) => {
   if (book?.cover_path && fs.existsSync(book.cover_path)) return book.cover_path;
   return null;
 });
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — AUDIO COVER EXTRACTION (ID3v2 / MP4)
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('audio:extractCover', async (_, { bookId, filePath, format }) => {
+  try {
+    let result = null;
+    if (format === 'mp3') {
+      result = _extractMp3Cover(filePath);
+    } else if (format === 'm4a' || format === 'm4b') {
+      result = _extractMp4Cover(filePath);
+    }
+    if (!result || !result.data || result.data.length < 100) return null;
+
+    const ext = result.mediaType.includes('png') ? '.png' : '.jpg';
+    const coverPath = path.join(coversDir, bookId + ext);
+    fs.writeFileSync(coverPath, result.data);
+    db.updateBook(bookId, { cover_path: coverPath });
+    return coverPath;
+  } catch (err) {
+    return null;
+  }
+});
+
+// Parse ID3v2 tags from an MP3 file and return the embedded cover image
+function _extractMp3Cover(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(10);
+    fs.readSync(fd, header, 0, 10, 0);
+    if (header.slice(0, 3).toString('ascii') !== 'ID3') { fs.closeSync(fd); return null; }
+
+    const version = header[3];
+    // ID3v2 tag size stored as syncsafe integer
+    const tagSize = ((header[6] & 0x7f) << 21) | ((header[7] & 0x7f) << 14) |
+                    ((header[8] & 0x7f) << 7)  | (header[9] & 0x7f);
+
+    const readSize = Math.min(tagSize + 10, 15 * 1024 * 1024);
+    const buf = Buffer.alloc(readSize);
+    fs.readSync(fd, buf, 0, readSize, 0);
+    fs.closeSync(fd);
+
+    let offset = 10;
+    const tagEnd = Math.min(tagSize + 10, buf.length);
+    while (offset + 10 <= tagEnd) {
+      const frameId = buf.slice(offset, offset + 4).toString('ascii');
+      if (frameId === '\0\0\0\0') break;
+
+      let frameSize;
+      if (version >= 4) {
+        frameSize = ((buf[offset+4] & 0x7f) << 21) | ((buf[offset+5] & 0x7f) << 14) |
+                    ((buf[offset+6] & 0x7f) << 7)  | (buf[offset+7] & 0x7f);
+      } else {
+        frameSize = buf.readUInt32BE(offset + 4);
+      }
+      offset += 10;
+
+      if (frameId === 'APIC' && frameSize > 4) {
+        let pos = offset;
+        const encoding = buf[pos++];
+        // MIME type (null-terminated ASCII)
+        const mimeEnd = buf.indexOf(0, pos);
+        const mimeType = buf.slice(pos, mimeEnd).toString('ascii');
+        pos = mimeEnd + 1;
+        pos++; // skip picture type byte
+        // Description: null-terminated, UTF-16 uses double-null
+        if (encoding === 1 || encoding === 2) {
+          while (pos + 1 < offset + frameSize && !(buf[pos] === 0 && buf[pos + 1] === 0)) pos++;
+          pos += 2;
+        } else {
+          while (pos < offset + frameSize && buf[pos] !== 0) pos++;
+          pos++;
+        }
+        const data = buf.slice(pos, offset + frameSize);
+        const mt = mimeType && mimeType !== 'image/' ? mimeType
+                   : (data[0] === 0x89 ? 'image/png' : 'image/jpeg');
+        return { data, mediaType: mt };
+      }
+      offset += frameSize;
+    }
+    return null;
+  } catch { return null; }
+}
+
+// Parse MP4/M4A/M4B container and return the embedded cover image (covr atom)
+function _extractMp4Cover(filePath) {
+  try {
+    const READ_SIZE = 20 * 1024 * 1024;
+    const fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const readSize = Math.min(stat.size, READ_SIZE);
+    const buf = Buffer.alloc(readSize);
+    fs.readSync(fd, buf, 0, readSize, 0);
+    fs.closeSync(fd);
+
+    function findBox(start, end, name) {
+      let off = start;
+      while (off + 8 <= end && off + 8 <= buf.length) {
+        const size = buf.readUInt32BE(off);
+        if (size < 8) break;
+        const type = buf.slice(off + 4, off + 8).toString('ascii');
+        const boxEnd = Math.min(off + size, buf.length);
+        if (type === name) return { start: off, end: boxEnd };
+        off += size;
+      }
+      return null;
+    }
+
+    const moov = findBox(0, buf.length, 'moov');
+    if (!moov) return null;
+    const udta = findBox(moov.start + 8, moov.end, 'udta');
+    if (!udta) return null;
+    const meta = findBox(udta.start + 8, udta.end, 'meta');
+    if (!meta) return null;
+    // meta has a 4-byte version+flags before child boxes
+    const ilst = findBox(meta.start + 12, meta.end, 'ilst');
+    if (!ilst) return null;
+    const covr = findBox(ilst.start + 8, ilst.end, 'covr');
+    if (!covr) return null;
+    const data = findBox(covr.start + 8, covr.end, 'data');
+    if (!data) return null;
+
+    // data box layout: 4-byte type indicator, 4-byte locale, then image bytes
+    const typeIndicator = buf.readUInt32BE(data.start + 8);
+    const imageData = buf.slice(data.start + 16, data.end);
+    if (imageData.length < 100) return null;
+    // type 14 = PNG; 13 or others = JPEG
+    const mediaType = typeIndicator === 14 ? 'image/png' : 'image/jpeg';
+    return { data: imageData, mediaType };
+  } catch { return null; }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  IPC — EDGE TTS (Natural Neural Voices)

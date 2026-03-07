@@ -3069,6 +3069,70 @@ body.mode-reader  .layout { display: grid; }
 .lib-ctx-item.danger:hover { background: rgba(224,82,82,.1); }
 .lib-ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
+/* ── SET COVER IMAGE MODAL ───────────────────────────────── */
+.set-cover-modal { max-width: 420px; }
+
+.sc-drop-zone {
+  position: relative;
+  border: 2px dashed var(--border2);
+  border-radius: 12px;
+  min-height: 220px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.sc-drop-zone:hover,
+.sc-drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(200,169,110,.06);
+}
+
+.sc-placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.sc-drop-label { font-size: 13px; color: var(--text-dim); }
+.sc-drop-or    { font-size: 11px; color: var(--text-muted); }
+.sc-formats    { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.sc-browse-btn {
+  pointer-events: all;
+  padding: 7px 18px;
+  background: var(--accent);
+  color: var(--play-btn-fg);
+  border: none; border-radius: 7px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.sc-browse-btn:hover { opacity: .85; }
+
+.sc-preview-wrap {
+  position: relative;
+  width: 100%; height: 100%;
+  min-height: 220px;
+  display: flex; align-items: center; justify-content: center;
+}
+.sc-preview-img {
+  max-width: 100%; max-height: 300px;
+  border-radius: 8px;
+  object-fit: contain;
+  display: block;
+}
+.sc-clear-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 24px; height: 24px;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  border: none; border-radius: 50%;
+  font-size: 13px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.sc-clear-btn:hover { background: rgba(0,0,0,.85); }
+
 /* ══════════════════════════════════════════════════════════
    EXPORT TO MP3
 ══════════════════════════════════════════════════════════ */
