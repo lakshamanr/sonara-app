@@ -63,7 +63,11 @@ contextBridge.exposeInMainWorld('sonara', {
     minimize:    () => ipcRenderer.invoke('win:minimize'),
     maximize:    () => ipcRenderer.invoke('win:maximize'),
     close:       () => ipcRenderer.invoke('win:close'),
-    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),    alwaysOnTop: (val) => ipcRenderer.invoke('win:alwaysOnTop', val),  },
+    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
+    alwaysOnTop: (val) => ipcRenderer.invoke('win:alwaysOnTop', val),
+    isFullscreen: () => ipcRenderer.invoke('win:isFullscreen'),
+    setFullscreen: (val) => ipcRenderer.invoke('win:setFullscreen', val),
+  },
 
   // ── DATABASE SYNC ─────────────────────────────────────────
   db: {

@@ -390,6 +390,12 @@ ipcMain.handle('win:maximize',  () => {
 ipcMain.handle('win:close',     () => mainWindow && mainWindow.close());
 ipcMain.handle('win:isMaximized',  () => mainWindow ? mainWindow.isMaximized() : false);
 ipcMain.handle('win:alwaysOnTop', (_, val) => { mainWindow?.setAlwaysOnTop(!!val); return !!val; });
+ipcMain.handle('win:isFullscreen', () => mainWindow ? mainWindow.isFullScreen() : false);
+ipcMain.handle('win:setFullscreen', (_, val) => {
+  if (!mainWindow) return false;
+  mainWindow.setFullScreen(!!val);
+  return mainWindow.isFullScreen();
+});
 
 // ─── PLAYER STATE (from renderer → tray & mini player update) ─
 ipcMain.on('player:updateState', (_, state) => {

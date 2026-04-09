@@ -22,6 +22,8 @@ const Library = (() => {
 
   // ── LOAD ─────────────────────────────────────────────────
   async function load() {
+    _renderSkeletonGrid();
+
     try {
       books = await window.sonara.library.getAll() || [];
       collections = await window.sonara.collections.getAll() || [];
@@ -51,6 +53,21 @@ const Library = (() => {
       books = [];
       renderGrid();
     }
+  }
+
+  function _renderSkeletonGrid() {
+    const grid  = document.getElementById('libGrid');
+    const empty = document.getElementById('libEmptyHero');
+    if (!grid || !empty) return;
+
+    empty.style.display = 'none';
+    grid.innerHTML = Array.from({ length: 8 }, () => (
+      '<div class="lib-card-skeleton">' +
+        '<div class="skel-cover"></div>' +
+        '<div class="skel-line"></div>' +
+        '<div class="skel-line short"></div>' +
+      '</div>'
+    )).join('');
   }
 
   // ── FILTER + SORT ─────────────────────────────────────────
@@ -755,6 +772,29 @@ const Library = (() => {
     // Add book buttons (library view)
     document.getElementById('libAddBtn').addEventListener('click', () => App.addBook());
     document.getElementById('libEmptyAddBtn').addEventListener('click', () => App.addBook());
+
+    // Drag-and-drop import directly into library grid
+    const gridWrap = document.getElementById('libGridWrap');
+    if (gridWrap) {
+      gridWrap.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        gridWrap.classList.add('drag-over');
+      });
+
+      gridWrap.addEventListener('dragleave', (e) => {
+        if (!gridWrap.contains(e.relatedTarget)) {
+          gridWrap.classList.remove('drag-over');
+        }
+      });
+
+      gridWrap.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        gridWrap.classList.remove('drag-over');
+        const droppedFiles = Array.from(e.dataTransfer?.files || []);
+        if (!droppedFiles.length) return;
+        await App.addDroppedFiles(droppedFiles);
+      });
+    }
   }
 
   function _initCollectionListeners() {

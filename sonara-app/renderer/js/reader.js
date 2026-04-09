@@ -549,6 +549,10 @@ const Reader = (() => {
 
   // Sync reader chunk index to match a PDF page number
   function _syncChunkToPage(pageNum) {
+    if (pdfMode && pageNum !== pdfCurrentPage) {
+      _showPDFPage(pageNum);
+    }
+
     const idx = chunks.findIndex(c => c.page === pageNum);
     if (idx >= 0 && idx !== currentChunk) {
       currentChunk = idx;
@@ -1412,10 +1416,21 @@ const Reader = (() => {
     document.getElementById('ctbBarFill').style.width  = pct + '%';
 
     // Top bar center
-    document.getElementById('tbCenter').textContent = c?.title || '';
+    _setTopbarTitle(c?.title || '');
 
     // Reader header badge
     document.getElementById('readerProgBadge')?.textContent && (document.getElementById('readerProgBadge').textContent = pct + '%');
+  }
+
+  function _setTopbarTitle(text) {
+    const el = document.getElementById('tbCenter');
+    if (!el) return;
+    if (el.textContent === text) return;
+
+    el.textContent = text;
+    el.classList.remove('tb-center-anim');
+    void el.offsetWidth;
+    el.classList.add('tb-center-anim');
   }
 
   // ── WAVEFORM ──────────────────────────────────────────────
@@ -1488,6 +1503,30 @@ const Reader = (() => {
         else if (cmd === 'prev')        skipChunk(-1);
         else if (cmd === 'next')        skipChunk(1);
         else if (cmd === '__pushState') _pushPlayerState();
+      });
+    }
+
+    if (!applySettings._epubPageKeysWired) {
+      applySettings._epubPageKeysWired = true;
+      document.addEventListener('keydown', (e) => {
+        const t = e.target;
+        const isEditable = t && (
+          t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable
+        );
+        if (isEditable) return;
+        if (audioMode || pdfMode) return;
+        if (!chunks.length || chunks[0].source !== 'epub') return;
+
+        if (e.key === 'PageDown') {
+          e.preventDefault();
+          skipChunk(1);
+        } else if (e.key === 'PageUp') {
+          e.preventDefault();
+          skipChunk(-1);
+        }
       });
     }
     const savedVoice     = await window.sonara.settings.get('voice');
@@ -1570,7 +1609,10 @@ const Reader = (() => {
 
   function _updateSeekBar() {
     const p = totalDuration > 0 ? (elapsedTime / totalDuration) * 100 : 0;
-    document.getElementById('pbSeeker').value = p;
+    const seeker = document.getElementById('pbSeeker');
+    if (!seeker) return;
+    seeker.value = p;
+    seeker.style.setProperty('--seeker-pct', p.toFixed(2) + '%');
   }
 
   function saveBookmark() {
@@ -1672,7 +1714,7 @@ const Reader = (() => {
     audioElement.addEventListener('ended', _onAudioEnded);
 
     // Update topbar and player bar book info
-    document.getElementById('tbCenter').textContent = bookData.title;
+    _setTopbarTitle(bookData.title || '');
     const pmTitle = document.getElementById('pbMetaTitle');
     const pmAuthor = document.getElementById('pbMetaAuthor');
     if (pmTitle) pmTitle.textContent = bookData.title || '';
@@ -1708,7 +1750,11 @@ const Reader = (() => {
 
     const pct = audioElement.duration > 0
       ? (audioElement.currentTime / audioElement.duration) * 100 : 0;
-    document.getElementById('pbSeeker').value = pct;
+    const seeker = document.getElementById('pbSeeker');
+    if (seeker) {
+      seeker.value = pct;
+      seeker.style.setProperty('--seeker-pct', pct.toFixed(2) + '%');
+    }
   }
 
   function _onAudioEnded() {

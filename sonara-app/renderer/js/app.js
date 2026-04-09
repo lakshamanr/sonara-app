@@ -29,6 +29,19 @@ const UI = (() => {
     document.getElementById(id).classList.remove('open');
   }
 
+  function closeTopModal() {
+    const openModals = [...document.querySelectorAll('.modal-overlay.open')];
+    if (!openModals.length) return false;
+    const topModal = openModals[openModals.length - 1];
+    if (topModal.id) topModal.classList.remove('open');
+    else topModal.remove();
+    return true;
+  }
+
+  function openShortcutsModal() {
+    openModal('modalShortcuts');
+  }
+
   // Claude key
   function openClaudeModal() {
     const saved = sessionStorage.getItem('sonara_claude_key') || '';
@@ -446,6 +459,7 @@ const UI = (() => {
 
   return {
     toast, openModal, closeModal,
+    closeTopModal, openShortcutsModal,
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, openDataFolder, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
@@ -527,6 +541,7 @@ const App = (() => {
   let currentBookId   = null;
   let pendingBookData = null;   // file metadata before save
   let isGenerating    = false;
+  let _isFullscreen   = false;
 
   // ── NAVIGATION ─────────────────────────────────────────────
   function showLibrary() {
@@ -566,10 +581,13 @@ const App = (() => {
 
     // Initialize responsive helpers
     _initResponsiveHelpers();
+    _initKeyboardShortcuts();
 
     // Wire buttons
     document.getElementById('btnAddBook').addEventListener('click',    addBook);
     document.getElementById('btnSettings').addEventListener('click',   UI.openSettingsModal);
+    document.getElementById('btnShortcuts')?.addEventListener('click', UI.openShortcutsModal);
+    document.getElementById('btnFullscreen')?.addEventListener('click', () => toggleFullscreen());
     document.getElementById('btnBackup').addEventListener('click',     UI.openBackupModal);
     UI._bkWireModal();
     document.getElementById('claudePill').addEventListener('click',    UI.openClaudeModal);
@@ -604,6 +622,9 @@ const App = (() => {
 
     // Load library
     await Library.load();
+
+    // Restore fullscreen indicator state
+    await _syncFullscreenState();
 
     // Init voices
     Reader.initVoices();
@@ -652,32 +673,73 @@ const App = (() => {
     try {
       const files = await window.sonara.dialog.openFile(); // returns array
       if (!files || !files.length) return;
-
-      if (files.length === 1) {
-        // Single file — existing behaviour (opens reader after processing)
-        await _addSingleBook(files[0], true);
-      } else {
-        // Batch — add silently, stay in library, show summary toast
-        let added = 0, skipped = 0, failed = 0;
-        for (let i = 0; i < files.length; i++) {
-          const fi = files[i];
-          UI.toast('Adding ' + (i + 1) + ' of ' + files.length + ': ' +
-            fi.name.replace(/\.[^.]+$/, ''), 'success', 2500);
-          const result = await _addSingleBook(fi, false);
-          if      (result === 'added')  added++;
-          else if (result === 'exists') skipped++;
-          else                          failed++;
-        }
-        await Library.load();
-        const parts = [];
-        if (added)   parts.push(added   + ' book' + (added   !== 1 ? 's' : '') + ' added');
-        if (skipped) parts.push(skipped + ' already in library');
-        if (failed)  parts.push(failed  + ' failed');
-        UI.toast(parts.join(', '), added > 0 ? 'success' : 'error', 4000);
-      }
+      await _importFiles(files, true);
     } catch (err) {
       UI.toast('Failed to add book: ' + err.message, 'error');
     }
+  }
+
+  async function addDroppedFiles(rawFiles) {
+    const files = _normalizeDroppedFiles(rawFiles);
+    if (!files.length) {
+      UI.toast('No supported files detected. Drop PDF, EPUB, MOBI, AZW3, MP3, M4B, M4A, or OGG.', 'error', 3200);
+      return;
+    }
+    await _importFiles(files, false);
+  }
+
+  function _normalizeDroppedFiles(rawFiles) {
+    if (!Array.isArray(rawFiles)) return [];
+
+    const allowed = new Set(['pdf', 'epub', 'mobi', 'azw3', 'azw', 'mp3', 'm4b', 'm4a', 'ogg']);
+    const normalized = [];
+
+    for (const file of rawFiles) {
+      const filePath = (file && (file.path || file.filePath || file.fullPath)) || '';
+      const fileName = (file && file.name) || (filePath ? filePath.split(/[/\\]/).pop() : '');
+      const ext = (fileName.split('.').pop() || '').toLowerCase();
+      if (!filePath || !allowed.has(ext)) continue;
+
+      normalized.push({
+        path: filePath,
+        name: fileName,
+        size: Number(file.size) || 0,
+        format: ext === 'azw' ? 'azw3' : ext,
+      });
+    }
+
+    return normalized;
+  }
+
+  async function _importFiles(files, openSingle) {
+    if (files.length === 1 && openSingle) {
+      await _addSingleBook(files[0], true);
+      return;
+    }
+
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const fileInfo = files[i];
+      UI.toast('Adding ' + (i + 1) + ' of ' + files.length + ': ' +
+        fileInfo.name.replace(/\.[^.]+$/, ''), 'success', 2000);
+
+      const result = await _addSingleBook(fileInfo, false);
+      if (result === 'added') added++;
+      else if (result === 'exists') skipped++;
+      else failed++;
+    }
+
+    await Library.load();
+
+    const parts = [];
+    if (added) parts.push(added + ' book' + (added !== 1 ? 's' : '') + ' added');
+    if (skipped) parts.push(skipped + ' already in library');
+    if (failed) parts.push(failed + ' failed');
+
+    UI.toast(parts.join(', '), added > 0 ? 'success' : 'error', 3500);
   }
 
   // ── ADD SINGLE BOOK (shared by single and batch) ──────────
@@ -1422,6 +1484,98 @@ const App = (() => {
     });
   }
 
+  function _isEditableTarget(target) {
+    return !!(target && (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable
+    ));
+  }
+
+  function _stepSpeed(delta) {
+    const slider = document.getElementById('speedSlider');
+    if (!slider) return;
+
+    const step = parseFloat(slider.step) || 0.05;
+    const min = parseFloat(slider.min) || 0.5;
+    const max = parseFloat(slider.max) || 2.5;
+    const current = parseFloat(slider.value) || 1.0;
+    const next = Math.max(min, Math.min(max, current + (delta * step)));
+
+    slider.value = next.toFixed(2);
+    Reader.onSpeedChange(slider.value);
+  }
+
+  function _initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      const key = e.key;
+
+      if (key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+
+      if (key === 'Escape') {
+        if (UI.closeTopModal()) {
+          e.preventDefault();
+          return;
+        }
+        if (_isFullscreen) {
+          e.preventDefault();
+          toggleFullscreen(false);
+        }
+        return;
+      }
+
+      if (_isEditableTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (key === ' ') {
+        e.preventDefault();
+        Reader.togglePlay();
+        return;
+      }
+
+      if (key === 'ArrowLeft') {
+        e.preventDefault();
+        Reader.skipChunk(-1);
+        return;
+      }
+
+      if (key === 'ArrowRight') {
+        e.preventDefault();
+        Reader.skipChunk(1);
+        return;
+      }
+
+      if (key === '+' || key === '=') {
+        e.preventDefault();
+        _stepSpeed(1);
+        return;
+      }
+
+      if (key === '-' || key === '_') {
+        e.preventDefault();
+        _stepSpeed(-1);
+        return;
+      }
+
+      if (key === 'l' || key === 'L') {
+        e.preventDefault();
+        if (document.body.classList.contains('mode-library') && currentBookId) showReader();
+        else showLibrary();
+        return;
+      }
+
+      if (key === 'n' || key === 'N') {
+        e.preventDefault();
+        Notes.switchTab('notes');
+        document.getElementById('noteTextarea')?.focus();
+      }
+    });
+  }
+
   // ── PIN / ALWAYS ON TOP ───────────────────────────────────────────────────
   let _pinned = false;
   async function togglePin() {
@@ -1434,9 +1588,33 @@ const App = (() => {
     }
   }
 
+  async function _syncFullscreenState() {
+    try {
+      _isFullscreen = !!(await window.sonara?.win?.isFullscreen?.());
+    } catch {
+      _isFullscreen = false;
+    }
+
+    document.body.classList.toggle('is-fullscreen', _isFullscreen);
+    document.getElementById('btnFullscreen')?.classList.toggle('active', _isFullscreen);
+  }
+
+  async function toggleFullscreen(forceValue) {
+    const next = typeof forceValue === 'boolean' ? forceValue : !_isFullscreen;
+    try {
+      _isFullscreen = !!(await window.sonara?.win?.setFullscreen?.(next));
+      document.body.classList.toggle('is-fullscreen', _isFullscreen);
+      document.getElementById('btnFullscreen')?.classList.toggle('active', _isFullscreen);
+      UI.toast(_isFullscreen ? 'Entered full screen' : 'Exited full screen', '');
+    } catch (err) {
+      UI.toast('Could not toggle full screen: ' + err.message, 'error');
+    }
+  }
+
   return {
-    init, addBook, openBook, clearCurrentBook,
+    init, addBook, addDroppedFiles, openBook, clearCurrentBook,
     showLibrary, showReader,
+    toggleFullscreen,
     togglePin,
     classifyAll,
     _classifyExisting: _autoClassifyBook,
