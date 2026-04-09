@@ -284,11 +284,172 @@ const UI = (() => {
     if (resumeResolve) { resumeResolve('restart'); resumeResolve = null; }
   }
 
+  // ── BACKUP ────────────────────────────────────────────────
+
+  function _bkFmtBytes(n) {
+    if (!n || n < 1024)    return (n || 0) + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  function _bkFmtDate(iso) {
+    if (!iso) return 'never';
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function _bkSetMsg(msg, type) {
+    const el = document.getElementById('bkMsg');
+    if (!el) return;
+    el.textContent  = msg;
+    el.className    = 'bk-msg' + (type ? ' bk-msg--' + type : '');
+  }
+
+  async function openBackupModal() {
+    const res = await window.sonara.backup.getSettings();
+    document.getElementById('bkLocation').value    = res.location  || '';
+    document.getElementById('bkFrequency').value   = res.frequency || 'daily';
+    document.getElementById('bkMaxKeep').value     = String(res.maxKeep ?? 10);
+    document.getElementById('bkLastAt').textContent = 'Last backup: ' + _bkFmtDate(res.lastBackupAt);
+    _bkSetMsg('');
+    await _bkRefreshList();
+    openModal('modalBackup');
+  }
+
+  async function _bkRefreshList() {
+    const listEl = document.getElementById('bkList');
+    if (!listEl) return;
+    try {
+      const items = await window.sonara.backup.list({});
+      if (!items || !items.length) {
+        listEl.innerHTML = '<div class="bk-empty">No backups found in this folder.</div>';
+        return;
+      }
+      listEl.innerHTML = items.map(b => {
+        const fp   = encodeURIComponent(b.backupDir);
+        const date = _bkFmtDate(b.manifest?.createdAt || b.modifiedAt);
+        const size = _bkFmtBytes(b.totalSize);
+        const cnt  = b.manifest ? `${b.manifest.booksCount} books · ${b.manifest.bookFilesCount} files` : '';
+        return `<div class="bk-item">
+          <div class="bk-item-info">
+            <div class="bk-item-date">${date}</div>
+            <div class="bk-item-meta">${cnt ? cnt + ' · ' : ''}${size}</div>
+          </div>
+          <button class="bk-item-restore" data-bkrestore="${fp}" title="Restore">Restore</button>
+          <button class="bk-item-del" data-bkdelete="${fp}" title="Delete">&#x2715;</button>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      listEl.innerHTML = '<div class="bk-empty">Could not load backups.</div>';
+    }
+  }
+
+  async function _bkSaveSettings() {
+    await window.sonara.backup.setSettings({
+      location:  document.getElementById('bkLocation').value,
+      frequency: document.getElementById('bkFrequency').value,
+      maxKeep:   parseInt(document.getElementById('bkMaxKeep').value, 10) || 0,
+    });
+  }
+
+  async function _bkRestoreFrom(backupDir) {
+    if (!confirm(
+      'Restore from this backup?\n\n' +
+      'This will replace ALL current books, progress, notes and settings.\n' +
+      'The app will reload automatically.'
+    )) return;
+    _bkSetMsg('Restoring…', '');
+    try {
+      await window.sonara.backup.restore({ backupDir });
+      location.reload();
+    } catch (err) {
+      _bkSetMsg('Restore failed: ' + err.message, 'err');
+    }
+  }
+
+  function _bkWireModal() {
+    // Browse folder
+    document.getElementById('bkBrowseBtn').addEventListener('click', async () => {
+      const loc = await window.sonara.backup.chooseLocation();
+      if (!loc) return;
+      document.getElementById('bkLocation').value = loc;
+      await _bkSaveSettings();
+      await _bkRefreshList();
+    });
+
+    // Frequency / maxKeep autosave
+    document.getElementById('bkFrequency').addEventListener('change', _bkSaveSettings);
+    document.getElementById('bkMaxKeep').addEventListener('change',   _bkSaveSettings);
+
+    // Backup Now
+    document.getElementById('bkNowBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('bkNowBtn');
+      btn.disabled = true;
+      _bkSetMsg('Creating backup…', '');
+      try {
+        const r = await window.sonara.backup.create({});
+        _bkSetMsg('Backup created — ' + _bkFmtBytes(r.totalSize), 'ok');
+        const res = await window.sonara.backup.getSettings();
+        document.getElementById('bkLastAt').textContent = 'Last backup: ' + _bkFmtDate(res.lastBackupAt);
+        await _bkRefreshList();
+      } catch (err) {
+        _bkSetMsg('Backup failed: ' + err.message, 'err');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Restore from folder dialog
+    document.getElementById('bkRestoreFileBtn').addEventListener('click', async () => {
+      // Prompt to pick a backup folder via the folder picker
+      const loc = await window.sonara.backup.chooseLocation();
+      if (!loc) return;
+      // If user picked a sonara-backup-* folder directly, restore from it;
+      // otherwise treat as the backup location and let them pick from the list.
+      if (loc.includes('sonara-backup-')) {
+        await _bkRestoreFrom(loc);
+      } else {
+        document.getElementById('bkLocation').value = loc;
+        await _bkSaveSettings();
+        await _bkRefreshList();
+        _bkSetMsg('Select a backup from the list below to restore.', '');
+      }
+    });
+
+    // Event delegation for list buttons
+    document.getElementById('bkList').addEventListener('click', async e => {
+      const rBtn = e.target.closest('[data-bkrestore]');
+      if (rBtn) { await _bkRestoreFrom(decodeURIComponent(rBtn.dataset.bkrestore)); return; }
+
+      const dBtn = e.target.closest('[data-bkdelete]');
+      if (dBtn) {
+        if (!confirm('Delete this backup? This cannot be undone.')) return;
+        try {
+          await window.sonara.backup.deleteBackup({ backupDir: decodeURIComponent(dBtn.dataset.bkdelete) });
+          await _bkRefreshList();
+        } catch (err) {
+          _bkSetMsg('Delete failed: ' + err.message, 'err');
+        }
+      }
+    });
+
+    // Auto-backup done event
+    window.sonara.backup.onDone(data => {
+      if (data && !data.success) console.warn('[autoBackup] failed:', data.error);
+      if (document.getElementById('modalBackup').classList.contains('open')) {
+        window.sonara.backup.getSettings().then(res => {
+          document.getElementById('bkLastAt').textContent = 'Last backup: ' + _bkFmtDate(res.lastBackupAt);
+        });
+        _bkRefreshList();
+      }
+    });
+  }
+
   return {
     toast, openModal, closeModal,
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, openDataFolder, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
+    openBackupModal,
     ttsAddPreset: (chars) => {
       const el = document.getElementById('settingTtsSkipChars');
       if (!el) return;
@@ -313,7 +474,8 @@ const UI = (() => {
       el.value = merged.join(', ');
     },
     setTheme: applyTheme, _applyThemeVisual: setTheme,
-    showResumeDialog, resumeBook, startFromBeginning
+    showResumeDialog, resumeBook, startFromBeginning,
+    _bkWireModal,
   };
 })();
 
@@ -408,6 +570,8 @@ const App = (() => {
     // Wire buttons
     document.getElementById('btnAddBook').addEventListener('click',    addBook);
     document.getElementById('btnSettings').addEventListener('click',   UI.openSettingsModal);
+    document.getElementById('btnBackup').addEventListener('click',     UI.openBackupModal);
+    UI._bkWireModal();
     document.getElementById('claudePill').addEventListener('click',    UI.openClaudeModal);
     document.getElementById('btnResume').addEventListener('click',     UI.resumeBook);
     document.getElementById('btnStartOver').addEventListener('click',  UI.startFromBeginning);

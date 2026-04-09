@@ -224,5 +224,25 @@ contextBridge.exposeInMainWorld('sonara', {
     /** Toggle the mini floating player window */
     toggle: () => ipcRenderer.send('miniPlayer:toggle'),
   },
+
+  // ── BACKUP & RESTORE ─────────────────────────────────────
+  backup: {
+    /** @returns {Promise<BackupSettings>} */
+    getSettings:    ()       => ipcRenderer.invoke('backup:getSettings'),
+    /** @returns {Promise<BackupSettings>} merged settings */
+    setSettings:    (p)      => ipcRenderer.invoke('backup:setSettings', p),
+    /** @returns {Promise<{backupDir,dirName,totalSize}>} */
+    create:         (args)   => ipcRenderer.invoke('backup:create',        args || {}),
+    /** @returns {Promise<{booksCount,bookFilesCount}>} */
+    restore:        (args)   => ipcRenderer.invoke('backup:restore',       args),
+    /** @returns {Promise<BackupEntry[]>} sorted newest-first */
+    list:           (args)   => ipcRenderer.invoke('backup:list',          args || {}),
+    /** @returns {Promise<{success:true}>} */
+    deleteBackup:   (args)   => ipcRenderer.invoke('backup:delete',        args),
+    /** @returns {Promise<string|null>} chosen folder path */
+    chooseLocation: ()       => ipcRenderer.invoke('backup:chooseLocation'),
+    /** Listen for auto-backup completion events */
+    onDone:         (cb)     => ipcRenderer.on('backup:done', (_, data) => cb(data)),
+  },
 });
 

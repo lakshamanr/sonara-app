@@ -314,6 +314,7 @@ app.whenReady().then(() => {
 
     createWindow();
     createTray();
+    scheduleAutoBackup();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1247,3 +1248,351 @@ ipcMain.handle('db:syncTurso', async (_, { url, token }) => {
     pulled: stats,
   };
 });
+
+// ═════════════════════════════════════════════════════════════
+//  BACKUP & RESTORE
+// ═════════════════════════════════════════════════════════════
+
+const DEFAULT_BACKUP_SETTINGS = {
+  frequency:    'daily',   // 'off' | 'hourly' | 'daily' | 'weekly'
+  location:     '',        // '' = resolved to Documents\Sonara Backups at runtime
+  lastBackupAt: null,
+  maxKeep:      10,
+};
+
+function getDefaultBackupLocation() {
+  return path.join(app.getPath('documents'), 'Sonara Backups');
+}
+
+function _getBackupSettings() {
+  try {
+    const raw = db.getSetting('backupSettings', null);
+    if (!raw) return { ...DEFAULT_BACKUP_SETTINGS };
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Object.assign({}, DEFAULT_BACKUP_SETTINGS, parsed);
+  } catch { return { ...DEFAULT_BACKUP_SETTINGS }; }
+}
+
+function _setBackupSettings(partial) {
+  const current = _getBackupSettings();
+  const merged  = Object.assign({}, current, partial);
+  db.setSetting('backupSettings', JSON.stringify(merged));
+  return merged;
+}
+
+function _fmtTs(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_` +
+         `${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+// Recursively remove a directory and all its contents
+function _rimraf(dirPath) {
+  if (!fs.existsSync(dirPath)) return;
+  for (const f of fs.readdirSync(dirPath)) {
+    const fp = path.join(dirPath, f);
+    if (fs.statSync(fp).isDirectory()) _rimraf(fp);
+    else fs.unlinkSync(fp);
+  }
+  fs.rmdirSync(dirPath);
+}
+
+// Recursively sum file sizes in a directory
+function _dirSize(dirPath) {
+  let total = 0;
+  const _sum = d => {
+    try {
+      for (const f of fs.readdirSync(d)) {
+        const fp = path.join(d, f);
+        const s  = fs.statSync(fp);
+        if (s.isFile()) total += s.size;
+        else if (s.isDirectory()) _sum(fp);
+      }
+    } catch {}
+  };
+  _sum(dirPath);
+  return total;
+}
+
+/**
+ * Create a full backup folder: DB + books + covers + config.
+ * Returns { backupDir, dirName, totalSize }.
+ */
+function createBackup(location, appVersion) {
+  if (!location) throw new Error('Backup location is not set');
+  fs.mkdirSync(location, { recursive: true });
+
+  const now       = new Date();
+  const dirName   = `sonara-backup-${_fmtTs(now)}`;
+  const backupDir = path.join(location, dirName);
+  fs.mkdirSync(backupDir, { recursive: true });
+
+  // ── Database ─────────────────────────────────────────────
+  const dbPath = db.getPath();
+  if (dbPath && fs.existsSync(dbPath)) {
+    fs.copyFileSync(dbPath, path.join(backupDir, 'sonara.db'));
+    for (const ext of ['-wal', '-shm']) {
+      const wal = dbPath + ext;
+      if (fs.existsSync(wal)) fs.copyFileSync(wal, path.join(backupDir, 'sonara.db' + ext));
+    }
+  }
+
+  // ── Config ────────────────────────────────────────────────
+  if (_configPath && fs.existsSync(_configPath)) {
+    fs.copyFileSync(_configPath, path.join(backupDir, 'sonara-config.json'));
+  }
+
+  // ── Book files ────────────────────────────────────────────
+  const booksBackupDir = path.join(backupDir, 'books');
+  fs.mkdirSync(booksBackupDir, { recursive: true });
+  let bookFilesCount = 0;
+  if (booksDir && fs.existsSync(booksDir)) {
+    for (const f of fs.readdirSync(booksDir)) {
+      try {
+        const src = path.join(booksDir, f);
+        if (fs.statSync(src).isFile()) {
+          fs.copyFileSync(src, path.join(booksBackupDir, f));
+          bookFilesCount++;
+        }
+      } catch {}
+    }
+  }
+
+  // ── Cover images ─────────────────────────────────────────
+  const coversBackupDir = path.join(backupDir, 'covers');
+  fs.mkdirSync(coversBackupDir, { recursive: true });
+  let coversCount = 0;
+  if (coversDir && fs.existsSync(coversDir)) {
+    for (const f of fs.readdirSync(coversDir)) {
+      try {
+        const src = path.join(coversDir, f);
+        if (fs.statSync(src).isFile()) {
+          fs.copyFileSync(src, path.join(coversBackupDir, f));
+          coversCount++;
+        }
+      } catch {}
+    }
+  }
+
+  // ── Manifest ─────────────────────────────────────────────
+  const allBooks = db.getAllBooks();
+  const manifest = {
+    version:        '1.0',
+    appVersion:     appVersion || app.getVersion(),
+    createdAt:      now.toISOString(),
+    platform:       process.platform,
+    booksCount:     allBooks.length,
+    bookFilesCount,
+    coversCount,
+  };
+  fs.writeFileSync(
+    path.join(backupDir, 'manifest.json'),
+    JSON.stringify(manifest, null, 2), 'utf8'
+  );
+
+  return { backupDir, dirName, totalSize: _dirSize(backupDir) };
+}
+
+/** Return sorted (newest-first) list of backup metadata objects. */
+function listBackups(location) {
+  if (!location || !fs.existsSync(location)) return [];
+  try {
+    return fs.readdirSync(location)
+      .filter(f => {
+        if (!f.startsWith('sonara-backup-')) return false;
+        return fs.statSync(path.join(location, f)).isDirectory();
+      })
+      .map(f => {
+        const backupDir = path.join(location, f);
+        const stat      = fs.statSync(backupDir);
+        let manifest = null;
+        try {
+          const mp = path.join(backupDir, 'manifest.json');
+          if (fs.existsSync(mp)) manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+        } catch {}
+        return {
+          dirName:    f,
+          backupDir,
+          totalSize:  _dirSize(backupDir),
+          modifiedAt: stat.mtime.toISOString(),
+          manifest,
+        };
+      })
+      .sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+  } catch { return []; }
+}
+
+/** Delete oldest backups beyond maxKeep. */
+function pruneBackups(location, maxKeep) {
+  if (!location || !maxKeep || maxKeep <= 0) return;
+  listBackups(location).slice(maxKeep).forEach(b => {
+    try { _rimraf(b.backupDir); } catch {}
+  });
+}
+
+/**
+ * Restore all data from a backup folder.
+ * Preserves current backup settings and DB path config after restoring.
+ */
+function restoreBackup(backupDir) {
+  if (!fs.existsSync(backupDir)) throw new Error('Backup folder not found');
+  const mpath = path.join(backupDir, 'manifest.json');
+  if (!fs.existsSync(mpath)) throw new Error('Invalid backup: missing manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(mpath, 'utf8'));
+  if (!manifest.version) throw new Error('Invalid backup manifest');
+
+  // Preserve current backup settings so rotation config survives the restore
+  const savedBackupSettings = _getBackupSettings();
+  // Preserve current DB path from config so location override stays
+  const currentCfg = _readConfig();
+
+  // ── Restore database ─────────────────────────────────────
+  const srcDb = path.join(backupDir, 'sonara.db');
+  if (fs.existsSync(srcDb)) {
+    const destDb = db.getPath();
+    db.reopen(destDb);          // flush WAL + close
+    fs.copyFileSync(srcDb, destDb);
+    for (const ext of ['-wal', '-shm']) {
+      const srcWal = path.join(backupDir, 'sonara.db' + ext);
+      if (fs.existsSync(srcWal)) fs.copyFileSync(srcWal, destDb + ext);
+    }
+    db.reopen(destDb);          // reopen with restored DB
+  }
+
+  // ── Restore book files (merge — overwrite existing with backup copy) ──
+  const srcBooks = path.join(backupDir, 'books');
+  if (fs.existsSync(srcBooks)) {
+    for (const f of fs.readdirSync(srcBooks)) {
+      try {
+        const src = path.join(srcBooks, f);
+        if (fs.statSync(src).isFile())
+          fs.copyFileSync(src, path.join(booksDir, f));
+      } catch {}
+    }
+  }
+
+  // ── Restore cover images (merge) ─────────────────────────
+  const srcCovers = path.join(backupDir, 'covers');
+  if (fs.existsSync(srcCovers)) {
+    for (const f of fs.readdirSync(srcCovers)) {
+      try {
+        const src = path.join(srcCovers, f);
+        if (fs.statSync(src).isFile())
+          fs.copyFileSync(src, path.join(coversDir, f));
+      } catch {}
+    }
+  }
+
+  // ── Restore config (preserve current DB path & backup settings) ──
+  const srcCfg = path.join(backupDir, 'sonara-config.json');
+  if (fs.existsSync(srcCfg)) {
+    try {
+      const restoredCfg = JSON.parse(fs.readFileSync(srcCfg, 'utf8'));
+      // Keep current DB path so the location override is not lost
+      const mergedCfg = Object.assign({}, restoredCfg, {
+        customDbPath: currentCfg.customDbPath || null,
+      });
+      fs.writeFileSync(_configPath, JSON.stringify(mergedCfg, null, 2));
+    } catch {}
+  }
+
+  // Re-persist backup settings (DB restore wiped them)
+  _setBackupSettings(savedBackupSettings);
+
+  return { booksCount: manifest.booksCount || 0, bookFilesCount: manifest.bookFilesCount || 0 };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  BACKUP — AUTO-BACKUP SCHEDULER
+// ─────────────────────────────────────────────────────────────
+let _autoBackupTimer = null;
+
+function scheduleAutoBackup() {
+  if (_autoBackupTimer) { clearInterval(_autoBackupTimer); _autoBackupTimer = null; }
+
+  const bk = _getBackupSettings();
+  if (bk.frequency === 'off') return;
+
+  const INTERVALS = { hourly: 3_600_000, daily: 86_400_000, weekly: 604_800_000 };
+  const ms = INTERVALS[bk.frequency];
+  if (!ms) return;
+
+  // Run immediately if overdue (5s delay lets the window finish loading)
+  const lastAt = bk.lastBackupAt ? new Date(bk.lastBackupAt).getTime() : 0;
+  if (Date.now() - lastAt >= ms) setTimeout(performAutoBackup, 5000);
+
+  // Periodic tick — re-check every hour max
+  const tick = Math.min(ms, 3_600_000);
+  _autoBackupTimer = setInterval(() => {
+    const b  = _getBackupSettings();
+    const dur = INTERVALS[b.frequency];
+    const lt  = b.lastBackupAt ? new Date(b.lastBackupAt).getTime() : 0;
+    if (dur && Date.now() - lt >= dur) performAutoBackup();
+  }, tick);
+}
+
+function performAutoBackup() {
+  try {
+    const bk  = _getBackupSettings();
+    const loc = bk.location || getDefaultBackupLocation();
+    createBackup(loc, app.getVersion());
+    pruneBackups(loc, bk.maxKeep || 10);
+    _setBackupSettings({ lastBackupAt: new Date().toISOString() });
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('backup:done', { success: true });
+  } catch (e) {
+    console.error('[autoBackup]', e.message);
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('backup:done', { success: false, error: e.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — BACKUP
+// ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('backup:getSettings', ipcHandler(() => {
+  const bk = _getBackupSettings();
+  if (!bk.location) bk.location = getDefaultBackupLocation();
+  return bk;
+}));
+
+ipcMain.handle('backup:setSettings', ipcHandler((_, partial) => {
+  const merged = _setBackupSettings(partial);
+  scheduleAutoBackup();
+  return merged;
+}));
+
+ipcMain.handle('backup:create', ipcHandler(async (_, { location } = {}) => {
+  const bk  = _getBackupSettings();
+  const loc = location || bk.location || getDefaultBackupLocation();
+  const result = createBackup(loc, app.getVersion());
+  pruneBackups(loc, bk.maxKeep || 10);
+  _setBackupSettings({ lastBackupAt: new Date().toISOString() });
+  return result;
+}));
+
+ipcMain.handle('backup:restore', ipcHandler(async (_, { backupDir }) => {
+  return restoreBackup(backupDir);
+}));
+
+ipcMain.handle('backup:list', ipcHandler((_, { location } = {}) => {
+  const bk  = _getBackupSettings();
+  const loc = location || bk.location || getDefaultBackupLocation();
+  return listBackups(loc);
+}));
+
+ipcMain.handle('backup:delete', ipcHandler((_, { backupDir }) => {
+  if (!backupDir || !fs.existsSync(backupDir)) throw new Error('Backup not found');
+  _rimraf(backupDir);
+  return { success: true };
+}));
+
+ipcMain.handle('backup:chooseLocation', ipcHandler(async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Choose Backup Folder',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+}));
