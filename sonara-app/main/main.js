@@ -15,10 +15,6 @@ if (app && app.commandLine) {
   app.commandLine.appendSwitch('enable-speech-input');
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 
-  // Allow remote content for cloud voices
-  app.commandLine.appendSwitch('disable-web-security');
-  app.commandLine.appendSwitch('allow-running-insecure-content');
-
   // Suppress cache permission errors on Windows
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
   app.commandLine.appendSwitch('disk-cache-size', '1');
