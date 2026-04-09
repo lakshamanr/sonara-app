@@ -524,15 +524,17 @@ const Reader = (() => {
   function _initPDFNav() {
     document.getElementById('pdfPrevPage').addEventListener('click', () => {
       if (pdfCurrentPage > 1) {
-        _showPDFPage(pdfCurrentPage - 1);
+        const targetPage = pdfCurrentPage - 1;
+        _showPDFPage(targetPage);
         // Sync chunk to match the page
-        _syncChunkToPage(pdfCurrentPage);
+        _syncChunkToPage(targetPage);
       }
     });
     document.getElementById('pdfNextPage').addEventListener('click', () => {
       if (pdfCurrentPage < Parser.getPDFPageCount()) {
-        _showPDFPage(pdfCurrentPage + 1);
-        _syncChunkToPage(pdfCurrentPage);
+        const targetPage = pdfCurrentPage + 1;
+        _showPDFPage(targetPage);
+        _syncChunkToPage(targetPage);
       }
     });
     document.getElementById('pdfZoomIn').addEventListener('click', () => {

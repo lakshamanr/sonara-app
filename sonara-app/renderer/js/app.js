@@ -1,4 +1,4 @@
-﻿/* ══════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════
    APP.JS — Main orchestrator, UI helpers, Claude, init
 ══════════════════════════════════════════════════════════ */
 'use strict';
@@ -496,7 +496,7 @@ async function enhanceWithClaude(text, key) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model:      'claude-sonnet-4-5-20250929',
+      model:      'claude-sonnet-4-5',
       max_tokens: 1024,
       messages: [{
         role:    'user',

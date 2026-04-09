@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const e = require\\(''electron''\\); console.log\\(typeof e, JSON.stringify\\(e\\).slice\\(0,100\\)\\)\")",
+      "Bash(\"./node_modules/electron/dist/electron.exe\" check-runtime.js)",
+      "Bash(\"./node_modules/electron/dist/electron.exe\" minimal-test.js)",
+      "Bash(\"./node_modules/electron/dist/electron.exe\" --version)",
+      "Read(//c/Program Files/nodejs/**)",
+      "Bash(\"/c/sonara-app/sonara-app/dist/win-unpacked/Sonara.exe\" --version)",
+      "Bash(echo \"ELECTRON_RUN_AS_NODE=$ELECTRON_RUN_AS_NODE:-unset\")",
+      "Bash(timeout 5 \"./node_modules/electron/dist/electron.exe\" .)",
+      "Bash(powershell.exe -Command \"Start-Process ''.\\\\node_modules\\\\electron\\\\dist\\\\electron.exe'' -ArgumentList ''.'' -WorkingDirectory \\(Get-Location\\).Path\")",
+      "Bash(tasklist)",
+      "Read(//c//**)"
+    ]
+  }
+}
