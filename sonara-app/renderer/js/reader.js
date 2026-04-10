@@ -36,6 +36,7 @@ const Reader = (() => {
   let waveAnimId     = null;
   let utterance      = null;
   let wordSpans      = [];      // flat array of all word <span> elements
+  let wordTtsOffsets = [];      // char offset of each wordSpan in the cleaned TTS text
   let sentenceMap    = [];      // [ { startWord, endWord, el } ]
   let currentWordIdx = 0;
   let bookId         = null;
@@ -953,7 +954,7 @@ const Reader = (() => {
       const words = sentence.split(/(\s+)/);
       let sentStartIdx = wordGlobalIdx;
       const wordHtml = words.map(tok => {
-        if (/^\s+$/.test(tok)) return tok; // whitespace — preserve
+        if (!tok || /^\s+$/.test(tok)) return tok; // empty or whitespace — preserve
         const idx = wordGlobalIdx++;
         return `<span class="word word-unspoken" data-wi="${idx}">${_escHtml(tok)}</span>`;
       }).join('');
@@ -965,6 +966,29 @@ const Reader = (() => {
 
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
+
+    // Precompute char offsets of each word span in the cleaned TTS text so that
+    // charIndex values from boundary events (which reference the cleaned text) map
+    // correctly even when skip-chars embed extra characters inside displayed words.
+    {
+      const ttsText = _cleanTextForTTS(text);
+      wordTtsOffsets = [];
+      let searchPos = 0;
+      for (const span of wordSpans) {
+        const cleanedWord = _cleanTextForTTS(span.textContent);
+        if (!cleanedWord) {
+          wordTtsOffsets.push(searchPos);
+          continue;
+        }
+        const idx = ttsText.indexOf(cleanedWord, searchPos);
+        if (idx !== -1) {
+          wordTtsOffsets.push(idx);
+          searchPos = idx + cleanedWord.length;
+        } else {
+          wordTtsOffsets.push(searchPos);
+        }
+      }
+    }
 
     // Show the text reader, hide audio/pdf reader
     document.getElementById('readerWelcome').style.display   = 'none';
@@ -983,18 +1007,24 @@ const Reader = (() => {
       return;
     }
 
-    // Find the word span whose charIndex corresponds
-    // We walk wordSpans by accumulated charIndex
     if (!wordSpans.length) return;
 
-    // Find which word contains this charIndex
-    let acc = 0;
-    const chunkText = chunks[currentChunk]?.text || '';
+    // Use precomputed TTS offsets so that charIndex (from the cleaned TTS text)
+    // maps correctly regardless of skip-chars embedded in displayed words.
     let targetIdx = 0;
-    for (let i = 0; i < wordSpans.length; i++) {
-      const word = wordSpans[i].textContent;
-      if (acc + word.length > charIndex) { targetIdx = i; break; }
-      acc += word.length + 1; // +1 for space
+    if (wordTtsOffsets.length === wordSpans.length) {
+      targetIdx = wordTtsOffsets.length - 1;
+      for (let i = 1; i < wordTtsOffsets.length; i++) {
+        if (wordTtsOffsets[i] > charIndex) { targetIdx = i - 1; break; }
+      }
+    } else {
+      // Fallback: accumulate word lengths (less accurate)
+      let acc = 0;
+      for (let i = 0; i < wordSpans.length; i++) {
+        const word = wordSpans[i].textContent;
+        if (acc + word.length > charIndex) { targetIdx = i; break; }
+        acc += word.length + 1;
+      }
     }
 
     if (targetIdx === currentWordIdx && wordSpans[targetIdx]?.classList.contains('word-active')) return;
