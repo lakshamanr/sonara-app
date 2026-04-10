@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, globalShortcut } = require('electron');
 
 const path  = require('path');
 const fs    = require('fs');
@@ -35,7 +35,7 @@ let sonaraDataDir;  // single unified data folder for everything
 // ─── TRAY & MINI PLAYER ────────────────────────────────────
 let tray       = null;
 let miniPlayer = null;
-let _playerState = { isPlaying: false, title: '', chapterTitle: '', percent: 0 };
+let _playerState = { isPlaying: false, title: '', chapterTitle: '', percent: 0, coverPath: '' };
 
 function createTray() {
   const iconPath = path.join(__dirname, 'logo', 'logo.png');
@@ -311,6 +311,11 @@ app.whenReady().then(() => {
     createWindow();
     createTray();
     scheduleAutoBackup();
+
+    globalShortcut.register('F12', () => {
+      const win = BrowserWindow.getFocusedWindow();
+      if (win) win.webContents.toggleDevTools();
+    });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -593,6 +598,7 @@ ipcMain.handle('tts:getVoices', async () => {
   try {
     return await getEdgeTTS().getVoices();
   } catch (err) {
+    console.error('[TTS] Failed to load natural voices:', err?.message || err);
     return [];
   }
 });
@@ -602,7 +608,7 @@ ipcMain.handle('tts:getVoices', async () => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('collections:getAll',  ipcHandler(() => db.getAllCollections()));
 ipcMain.handle('collections:get',     ipcHandler((_, id) => db.getCollection(id)));
-ipcMain.handle('collections:create',  ipcHandler((_, name, color) => db.createCollection(name, color)));
+ipcMain.handle('collections:create',  ipcHandler((_, name, color, parentId) => db.createCollectionWithParent(name, color, parentId)));
 ipcMain.handle('collections:update',  ipcHandler((_, id, fields) => { db.updateCollection(id, fields); return db.getCollection(id); }));
 ipcMain.handle('collections:delete',  ipcHandler((_, id) => { db.deleteCollection(id); return { success: true }; }));
 ipcMain.handle('collections:addBook', ipcHandler((_, bId, cId) => { db.addBookToCollection(bId, cId); return { success: true }; }));

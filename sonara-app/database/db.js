@@ -82,6 +82,7 @@ function init(dbFullPath) {
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         name        TEXT NOT NULL UNIQUE,
         color       TEXT DEFAULT '#c8a96e',
+        parent_id   INTEGER DEFAULT NULL REFERENCES collections(id) ON DELETE SET NULL,
         sort_order  INTEGER DEFAULT 0,
         created_at  INTEGER NOT NULL
       );
@@ -106,6 +107,7 @@ function init(dbFullPath) {
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         name        TEXT NOT NULL UNIQUE,
         color       TEXT DEFAULT '#c8a96e',
+        parent_id   INTEGER DEFAULT NULL REFERENCES collections(id) ON DELETE SET NULL,
         sort_order  INTEGER DEFAULT 0,
         created_at  INTEGER NOT NULL
       );
@@ -177,6 +179,74 @@ function init(dbFullPath) {
       );
       CREATE INDEX IF NOT EXISTS idx_notes_book ON notes(book_id);
     `);
+  }
+
+  // ── SCHEMA V5 — Nested collections (folders inside folders) ─────────
+  const v5 = db.prepare("SELECT value FROM settings WHERE key = 'schema_v5'").get();
+  if (!v5) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      ALTER TABLE collections RENAME TO collections_old;
+
+      CREATE TABLE collections (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL UNIQUE,
+        color       TEXT DEFAULT '#c8a96e',
+        parent_id   INTEGER DEFAULT NULL REFERENCES collections(id) ON DELETE SET NULL,
+        sort_order  INTEGER DEFAULT 0,
+        created_at  INTEGER NOT NULL
+      );
+
+      INSERT INTO collections (id, name, color, sort_order, created_at)
+      SELECT id, name, color, sort_order, created_at
+      FROM collections_old;
+
+      DROP TABLE collections_old;
+    `);
+    db.pragma('foreign_keys = ON');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v5', '\"true\"')").run();
+  }
+
+  // ── SCHEMA V6 — Repair broken collection FK after V5 rename ─────────
+  // Some installs ended up with book_collections FK targeting collections_old.
+  // This rebuild ensures collection_id references the real collections table.
+  const v6 = db.prepare("SELECT value FROM settings WHERE key = 'schema_v6'").get();
+  const hasBookCollections = !!db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'book_collections'"
+  ).get();
+  const fkRows = hasBookCollections
+    ? db.prepare('PRAGMA foreign_key_list(book_collections)').all()
+    : [];
+  const hasBrokenCollectionFK = fkRows.some(r => String(r.table || '').toLowerCase() === 'collections_old');
+
+  if (!v6 || hasBrokenCollectionFK || !hasBookCollections) {
+    db.pragma('foreign_keys = OFF');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS book_collections_new (
+        book_id       TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        added_at      INTEGER NOT NULL,
+        PRIMARY KEY (book_id, collection_id)
+      );
+    `);
+
+    if (hasBookCollections) {
+      db.prepare(`
+        INSERT OR IGNORE INTO book_collections_new (book_id, collection_id, added_at)
+        SELECT book_id, collection_id, added_at FROM book_collections
+      `).run();
+    }
+
+    db.exec(`
+      DROP TABLE IF EXISTS book_collections;
+      ALTER TABLE book_collections_new RENAME TO book_collections;
+      CREATE INDEX IF NOT EXISTS idx_bc_collection ON book_collections(collection_id);
+      CREATE INDEX IF NOT EXISTS idx_bc_book ON book_collections(book_id);
+    `);
+
+    db.pragma('foreign_keys = ON');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v6', '\"true\"')").run();
   }
 
   return db;
@@ -289,13 +359,28 @@ function getCollection(id) {
 function createCollection(name, color) {
   const now = Date.now();
   const result = db.prepare(
-    'INSERT INTO collections (name, color, created_at) VALUES (?, ?, ?)'
-  ).run(name, color || '#c8a96e', now);
-  return { id: result.lastInsertRowid, name, color: color || '#c8a96e', created_at: now };
+    'INSERT INTO collections (name, color, parent_id, created_at) VALUES (?, ?, ?, ?)'
+  ).run(name, color || '#c8a96e', null, now);
+  return { id: result.lastInsertRowid, name, color: color || '#c8a96e', parent_id: null, created_at: now };
+}
+
+function createCollectionWithParent(name, color, parentId = null) {
+  const now = Date.now();
+  const safeParent = Number.isInteger(parentId) ? parentId : null;
+  const result = db.prepare(
+    'INSERT INTO collections (name, color, parent_id, created_at) VALUES (?, ?, ?, ?)'
+  ).run(name, color || '#c8a96e', safeParent, now);
+  return {
+    id: result.lastInsertRowid,
+    name,
+    color: color || '#c8a96e',
+    parent_id: safeParent,
+    created_at: now
+  };
 }
 
 function updateCollection(id, fields) {
-  const allowed = ['name', 'color', 'sort_order'];
+  const allowed = ['name', 'color', 'parent_id', 'sort_order'];
   const sets = Object.keys(fields)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -331,11 +416,17 @@ function getBookCollections(bookId) {
 
 function getCollectionBooks(collectionId) {
   return db.prepare(`
-    SELECT b.*, p.chunk_index, p.word_index, p.elapsed_seconds, p.percent
+    WITH RECURSIVE descendants(id) AS (
+      SELECT id FROM collections WHERE id = ?
+      UNION ALL
+      SELECT c.id FROM collections c
+      JOIN descendants d ON c.parent_id = d.id
+    )
+    SELECT DISTINCT b.*, p.chunk_index, p.word_index, p.elapsed_seconds, p.percent
     FROM books b
     LEFT JOIN progress p ON p.book_id = b.id
     JOIN book_collections bc ON bc.book_id = b.id
-    WHERE bc.collection_id = ?
+    WHERE bc.collection_id IN (SELECT id FROM descendants)
     ORDER BY COALESCE(b.last_read, b.added_at) DESC
   `).all(collectionId);
 }
@@ -451,8 +542,8 @@ function importAll(data) {
 
     // Collections — INSERT OR IGNORE to preserve local collections
     const cStmt = db.prepare(`
-      INSERT OR IGNORE INTO collections (id,name,color,sort_order,created_at)
-      VALUES (@id,@name,@color,@sort_order,@created_at)`);
+      INSERT OR IGNORE INTO collections (id,name,color,parent_id,sort_order,created_at)
+      VALUES (@id,@name,@color,@parent_id,@sort_order,@created_at)`);
     for (const c of (data.collections || [])) cStmt.run(c);
 
     // Book-collection links
@@ -476,6 +567,7 @@ module.exports = {
   getAllBooks, getBook, addBook, updateBook, deleteBook, bookExists,
   getProgress, saveProgress, resetProgress,
   getAllCollections, getCollection, createCollection, updateCollection, deleteCollection,
+  createCollectionWithParent,
   addBookToCollection, removeBookFromCollection, getBookCollections, getCollectionBooks,
   getSetting, setSetting, getAllSettings,
   addNote, getNotes, updateNote, deleteNote,

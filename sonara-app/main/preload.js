@@ -140,7 +140,7 @@ contextBridge.exposeInMainWorld('sonara', {
     /** @returns {Promise<Collection|null>} */
     get:                (id)         => ipcRenderer.invoke('collections:get', id),
     /** @returns {Promise<Collection>} */
-    create:             (name, col)  => ipcRenderer.invoke('collections:create', name, col),
+    create:             (name, col, parentId = null)  => ipcRenderer.invoke('collections:create', name, col, parentId),
     /** @returns {Promise<Collection>} */
     update:             (id, f)      => ipcRenderer.invoke('collections:update', id, f),
     /** @returns {Promise<{success:true}>} */

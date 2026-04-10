@@ -101,7 +101,6 @@
      FULL-SCREEN LIBRARY VIEW
 ══════════════════════════════════════════════════════════ -->
 <div id="libraryView" class="library-view">
-
   <!-- Collections Sidebar -->
   <aside class="lib-sidebar" id="libSidebar">
     <div class="lib-sidebar-header">
@@ -185,6 +184,7 @@
     <!-- Stats bar -->
     <div class="lib-stats-bar" id="libStatsBar">
       <span class="lib-stats-text" id="libStatsText">0 books in library</span>
+      <span class="lib-now-playing-indicator" id="libNowPlaying"></span>
     </div>
 
     <!-- Book grid -->
@@ -405,7 +405,7 @@
       <div id="paneControls">
 
         <!-- VOICE -->
-        <div class="rp-section">
+        <div class="rp-section" id="rpVoiceSection">
           <div class="rp-section-header">
             <span class="rp-section-label">Voice</span>
             <div style="display:flex;gap:6px;">
@@ -452,6 +452,12 @@
             <input type="range" class="ctrl-range" id="pitchSlider" min="0.5" max="2.0" step="0.1" value="1.0"
               oninput="Reader.onPitchChange(this.value)"/>
             <span class="ctrl-val" id="pitchVal">1.0</span>
+          </div>
+          <div class="ctrl-row">
+            <label class="ctrl-label">Volume</label>
+            <input type="range" class="ctrl-range" id="volumeSlider" min="0" max="100" step="1" value="100"
+              oninput="Reader.onVolumeChange(this.value)"/>
+            <span class="ctrl-val" id="volumeVal">100%</span>
           </div>
           <div class="ctrl-row">
             <label class="ctrl-label">AI Style</label>
@@ -641,6 +647,18 @@
         <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
       </svg>
     </button>
+    <div class="pb-volume-wrap" title="Volume">
+      <button class="pb-volume-btn" id="pbVolumeBtn" onclick="Reader.toggleMute()" title="Mute">
+        <svg class="pb-volume-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path id="pbVolumeWave" d="M15.5 8.5a5 5 0 0 1 0 7"/>
+          <line id="pbVolumeMute" x1="15" y1="9" x2="21" y2="15" style="display:none"/>
+          <line id="pbVolumeMute2" x1="21" y1="9" x2="15" y2="15" style="display:none"/>
+        </svg>
+      </button>
+      <input type="range" class="pb-volume" id="pbVolumeSlider" min="0" max="100" step="1" value="100" oninput="Reader.onVolumeChange(this.value)"/>
+      <span class="pb-volume-val" id="pbVolumeVal">100%</span>
+    </div>
     <span class="pb-speed-pill" onclick="Reader.cycleSpeed()">
       <span id="pbSpeedLabel">1.0×</span>
     </span>
@@ -868,6 +886,12 @@
     <h2 class="modal-title" id="colModalTitle">New Collection</h2>
     <p class="modal-sub">Give your collection a name</p>
     <input type="text" class="modal-input" id="colNameInput" placeholder="e.g. Science Fiction, Work..." maxlength="40"/>
+    <div class="col-parent-row">
+      <span class="col-parent-label">Parent Folder</span>
+      <select class="modal-input col-parent-select" id="colParentSelect">
+        <option value="">Top level</option>
+      </select>
+    </div>
     <div class="col-color-row">
       <span class="col-color-label">Color</span>
       <div class="col-color-swatches" id="colColorSwatches">
@@ -896,6 +920,20 @@
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="UI.closeModal('modalAssignCollection')">Close</button>
       <button class="modal-btn-primary" id="assignColSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rename Book Modal -->
+<div class="modal-overlay" id="modalRenameBook">
+  <div class="modal">
+    <div class="modal-close" onclick="Library.closeRenameModal()">&#x2715;</div>
+    <h2 class="modal-title" id="renameBookTitle">Rename Book</h2>
+    <p class="modal-sub" id="renameBookSub">Enter a new title</p>
+    <input type="text" class="modal-input" id="renameBookInput" placeholder="Book title" maxlength="140"/>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="Library.closeRenameModal()">Cancel</button>
+      <button class="modal-btn-primary" id="renameBookSave" onclick="Library.saveRename()">Save</button>
     </div>
   </div>
 </div>

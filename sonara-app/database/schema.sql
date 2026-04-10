@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS collections (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL UNIQUE,
   color       TEXT DEFAULT '#c8a96e',
+  parent_id   INTEGER DEFAULT NULL REFERENCES collections(id) ON DELETE SET NULL,
   sort_order  INTEGER DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
@@ -63,6 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_books_added ON books(added_at DESC);
 CREATE INDEX IF NOT EXISTS idx_books_last_read ON books(last_read DESC);
 
 -- Schema version tracking
-INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', '"3"');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', '"5"');
 INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v2', '"true"');
 INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v3', '"true"');
+INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_v5', '"true"');

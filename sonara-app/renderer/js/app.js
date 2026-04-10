@@ -601,6 +601,11 @@ const App = (() => {
       }
     });
 
+    window.addEventListener('sonara:playback-state', (e) => {
+      const detail = e?.detail || {};
+      Library.setPlaybackState(detail.bookId || null, !!detail.isPlaying);
+    });
+
     // Load saved settings
     const fontSize = await window.sonara.settings.get('fontSize', '17');
     document.documentElement.style.setProperty('--font-reader', fontSize + 'px');
@@ -873,6 +878,7 @@ const App = (() => {
 
       // If same book already parsed, just jump
       if (id === currentBookId) {
+        Reader.setBookCoverPath(book.cover_path || '');
         const progress = await window.sonara.progress.get(id);
         if (progress?.chunk_index > 0) {
           Reader.jumpToChunk(progress.chunk_index);
@@ -907,6 +913,7 @@ const App = (() => {
   async function _openAudioBook(book) {
     currentBookId = book.id;
     const progress = await window.sonara.progress.get(book.id);
+    Reader.setBookCoverPath(book.cover_path || '');
     Reader.loadAudioBook(book, progress);
     await window.sonara.settings.set('lastBookId', book.id);
     Library.setActiveCard(book.id);
@@ -1046,12 +1053,20 @@ const App = (() => {
         // 7. Load into reader
         currentBookId = id;
         Reader.loadBook(chunks, id, resumeData);
+        const _book = await window.sonara.library.getBook(id);
+        const _coverPath = _book?.cover_path || '';
+        Reader.setBookCoverPath(_coverPath);
         const _pmTitle  = document.getElementById('pbMetaTitle');
         const _pmAuthor = document.getElementById('pbMetaAuthor');
         if (_pmTitle)  _pmTitle.textContent  = pendingBookData.title  || '';
         if (_pmAuthor) _pmAuthor.textContent = pendingBookData.author || '';
         // Sync mini player / tray with the newly loaded book title
-        window.sonara?.player?.updateState({ title: pendingBookData.title || '', isPlaying: false, percent: 0 });
+        window.sonara?.player?.updateState({
+          title: pendingBookData.title || '',
+          isPlaying: false,
+          percent: 0,
+          coverPath: _coverPath
+        });
         _updateNavPanel(id);
         Notes.load(id);
         await window.sonara.settings.set('lastBookId', id);
@@ -1158,12 +1173,20 @@ const App = (() => {
   function clearCurrentBook() {
     currentBookId = null;
     window.sonara.settings.set('lastBookId', '');
+    Reader.setBookCoverPath('');
     Reader.stop();
     document.getElementById('readerWelcome').style.display   = 'flex';
     document.getElementById('chapterTitlebar').style.display = 'none';
     document.getElementById('readerTextWrap').style.display  = 'none';
     document.getElementById('readerPdfWrap').style.display   = 'none';
     document.getElementById('tbCenter').textContent = '';
+    window.sonara?.player?.updateState({
+      isPlaying: false,
+      title: '',
+      chapterTitle: '',
+      percent: 0,
+      coverPath: ''
+    });
     Library.setActiveCard(null);
     _updateNavPanel(null); // clear nav panel
     Notes.clear();         // clear notes panel
@@ -1180,6 +1203,8 @@ const App = (() => {
     if (!bookId) {
       navEmpty.style.display = 'flex';
       navBook.style.display  = 'none';
+      const pbCoverClear = document.getElementById('pbCoverPlaceholder');
+      if (pbCoverClear) { pbCoverClear.style.backgroundImage = ''; pbCoverClear.classList.remove('has-cover'); }
       return;
     }
 
@@ -1198,19 +1223,29 @@ const App = (() => {
     // Load cover art
     const coverImg = document.getElementById('navCoverImg');
     const coverPlc = document.getElementById('navCoverPlaceholder');
+    const pbCover  = document.getElementById('pbCoverPlaceholder');
     try {
       const coverPath = await window.sonara.cover.getPath(bookId);
       if (coverPath) {
-        coverImg.src           = 'file:///' + coverPath.replace(/\\/g, '/');
+        const fileUrl = 'file:///' + coverPath.replace(/\\/g, '/');
+        coverImg.src           = fileUrl;
         coverImg.style.display = 'block';
         coverPlc.style.display = 'none';
+        if (pbCover) {
+          pbCover.style.backgroundImage    = 'url("' + fileUrl + '")';
+          pbCover.style.backgroundSize     = 'cover';
+          pbCover.style.backgroundPosition = 'center';
+          pbCover.classList.add('has-cover');
+        }
       } else {
         coverImg.style.display = 'none';
         coverPlc.style.display = 'flex';
+        if (pbCover) { pbCover.style.backgroundImage = ''; pbCover.classList.remove('has-cover'); }
       }
     } catch (_) {
       coverImg.style.display = 'none';
       coverPlc.style.display = 'flex';
+      if (pbCover) { pbCover.style.backgroundImage = ''; pbCover.classList.remove('has-cover'); }
     }
   }
 
