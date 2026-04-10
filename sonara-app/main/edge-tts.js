@@ -180,6 +180,84 @@ async function getVoices() {
 }
 
 /**
+ * Compute MP3 duration in milliseconds by walking MPEG frame headers.
+ * Works on raw MP3 byte stream (including multiple concatenated chunks).
+ */
+const MPEG_BITRATES = {
+  // [version, layer] → bitrate table (kbps), index 1..14
+  'V1L1': [0,32,64,96,128,160,192,224,256,288,320,352,384,416,448],
+  'V1L2': [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384],
+  'V1L3': [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320],
+  'V2L1': [0,32,48,56,64,80,96,112,128,144,160,176,192,224,256],
+  'V2L2': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],
+  'V2L3': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],
+};
+const MPEG_SAMPLERATES = {
+  V1:  [44100, 48000, 32000],
+  V2:  [22050, 24000, 16000],
+  V25: [11025, 12000, 8000],
+};
+
+function mp3DurationMs(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return 0;
+  let pos = 0;
+  // Skip ID3v2 if present
+  if (buffer.length > 10 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
+    const size = ((buffer[6] & 0x7f) << 21) | ((buffer[7] & 0x7f) << 14) |
+                 ((buffer[8] & 0x7f) <<  7) |  (buffer[9] & 0x7f);
+    pos = 10 + size;
+  }
+  let totalSamples = 0;
+  let sampleRate = 24000; // sane fallback (Edge output format)
+  const len = buffer.length;
+  while (pos + 4 <= len) {
+    // Frame sync: 11 bits set
+    if (buffer[pos] !== 0xff || (buffer[pos + 1] & 0xe0) !== 0xe0) {
+      pos++;
+      continue;
+    }
+    const b1 = buffer[pos + 1], b2 = buffer[pos + 2];
+    const versionBits = (b1 >> 3) & 0x03;
+    const layerBits   = (b1 >> 1) & 0x03;
+    const bitrateIdx  = (b2 >> 4) & 0x0f;
+    const srIdx       = (b2 >> 2) & 0x03;
+    const padding     = (b2 >> 1) & 0x01;
+
+    if (versionBits === 1 || layerBits === 0 || bitrateIdx === 0 || bitrateIdx === 15 || srIdx === 3) {
+      pos++;
+      continue;
+    }
+    const version = versionBits === 3 ? 'V1' : versionBits === 2 ? 'V2' : 'V25';
+    const layer   = layerBits === 3 ? 'L1' : layerBits === 2 ? 'L2' : 'L3';
+    const brKey   = (version === 'V25' ? 'V2' : version) + layer;
+    const brTable = MPEG_BITRATES[brKey];
+    if (!brTable) { pos++; continue; }
+    const bitrateKbps = brTable[bitrateIdx];
+    sampleRate = MPEG_SAMPLERATES[version][srIdx];
+    if (!bitrateKbps || !sampleRate) { pos++; continue; }
+
+    // Samples per frame
+    let samplesPerFrame;
+    if (layer === 'L1') samplesPerFrame = 384;
+    else if (layer === 'L2') samplesPerFrame = 1152;
+    else samplesPerFrame = (version === 'V1') ? 1152 : 576; // L3
+
+    // Frame length in bytes
+    const frameBytes = layer === 'L1'
+      ? Math.floor((12 * bitrateKbps * 1000 / sampleRate + padding) * 4)
+      : Math.floor(samplesPerFrame / 8 * bitrateKbps * 1000 / sampleRate + padding);
+
+    if (frameBytes < 4 || pos + frameBytes > len) {
+      pos++;
+      continue;
+    }
+    totalSamples += samplesPerFrame;
+    pos += frameBytes;
+  }
+  return sampleRate > 0 ? Math.round(totalSamples * 1000 / sampleRate) : 0;
+}
+
+/**
  * Escape text for XML/SSML
  */
 function escapeXml(text) {
@@ -441,5 +519,6 @@ module.exports = {
   getVoices,
   synthesize: synthesizeWithRetry,
   speedToRate,
-  pitchToHz
+  pitchToHz,
+  mp3DurationMs
 };

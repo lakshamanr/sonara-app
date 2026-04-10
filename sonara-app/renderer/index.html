@@ -344,6 +344,11 @@
         <button class="pdf-nav-btn" id="pdfZoomIn" title="Zoom in">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
+        <div class="pdf-nav-sep"></div>
+        <button class="pdf-nav-btn" id="pdfFullscreen" title="Toggle fullscreen">
+          <svg class="pdf-fs-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 3 3 3 8"/><line x1="3" y1="3" x2="9" y2="9"/><polyline points="16 3 21 3 21 8"/><line x1="21" y1="3" x2="15" y2="9"/><polyline points="8 21 3 21 3 16"/><line x1="3" y1="21" x2="9" y2="15"/><polyline points="16 21 21 21 21 16"/><line x1="21" y1="21" x2="15" y2="15"/></svg>
+          <svg class="pdf-fs-compress" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polyline points="4 14 10 14 10 20"/><line x1="10" y1="14" x2="4" y2="20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="20" y2="4"/></svg>
+        </button>
       </div>
     </div>
 
@@ -513,15 +518,35 @@
           <div class="rp-section-header">
             <span class="rp-section-label">Export</span>
           </div>
+          <div class="export-format-row" style="display:flex;gap:6px;margin-bottom:8px;">
+            <label class="export-fmt-opt" style="flex:1;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border-muted,#3a3a3a);border-radius:6px;cursor:pointer;font-size:12px;">
+              <input type="radio" name="exportFormat" value="mp3" checked onchange="ExportMP3.onFormatChange()"/>
+              <span>MP3 + Chapters</span>
+            </label>
+            <label class="export-fmt-opt" style="flex:1;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border-muted,#3a3a3a);border-radius:6px;cursor:pointer;font-size:12px;">
+              <input type="radio" name="exportFormat" value="m4b" onchange="ExportMP3.onFormatChange()"/>
+              <span>M4B Audiobook</span>
+            </label>
+          </div>
+          <div id="exportCoverRow" style="display:none;margin-bottom:8px;font-size:12px;">
+            <label style="display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="exportUseCover" checked/>
+              <span>Embed book cover</span>
+            </label>
+            <div style="margin-top:4px;display:flex;align-items:center;gap:6px;">
+              <button type="button" class="export-mp3-btn" style="flex:0 0 auto;padding:3px 8px;font-size:11px;" onclick="ExportMP3.pickCover()">Choose image…</button>
+              <span id="exportCoverName" style="font-size:11px;opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            </div>
+          </div>
           <button class="export-mp3-btn" id="exportBtn" onclick="ExportMP3.start()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Export to MP3
+            <span id="exportBtnLabel">Export to MP3</span>
           </button>
-          <p class="export-tip">Saves the entire book as a single MP3 audiobook using the selected Neural voice.</p>
+          <p class="export-tip">MP3 saves audio + a <code>.chapters.txt</code> list. M4B packages chapters and cover into a single audiobook file.</p>
         </div>
 
       </div>
@@ -1102,7 +1127,7 @@
         <polyline points="7 10 12 15 17 10"/>
         <line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
-      <span class="eb-title">Exporting MP3</span>
+      <span class="eb-title" id="exportBadgeTitle">Exporting MP3</span>
     </div>
     <button class="eb-cancel" id="exportCancelBtn" onclick="ExportMP3.cancel()" title="Cancel export">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">

@@ -558,6 +558,8 @@ const Reader = (() => {
     } catch (e) {
       // Fallback: leave canvas blank
       pdfTextLayerData = null;
+    } finally {
+      pdfRendering = false;
     }
 
     // Update nav info
@@ -572,8 +574,6 @@ const Reader = (() => {
 
     // Scroll to top of viewer on page change
     viewer.scrollTop = 0;
-
-    pdfRendering = false;
   }
 
   function _initPDFNav() {
@@ -598,6 +598,25 @@ const Reader = (() => {
     });
     document.getElementById('pdfZoomOut').addEventListener('click', () => {
       pdfZoom = Math.max(pdfZoom - 0.25, 0.5);
+      _showPDFPage(pdfCurrentPage);
+    });
+
+    const pdfWrap = document.getElementById('readerPdfWrap');
+    document.getElementById('pdfFullscreen').addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        pdfWrap.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      const isFs = !!document.fullscreenElement;
+      const expand  = document.querySelector('.pdf-fs-expand');
+      const compress = document.querySelector('.pdf-fs-compress');
+      if (expand)   expand.style.display   = isFs ? 'none'  : '';
+      if (compress) compress.style.display = isFs ? 'block' : 'none';
+      // Re-render at new viewport size
       _showPDFPage(pdfCurrentPage);
     });
   }

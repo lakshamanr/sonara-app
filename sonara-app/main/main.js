@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage } = require('electron');
 
 const path  = require('path');
 const fs    = require('fs');
@@ -312,10 +312,7 @@ app.whenReady().then(() => {
     createTray();
     scheduleAutoBackup();
 
-    globalShortcut.register('F12', () => {
-      const win = BrowserWindow.getFocusedWindow();
-      if (win) win.webContents.toggleDevTools();
-    });
+
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -367,6 +364,13 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+  });
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
   });
 
   // Restore window bounds
@@ -782,7 +786,8 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
     const result = await tts.synthesize(text, voice, { rate, pitch: pitchHz });
     return {
       audio: result.audio.toString('base64'),
-      wordBoundaries: result.wordBoundaries
+      wordBoundaries: result.wordBoundaries,
+      durationMs: tts.mp3DurationMs(result.audio)
     };
   } catch (err) {
     throw err;
@@ -792,12 +797,18 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
 // ────────────────────────────────────────────────────────────
 //  IPC — EXPORT TO MP3
 // ────────────────────────────────────────────────────────────
-ipcMain.handle('export:saveDialog', async (_, defaultName) => {
-  const safe = (defaultName || 'Sonara Audiobook').replace(/[<>:"/\\|?*]/g, '_');
+ipcMain.handle('export:saveDialog', async (_, arg) => {
+  // Back-compat: arg was previously a plain title string
+  const title  = typeof arg === 'string' ? arg : (arg?.title || 'Sonara Audiobook');
+  const format = typeof arg === 'object' && arg?.format === 'm4b' ? 'm4b' : 'mp3';
+  const safe   = (title || 'Sonara Audiobook').replace(/[<>:"/\\|?*]/g, '_');
+  const isM4b  = format === 'm4b';
   const result = await dialog.showSaveDialog(mainWindow, {
-    title:       'Export Audiobook as MP3',
-    defaultPath: path.join(app.getPath('downloads'), safe + '.mp3'),
-    filters:     [{ name: 'MP3 Audio', extensions: ['mp3'] }]
+    title:       isM4b ? 'Export Audiobook as M4B' : 'Export Audiobook as MP3',
+    defaultPath: path.join(app.getPath('downloads'), safe + (isM4b ? '.m4b' : '.mp3')),
+    filters:     isM4b
+      ? [{ name: 'M4B Audiobook', extensions: ['m4b'] }]
+      : [{ name: 'MP3 Audio',     extensions: ['mp3'] }]
   });
   return result.canceled ? null : result.filePath;
 });
@@ -810,6 +821,62 @@ ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
   } catch (err) {
     throw err;
   }
+});
+
+// Write a plain-text sidecar (chapter list, ffmeta, etc.)
+ipcMain.handle('export:writeSidecar', (_, { path: filePath, content }) => {
+  fs.writeFileSync(filePath, content, 'utf8');
+  return { success: true };
+});
+
+// Package an already-written MP3 into an .m4b with chapters + optional cover.
+// Requires ffmpeg-static (bundled). Returns {success:true} on success.
+ipcMain.handle('export:packageM4B', async (_, { mp3Path, ffmetaPath, coverPath, outPath, metadata }) => {
+  const { spawn } = require('child_process');
+  let ffmpegPath;
+  try {
+    ffmpegPath = require('ffmpeg-static');
+  } catch (e) {
+    throw new Error('ffmpeg-static not installed');
+  }
+  if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
+    throw new Error('FFmpeg binary not found');
+  }
+
+  const args = ['-y', '-i', mp3Path, '-i', ffmetaPath];
+  const hasCover = coverPath && fs.existsSync(coverPath);
+  if (hasCover) args.push('-i', coverPath);
+
+  args.push('-map', '0:a', '-map_metadata', '1');
+  if (hasCover) args.push('-map', '2', '-disposition:v:0', 'attached_pic');
+
+  args.push('-c:a', 'aac', '-b:a', '64k');
+  if (hasCover) args.push('-c:v', 'copy');
+
+  if (metadata?.title)    args.push('-metadata', `title=${metadata.title}`);
+  if (metadata?.author)   args.push('-metadata', `artist=${metadata.author}`);
+  if (metadata?.narrator) args.push('-metadata', `composer=${metadata.narrator}`);
+  if (metadata?.year)     args.push('-metadata', `date=${metadata.year}`);
+  args.push('-metadata', 'genre=Audiobook');
+
+  args.push('-f', 'mp4', outPath);
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, args, { windowsHide: true });
+    let stderr = '';
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', code => {
+      if (code === 0) resolve({ success: true });
+      else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-400)}`));
+    });
+  });
+});
+
+// Delete a temporary file (used for post-package cleanup of intermediate MP3)
+ipcMain.handle('export:deleteTemp', (_, filePath) => {
+  try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) {}
+  return { success: true };
 });
 
 // ────────────────────────────────────────────────────────────

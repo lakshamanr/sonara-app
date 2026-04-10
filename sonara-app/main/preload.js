@@ -189,13 +189,19 @@ contextBridge.exposeInMainWorld('sonara', {
      * Show save dialog for MP3.
      * @returns {Promise<string|null>} file path, or null if cancelled
      */
-    saveDialog: (title) => ipcRenderer.invoke('export:saveDialog', title),
+    saveDialog: (arg) => ipcRenderer.invoke('export:saveDialog', arg),
     /**
      * Concatenate base64 chunks and write to disk.
      * @param {{ path: string, chunks: string[] }} data
      * @returns {Promise<{success:true}>}
      */
     writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
+    /** Write a plain text sidecar (chapter list / ffmeta). */
+    writeSidecar: (data) => ipcRenderer.invoke('export:writeSidecar', data),
+    /** Package an MP3 into an M4B via bundled ffmpeg. */
+    packageM4B: (data)  => ipcRenderer.invoke('export:packageM4B', data),
+    /** Delete a temporary file. */
+    deleteTemp: (p)     => ipcRenderer.invoke('export:deleteTemp', p),
   },
   // ── NOTES ───────────────────────────────────────
   notes: {
