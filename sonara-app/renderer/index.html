@@ -811,6 +811,34 @@
           <span class="sync-status" id="tursoStatus"></span>
         </div>
       </div>
+
+      <!-- Google Drive Sync -->
+      <div class="sg-item">
+        <label class="sg-label">Google Drive Sync</label>
+        <p class="sg-hint">Sync metadata, progress, and files into visible Google Drive folders: Sonara-Data/books and Sonara-Data/covers. Click Connect to authorize this device.</p>
+        <div class="sync-turso-form">
+          <input class="sync-input" id="driveClientId" placeholder="OAuth Client ID" type="text" />
+          <input class="sync-input" id="driveClientSecret" placeholder="OAuth Client Secret" type="password" />
+          <input class="sync-input" id="driveRefreshToken" placeholder="Refresh Token" type="password" />
+          <label class="sg-hint" style="display:flex;align-items:center;gap:8px;margin:4px 0 0;">
+            <input id="driveAutoSync" type="checkbox" checked />
+            Enable auto-sync on startup and in background
+          </label>
+          <div class="sync-btn-row">
+            <button class="sync-action-btn" id="btnDriveConnect" onclick="UI.connectDrive()">Connect Google</button>
+            <button class="sync-action-btn sync-action-btn--secondary" id="btnDriveDisconnect" onclick="UI.disconnectDrive()">Disconnect</button>
+          </div>
+          <div class="sync-btn-row">
+            <button class="sync-action-btn" id="btnSyncDrive" onclick="UI.syncDriveNow()">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync Now
+            </button>
+            <button class="sync-action-btn sync-action-btn--secondary" onclick="UI.testDriveConnection()">Test Connection</button>
+            <button class="sync-action-btn sync-action-btn--secondary" onclick="UI.saveDriveConfig()">Save Credentials</button>
+          </div>
+          <span class="sync-status" id="driveStatus"></span>
+        </div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="UI.closeModal('modalSettings')">Close</button>

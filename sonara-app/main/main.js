@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, glo
 const path  = require('path');
 const fs    = require('fs');
 const db    = require('../database/db');
+const createGoogleDriveSync = require('./google-drive-sync');
 
 // ═══════════════════════════════════════════════════════════
 //  ENABLE CLOUD VOICES - Set command line switches early
@@ -31,6 +32,26 @@ let mainWindow;
 let booksDir;       // where we copy user files
 let coversDir;      // where we save extracted cover images
 let sonaraDataDir;  // single unified data folder for everything
+let googleDriveSync = null;
+let _lastDriveAutoSyncAt = 0;
+
+async function _runDriveAutoSync(reason) {
+  if (!googleDriveSync) return;
+  const status = googleDriveSync.getStatus();
+  if (!status.configured || !status.autoSync) return;
+
+  // Debounce background sync to avoid repeated upload spikes on focus changes.
+  const now = Date.now();
+  if (now - _lastDriveAutoSyncAt < 30_000) return;
+  _lastDriveAutoSyncAt = now;
+
+  try {
+    const result = await googleDriveSync.syncNow();
+    console.log(`[drive:auto:${reason}] synced`, result);
+  } catch (err) {
+    console.error(`[drive:auto:${reason}]`, err.message || err);
+  }
+}
 
 // ─── TRAY & MINI PLAYER ────────────────────────────────────
 let tray       = null;
@@ -282,6 +303,14 @@ app.whenReady().then(() => {
       : path.join(sonaraDataDir, 'sonara.db');
     db.init(dbPath);
 
+    googleDriveSync = createGoogleDriveSync({
+      db,
+      readConfig: _readConfig,
+      writeConfig: _writeConfig,
+      getBooksDir: () => booksDir,
+      getCoversDir: () => coversDir,
+    });
+
     // ── AUTO-HEAL: relink stale file_path entries to booksDir (local) ──
     try {
       const allBooks = db.getAllBooks();
@@ -312,6 +341,10 @@ app.whenReady().then(() => {
     createTray();
     scheduleAutoBackup();
 
+    setTimeout(() => {
+      _runDriveAutoSync('startup').catch(() => {});
+    }, 6000);
+
     globalShortcut.register('F12', () => {
       const win = BrowserWindow.getFocusedWindow();
       if (win) win.webContents.toggleDevTools();
@@ -329,6 +362,10 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // With a system tray we keep the app alive when all windows are closed.
   if (process.platform !== 'darwin' && !tray) app.quit();
+});
+
+app.on('before-quit', () => {
+  _runDriveAutoSync('before-quit').catch(() => {});
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -381,6 +418,10 @@ function createWindow() {
       e.preventDefault();
       mainWindow.hide();
     }
+  });
+
+  mainWindow.on('blur', () => {
+    _runDriveAutoSync('blur').catch(() => {});
   });
 }
 
@@ -866,6 +907,122 @@ ipcMain.handle('db:saveTursoConfig', (_, { url, token }) => {
   _writeConfig({ tursoUrl: url.trim(), tursoToken: token.trim() });
   return { success: true };
 });
+
+// ── Google Drive sync config ─────────────────────────────
+ipcMain.handle('drive:getConfig', ipcHandler(() => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.getConfig();
+}));
+
+ipcMain.handle('drive:saveConfig', ipcHandler((_, cfg) => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.saveConfig(cfg || {});
+}));
+
+ipcMain.handle('drive:getStatus', ipcHandler(() => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.getStatus();
+}));
+
+ipcMain.handle('drive:testConnection', ipcHandler(async (_, cfg) => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.testConnection(cfg || null);
+}));
+
+ipcMain.handle('drive:syncNow', ipcHandler(async (_, cfg) => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.syncNow(cfg || null);
+}));
+
+ipcMain.handle('drive:connect', ipcHandler(async () => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+
+  const state = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+  const authUrl = googleDriveSync.getAuthUrl(state);
+
+  return await new Promise((resolve, reject) => {
+    let finished = false;
+    const authWin = new BrowserWindow({
+      width: 520,
+      height: 720,
+      parent: mainWindow,
+      modal: true,
+      show: true,
+      title: 'Connect Google Drive',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const done = (fn) => {
+      if (finished) return;
+      finished = true;
+      try {
+        if (!authWin.isDestroyed()) authWin.close();
+      } catch {}
+      fn();
+    };
+
+    const handleRedirect = async (targetUrl) => {
+      if (!targetUrl || !targetUrl.startsWith('http://localhost')) return;
+      try {
+        const u = new URL(targetUrl);
+        const incomingState = u.searchParams.get('state') || '';
+        if (incomingState !== state) {
+          done(() => reject(new Error('Google OAuth state mismatch')));
+          return;
+        }
+        const err = u.searchParams.get('error');
+        if (err) {
+          done(() => reject(new Error('Google sign-in cancelled: ' + err)));
+          return;
+        }
+        const code = u.searchParams.get('code') || '';
+        if (!code) {
+          done(() => reject(new Error('Google sign-in returned no authorization code')));
+          return;
+        }
+
+        const tokens = await googleDriveSync.exchangeAuthCode(code);
+        done(() => resolve({ success: true, hasRefreshToken: !!tokens.refreshToken }));
+      } catch (err) {
+        done(() => reject(err));
+      }
+    };
+
+    authWin.webContents.on('will-redirect', (event, targetUrl) => {
+      if (targetUrl && targetUrl.startsWith('http://localhost')) {
+        event.preventDefault();
+        handleRedirect(targetUrl);
+      }
+    });
+
+    authWin.webContents.on('will-navigate', (event, targetUrl) => {
+      if (targetUrl && targetUrl.startsWith('http://localhost')) {
+        event.preventDefault();
+        handleRedirect(targetUrl);
+      }
+    });
+
+    authWin.on('closed', () => {
+      if (!finished) {
+        finished = true;
+        reject(new Error('Google sign-in was closed before completion'));
+      }
+    });
+
+    authWin.loadURL(authUrl).catch(err => {
+      done(() => reject(err));
+    });
+  });
+}));
+
+ipcMain.handle('drive:disconnect', ipcHandler(() => {
+  if (!googleDriveSync) throw new Error('Google Drive sync is not initialized');
+  return googleDriveSync.clearAuth();
+}));
 
 /** Let user pick a folder — copy DB there, save in config, reopen */
 ipcMain.handle('db:choosePath', async () => {

@@ -293,7 +293,7 @@ function addBook(book) {
 }
 
 function updateBook(id, fields) {
-  const allowed = ['title','author','status','total_chunks','total_seconds','duration_seconds','cover_path','last_read'];
+  const allowed = ['title','author','status','total_chunks','total_seconds','duration_seconds','cover_path','last_read','file_path','file_name'];
   const sets = Object.keys(fields).filter(k => allowed.includes(k)).map(k => `${k} = @${k}`).join(', ');
   if (!sets) return;
   db.prepare(`UPDATE books SET ${sets} WHERE id = @id`).run({ ...fields, id });

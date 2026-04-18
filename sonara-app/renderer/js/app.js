@@ -137,6 +137,26 @@ const UI = (() => {
       if (urlEl)   urlEl.value   = url   || '';
       if (tokenEl) tokenEl.value = token || '';
     } catch {}
+
+    // Load Google Drive config/status
+    try {
+      const cfg = await window.sonara.drive.getConfig();
+      const status = await window.sonara.drive.getStatus();
+      const cId = document.getElementById('driveClientId');
+      const cSecret = document.getElementById('driveClientSecret');
+      const rToken = document.getElementById('driveRefreshToken');
+      const autoSync = document.getElementById('driveAutoSync');
+      if (cId) cId.value = cfg.clientId || '';
+      if (cSecret) cSecret.value = cfg.clientSecret || '';
+      if (rToken) rToken.value = cfg.refreshToken || '';
+      if (autoSync) autoSync.checked = !!cfg.autoSync;
+      _setDriveConnectedUi(!!status.configured);
+      _driveStatus(status.lastSyncAt
+        ? `Ready. Last sync: ${new Date(status.lastSyncAt).toLocaleString()}`
+        : 'Configure credentials to enable sync',
+      status.configured ? 'ok' : '');
+      if (status.lastError) _driveStatus('Last error: ' + status.lastError, 'err');
+    } catch {}
     openModal('modalSettings');
   }
 
@@ -251,6 +271,106 @@ const UI = (() => {
     } catch (err) {
       _tursoStatus('✘ ' + err.message, 'err');
       toast('Turso sync failed: ' + err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function _driveStatus(msg, type) {
+    const el = document.getElementById('driveStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'sync-status ' + (type || '');
+  }
+
+  function _setDriveConnectedUi(isConnected) {
+    const connectBtn = document.getElementById('btnDriveConnect');
+    const disconnectBtn = document.getElementById('btnDriveDisconnect');
+    if (connectBtn) connectBtn.disabled = !!isConnected;
+    if (disconnectBtn) disconnectBtn.disabled = !isConnected;
+  }
+
+  async function _driveReadConfigFromForm() {
+    return {
+      clientId: (document.getElementById('driveClientId')?.value || '').trim(),
+      clientSecret: (document.getElementById('driveClientSecret')?.value || '').trim(),
+      refreshToken: (document.getElementById('driveRefreshToken')?.value || '').trim(),
+      autoSync: !!document.getElementById('driveAutoSync')?.checked,
+    };
+  }
+
+  async function saveDriveConfig() {
+    const cfg = await _driveReadConfigFromForm();
+    await window.sonara.drive.saveConfig(cfg);
+    _driveStatus('✔ Google Drive credentials saved', 'ok');
+    setTimeout(() => _driveStatus(''), 2500);
+  }
+
+  async function connectDrive() {
+    const btn = document.getElementById('btnDriveConnect');
+    if (btn) btn.disabled = true;
+    _driveStatus('Opening Google sign-in…', '');
+    try {
+      const cfg = await _driveReadConfigFromForm();
+      await window.sonara.drive.saveConfig(cfg);
+      await window.sonara.drive.connect();
+      const status = await window.sonara.drive.getStatus();
+      _setDriveConnectedUi(status.configured);
+      _driveStatus('✔ Google Drive connected', 'ok');
+      toast('Google Drive connected successfully', 'success', 2600);
+    } catch (err) {
+      _driveStatus('✘ ' + err.message, 'err');
+      toast('Google connect failed: ' + err.message, 'error', 3800);
+    } finally {
+      const status = await window.sonara.drive.getStatus().catch(() => ({ configured: false }));
+      _setDriveConnectedUi(status.configured);
+      if (btn) btn.disabled = !!status.configured;
+    }
+  }
+
+  async function disconnectDrive() {
+    try {
+      await window.sonara.drive.disconnect();
+      _setDriveConnectedUi(false);
+      _driveStatus('Disconnected from Google Drive', '');
+      toast('Google Drive disconnected', 'success', 2500);
+    } catch (err) {
+      _driveStatus('✘ ' + err.message, 'err');
+      toast('Disconnect failed: ' + err.message, 'error', 3200);
+    }
+  }
+
+  async function testDriveConnection() {
+    const cfg = await _driveReadConfigFromForm();
+    _driveStatus('Testing…', '');
+    try {
+      await window.sonara.drive.saveConfig(cfg);
+      await window.sonara.drive.testConnection();
+      _driveStatus('✔ Connected to Google Drive', 'ok');
+      _setDriveConnectedUi(true);
+    } catch (err) {
+      _driveStatus('✘ ' + err.message, 'err');
+      _setDriveConnectedUi(false);
+    }
+  }
+
+  async function syncDriveNow() {
+    const cfg = await _driveReadConfigFromForm();
+    const btn = document.getElementById('btnSyncDrive');
+    if (btn) btn.disabled = true;
+    _driveStatus('Syncing files + metadata…', '');
+    try {
+      await window.sonara.drive.saveConfig(cfg);
+      const result = await window.sonara.drive.syncNow();
+      _driveStatus(
+        `✔ Uploaded ${result.pushed.mediaFiles} files, pulled ${result.pulled.downloadedMedia} files`,
+        'ok'
+      );
+      toast('Google Drive sync complete', 'success', 3000);
+      await Library.load();
+    } catch (err) {
+      _driveStatus('✘ ' + err.message, 'err');
+      toast('Google Drive sync failed: ' + err.message, 'error', 4000);
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -463,6 +583,8 @@ const UI = (() => {
     openClaudeModal, saveClaudeKey, getClaudeKey, _updateClaudeUI,
     openSettingsModal, saveSettings,
     chooseDbPath, resetDbPath, openDataFolder, exportDb, importDb, saveTursoConfig, testTurso, syncTurso,
+    saveDriveConfig, testDriveConnection, syncDriveNow,
+    connectDrive, disconnectDrive,
     openBackupModal,
     ttsAddPreset: (chars) => {
       const el = document.getElementById('settingTtsSkipChars');
