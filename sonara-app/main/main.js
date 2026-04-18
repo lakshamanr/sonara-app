@@ -896,19 +896,29 @@ ipcMain.handle('export:writeSidecar', (_, { path: filePath, content }) => {
   return { success: true };
 });
 
+// Resolve the ffmpeg binary path, handling Electron asar packaging.
+// ffmpeg-static returns a virtual asar path; spawn() needs the real unpacked path.
+function _resolveFfmpegPath() {
+  let p;
+  try { p = require('ffmpeg-static'); } catch (e) { p = null; }
+  // Fix for asar: replace virtual 'app.asar/' with 'app.asar.unpacked/'
+  if (p && p.includes('app.asar' + path.sep)) {
+    p = p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+  }
+  // Fallback: build path from resourcesPath (works in packaged app)
+  if (!p || !fs.existsSync(p)) {
+    const bin = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    p = path.join(process.resourcesPath || '', 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', bin);
+  }
+  if (!fs.existsSync(p)) throw new Error('FFmpeg binary not found at: ' + p);
+  return p;
+}
+
 // Package an already-written MP3 into an .m4b with chapters + optional cover.
 // Requires ffmpeg-static (bundled). Returns {success:true} on success.
 ipcMain.handle('export:packageM4B', async (_, { mp3Path, ffmetaPath, coverPath, outPath, metadata }) => {
   const { spawn } = require('child_process');
-  let ffmpegPath;
-  try {
-    ffmpegPath = require('ffmpeg-static');
-  } catch (e) {
-    throw new Error('ffmpeg-static not installed');
-  }
-  if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
-    throw new Error('FFmpeg binary not found');
-  }
+  const ffmpegPath = _resolveFfmpegPath();
 
   const args = ['-y', '-i', mp3Path, '-i', ffmetaPath];
   const hasCover = coverPath && fs.existsSync(coverPath);
@@ -968,9 +978,7 @@ ipcMain.handle('export:getAutoSavePath', (_, { filePath, title }) => {
 // Sends incremental progress events back to the requesting window via 'bulk-export:ffmpeg-progress'.
 ipcMain.handle('export:reencodeToM4B', async (event, { inputPath, outputPath, coverPath, metadata }) => {
   const { spawn } = require('child_process');
-  let ffmpegPath;
-  try { ffmpegPath = require('ffmpeg-static'); } catch (e) { throw new Error('ffmpeg-static not installed'); }
-  if (!ffmpegPath || !fs.existsSync(ffmpegPath)) throw new Error('FFmpeg binary not found');
+  const ffmpegPath = _resolveFfmpegPath();
   if (!inputPath || !fs.existsSync(inputPath))    throw new Error('Input file not found: ' + inputPath);
 
   const hasCover = coverPath && fs.existsSync(coverPath);
