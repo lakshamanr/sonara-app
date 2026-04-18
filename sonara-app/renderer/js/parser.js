@@ -165,10 +165,18 @@ const Parser = (() => {
   // ── EPUB ─────────────────────────────────────────────────
   async function loadJSZipScript() {
     if (window.JSZip) return;
+    // Try local bundle first (works offline / avoids CSP issues)
     await new Promise((res, rej) => {
       const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-      s.onload = res; s.onerror = rej;
+      s.src = 'js/jszip.min.js';
+      s.onload = res;
+      s.onerror = () => {
+        // Fallback to CDN
+        const s2 = document.createElement('script');
+        s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        s2.onload = res; s2.onerror = rej;
+        document.head.appendChild(s2);
+      };
       document.head.appendChild(s);
     });
   }

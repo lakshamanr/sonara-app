@@ -44,18 +44,19 @@ const Library = (() => {
       }
 
       renderGrid();
-      renderCollections();
-      _updateStats();
+      try { renderCollections(); } catch (e) { console.error('[Library] renderCollections failed:', e); }
+      try { _updateStats(); }       catch (e) { console.error('[Library] _updateStats failed:', e); }
       _renderOldSidebar();
 
       if (!_initialized) {
-        _initSearchAndFilters();
-        _initCollectionListeners();
-        _initSetCoverModal();
+        try { _initSearchAndFilters(); }    catch (e) { console.error('[Library] _initSearchAndFilters failed:', e); }
+        try { _initCollectionListeners(); } catch (e) { console.error('[Library] _initCollectionListeners failed:', e); }
+        try { _initSetCoverModal(); }       catch (e) { console.error('[Library] _initSetCoverModal failed:', e); }
         _initialized = true;
       }
 
     } catch (err) {
+      console.error('[Library] load() failed:', err);
       books = [];
       renderGrid();
     }
@@ -1249,6 +1250,31 @@ const Library = (() => {
     if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
+  /**
+   * Update a card's cover image in-place (no full re-render needed).
+   * Called after background cover extraction completes for a single book.
+   */
+  function refreshCardCover(id, coverPath) {
+    const idx = books.findIndex(b => String(b.id) === String(id));
+    if (idx < 0) return;
+    books[idx].cover_path = coverPath;
+
+    const gridCard = document.querySelector('.lib-card[data-book-id="' + id + '"]');
+    if (!gridCard) return;
+
+    const coverWrap = gridCard.querySelector('.lc-cover');
+    if (!coverWrap) return;
+
+    const placeholder = coverWrap.querySelector('.lc-cover-placeholder');
+    if (placeholder) {
+      const img = document.createElement('img');
+      img.className = 'lc-cover-img';
+      img.src = 'file:///' + coverPath.replace(/\\/g, '/');
+      img.alt = '';
+      placeholder.replaceWith(img);
+    }
+  }
+
   // ── DELETE ────────────────────────────────────────────────
   async function renameBook(id) {
     const book = books.find(b => b.id === id);
@@ -1470,7 +1496,7 @@ const Library = (() => {
 
   // ── PUBLIC API ────────────────────────────────────────────
   return {
-    load, render: renderGrid, renderGrid, refreshCard, addBookToList,
+    load, render: renderGrid, renderGrid, refreshCard, refreshCardCover, addBookToList,
     deleteBook, setActiveCard, setPlaybackState, onShow,
     showCreateCollectionModal, showAssignModal, saveAssignments,
     closeDeleteColModal, setCoverImage,

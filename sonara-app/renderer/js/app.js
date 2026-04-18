@@ -750,6 +750,10 @@ const App = (() => {
     // Load library
     await Library.load();
 
+    // Background: extract covers for any EPUB/PDF books that still lack one
+    // (runs async, does not block startup)
+    _backgroundExtractMissingCovers();
+
     // Restore fullscreen indicator state
     await _syncFullscreenState();
 
@@ -867,6 +871,50 @@ const App = (() => {
     if (failed) parts.push(failed + ' failed');
 
     UI.toast(parts.join(', '), added > 0 ? 'success' : 'error', 3500);
+  }
+
+  // ── BACKGROUND COVER EXTRACTION ──────────────────────────
+  // Silently extracts covers for books that have a file but no cover image.
+  // Runs after library loads; processes up to 5 books per pass, 600ms apart.
+  async function _backgroundExtractMissingCovers() {
+    const TEXT_FMTS = new Set(['epub', 'pdf', 'mobi', 'azw3']);
+    const books = Library.getBooks().filter(b => !b.cover_path && TEXT_FMTS.has(b.format));
+    if (!books.length) return;
+
+    const MAX_PER_PASS = 5;
+    const toProcess = books.slice(0, MAX_PER_PASS);
+
+    for (const book of toProcess) {
+      try {
+        const fileExists = await window.sonara.file.exists(book.file_path);
+        if (!fileExists) continue;
+
+        let coverData = null;
+        if (book.format === 'epub') {
+          const base64 = await window.sonara.file.read(book.file_path);
+          if (base64) coverData = await Parser.extractEPUBCover(base64);
+        } else if (book.format === 'pdf') {
+          const base64 = await window.sonara.file.read(book.file_path);
+          if (base64) coverData = await Parser.extractPDFCover(base64);
+        }
+
+        if (coverData) {
+          await window.sonara.cover.save({ bookId: book.id, base64: coverData.base64, mediaType: coverData.mediaType });
+          // Update this card's cover in place (no full re-render needed)
+          const updatedBook = await window.sonara.library.getBook(book.id);
+          if (updatedBook?.cover_path) Library.refreshCardCover(book.id, updatedBook.cover_path);
+        }
+      } catch (_) {
+        // Skip silently — cover extraction is best-effort
+      }
+      // Small delay between books to avoid blocking the UI thread
+      await new Promise(r => setTimeout(r, 600));
+    }
+
+    // If there are more books needing covers, schedule another pass
+    if (books.length > MAX_PER_PASS) {
+      setTimeout(_backgroundExtractMissingCovers, 3000);
+    }
   }
 
   // ── ADD SINGLE BOOK (shared by single and batch) ──────────

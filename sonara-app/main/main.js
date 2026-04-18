@@ -473,7 +473,29 @@ ipcMain.on('mini:open',  () => { mainWindow?.show(); mainWindow?.focus(); });
 // ─────────────────────────────────────────────────────────────
 //  IPC — LIBRARY
 // ─────────────────────────────────────────────────────────────
-ipcMain.handle('library:getAll',    ipcHandler(() => db.getAllBooks()));
+
+/**
+ * For any book that has no cover_path in the DB, check if a cover image
+ * was previously extracted to the covers directory and re-link it.
+ * This runs fast (file-existence checks only) and is safe to call on every load.
+ */
+function _healOrphanedCovers() {
+  if (!coversDir || !fs.existsSync(coversDir)) return;
+  try {
+    const books = db.prepare('SELECT id FROM books WHERE cover_path IS NULL OR cover_path = ""').all();
+    for (const { id } of books) {
+      for (const ext of ['.jpg', '.png', '.jpeg', '.webp']) {
+        const candidate = path.join(coversDir, id + ext);
+        if (fs.existsSync(candidate)) {
+          db.prepare('UPDATE books SET cover_path = ? WHERE id = ?').run(candidate, id);
+          break;
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+ipcMain.handle('library:getAll',    ipcHandler(() => { _healOrphanedCovers(); return db.getAllBooks(); }));
 ipcMain.handle('library:getBook',   ipcHandler((_, id) => db.getBook(id)));
 ipcMain.handle('library:bookExists',ipcHandler((_, id) => db.bookExists(id)));
 
