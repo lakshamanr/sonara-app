@@ -58,8 +58,16 @@ let tray       = null;
 let miniPlayer = null;
 let _playerState = { isPlaying: false, title: '', chapterTitle: '', percent: 0, coverPath: '' };
 
+function _resolveAppIconPath() {
+  const pngIcon = path.join(__dirname, '..', 'assets', 'icon.png');
+  const icoIcon = path.join(__dirname, '..', 'assets', 'icon.ico');
+  // Windows uses .ico for best shell/taskbar quality; fallback keeps dev runs working.
+  if (process.platform === 'win32' && fs.existsSync(icoIcon)) return icoIcon;
+  return pngIcon;
+}
+
 function createTray() {
-  const iconPath = path.join(__dirname, 'logo', 'logo.png');
+  const iconPath = _resolveAppIconPath();
   let icon;
   try {
     icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
@@ -374,7 +382,7 @@ function createWindow() {
     height: Math.min(900,  height - 40),
     minWidth:  900,
     minHeight: 600,
-    icon: path.join(__dirname, 'logo', 'logo.png'),
+    icon: _resolveAppIconPath(),
     frame:         isMac,                  // Mac keeps native frame; Windows goes frameless
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     backgroundColor: '#0c0c0f',

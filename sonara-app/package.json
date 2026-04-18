@@ -114,7 +114,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.ico",
       "publisherName": "Sonara",
       "verifyUpdateCodeSignature": false,
       "requestedExecutionLevel": "asInvoker"
