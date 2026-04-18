@@ -91,6 +91,24 @@ contextBridge.exposeInMainWorld('sonara', {
     syncTurso:       (cfg) => ipcRenderer.invoke('db:syncTurso', cfg),
   },
 
+  // ── GOOGLE DRIVE SYNC ───────────────────────────────────
+  drive: {
+    /** @returns {Promise<{clientId,clientSecret,refreshToken,accessToken,autoSync,lastSyncAt,lastError}>} */
+    getConfig:       ()    => ipcRenderer.invoke('drive:getConfig'),
+    /** @returns {Promise<object>} */
+    saveConfig:      (cfg) => ipcRenderer.invoke('drive:saveConfig', cfg),
+    /** @returns {Promise<{configured:boolean,autoSync:boolean,lastSyncAt:string|null,lastError:string}>} */
+    getStatus:       ()    => ipcRenderer.invoke('drive:getStatus'),
+    /** @returns {Promise<{ok:true}>} */
+    testConnection:  (cfg) => ipcRenderer.invoke('drive:testConnection', cfg),
+    /** @returns {Promise<{pushed:object,pulled:object}>} */
+    syncNow:         (cfg) => ipcRenderer.invoke('drive:syncNow', cfg),
+    /** @returns {Promise<{success:true,hasRefreshToken:boolean}>} */
+    connect:         ()    => ipcRenderer.invoke('drive:connect'),
+    /** @returns {Promise<{success:true}>} */
+    disconnect:      ()    => ipcRenderer.invoke('drive:disconnect'),
+  },
+
   // ── BOOKS FOLDER ────────────────────────────────────────
   books: {
     /** @returns {Promise<string>} books folder path */
