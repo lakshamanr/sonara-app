@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('sonara', {
     deleteBook: (id)       => ipcRenderer.invoke('library:deleteBook', id),
     /** @returns {Promise<boolean>} */
     bookExists: (id)       => ipcRenderer.invoke('library:bookExists', id),
+    /** @returns {Promise<Book|null>} updated book, or null if cancelled */
+    relinkFile: (id)       => ipcRenderer.invoke('library:relinkFile', id),
   },
 
   // ── PROGRESS ─────────────────────────────────────────────
@@ -56,11 +58,68 @@ contextBridge.exposeInMainWorld('sonara', {
     /** @returns {Promise<Record<string,any>>} */
     getAll: ()         => ipcRenderer.invoke('settings:getAll'),
   },
+  // ── WINDOW CONTROLS ──────────────────────────────
+  win: {
+    minimize:    () => ipcRenderer.invoke('win:minimize'),
+    maximize:    () => ipcRenderer.invoke('win:maximize'),
+    close:       () => ipcRenderer.invoke('win:close'),
+    isMaximized: () => ipcRenderer.invoke('win:isMaximized'),
+    alwaysOnTop: (val) => ipcRenderer.invoke('win:alwaysOnTop', val),
+    isFullscreen: () => ipcRenderer.invoke('win:isFullscreen'),
+    setFullscreen: (val) => ipcRenderer.invoke('win:setFullscreen', val),
+  },
+
+  // ── DATABASE SYNC ─────────────────────────────────────────
+  db: {
+    /** @returns {Promise<string>} current db file path */
+    getPath:         ()    => ipcRenderer.invoke('db:getPath'),
+    /** @returns {Promise<string|null>} new path, or null if cancelled */
+    choosePath:      ()    => ipcRenderer.invoke('db:choosePath'),
+    /** @returns {Promise<string>} default userData path */
+    resetPath:       ()    => ipcRenderer.invoke('db:resetPath'),
+    /** @returns {Promise<{path,books,notes}|null>} */
+    export:          ()    => ipcRenderer.invoke('db:export'),
+    /** @returns {Promise<{books,notes,collections}|null>} */
+    import:          ()    => ipcRenderer.invoke('db:import'),
+    /** @returns {Promise<{url,token}>} */
+    getTursoConfig:  ()    => ipcRenderer.invoke('db:getTursoConfig'),
+    /** @returns {Promise<{success:true}>} */
+    saveTursoConfig: (cfg) => ipcRenderer.invoke('db:saveTursoConfig', cfg),
+    /** @returns {Promise<{ok:true}>} */
+    testTurso:       (cfg) => ipcRenderer.invoke('db:testTurso', cfg),
+    /** @returns {Promise<{pushed,pulled}>} */
+    syncTurso:       (cfg) => ipcRenderer.invoke('db:syncTurso', cfg),
+  },
+
+  // ── BOOKS FOLDER ────────────────────────────────────────
+  books: {
+    /** @returns {Promise<string>} books folder path */
+    getDir:    ()       => ipcRenderer.invoke('books:getDir'),
+    /** @returns {Promise<string>} open the books folder in Explorer */
+    openDir:   ()       => ipcRenderer.invoke('books:openDir'),
+    /** @returns {Promise<string[]>} up to 2 normalised genre names */
+    classify:  (title)    => ipcRenderer.invoke('books:classify', title),
+    /**
+     * Parse a MOBI or AZW3 file; returns { title, chunks }
+     * @returns {Promise<{title: string, chunks: Array}>}
+     */
+    parseMOBI: (filePath) => ipcRenderer.invoke('books:parseMOBI', filePath),
+  },
+
+  // ── UNIFIED DATA FOLDER ──────────────────────────────────
+  data: {
+    /** @returns {Promise<string>} path to the unified Sonara-Data folder */
+    getDir: () => ipcRenderer.invoke('data:getDir'),
+    /** @returns {Promise<string>} open Sonara-Data folder in Explorer */
+    openDir: () => ipcRenderer.invoke('data:openDir'),
+  },
 
   // ── FILE / DIALOG ─────────────────────────────────────────
   dialog: {
     /** @returns {Promise<FileInfo|null>} */
-    openFile: () => ipcRenderer.invoke('dialog:openFile'),
+    openFile:  () => ipcRenderer.invoke('dialog:openFile'),
+    /** @returns {Promise<string|null>} chosen image file path */
+    openImage: () => ipcRenderer.invoke('dialog:openImage'),
   },
   file: {
     /** @returns {Promise<string|null>} base64 encoded file contents */
@@ -81,7 +140,7 @@ contextBridge.exposeInMainWorld('sonara', {
     /** @returns {Promise<Collection|null>} */
     get:                (id)         => ipcRenderer.invoke('collections:get', id),
     /** @returns {Promise<Collection>} */
-    create:             (name, col)  => ipcRenderer.invoke('collections:create', name, col),
+    create:             (name, col, parentId = null)  => ipcRenderer.invoke('collections:create', name, col, parentId),
     /** @returns {Promise<Collection>} */
     update:             (id, f)      => ipcRenderer.invoke('collections:update', id, f),
     /** @returns {Promise<{success:true}>} */
@@ -99,9 +158,18 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── COVERS ───────────────────────────────────────────────
   cover: {
     /** @returns {Promise<string>} saved cover file path */
-    save:    (data) => ipcRenderer.invoke('cover:save', data),
+    save:         (data)              => ipcRenderer.invoke('cover:save', data),
     /** @returns {Promise<string|null>} */
-    getPath: (bId)  => ipcRenderer.invoke('cover:getPath', bId),
+    getPath:      (bId)               => ipcRenderer.invoke('cover:getPath', bId),
+    /** @returns {Promise<string>} saved cover path */
+    saveFromFile: (bookId, imagePath) => ipcRenderer.invoke('cover:saveFromFile', { bookId, imagePath }),
+  },
+
+  // ── AUDIO ────────────────────────────────────────────────
+  audio: {
+    /** Extract embedded cover art from an audio file and save it.
+     *  @returns {Promise<string|null>} saved cover path or null */
+    extractCover: (data) => ipcRenderer.invoke('audio:extractCover', data),
   },
 
   // ── EDGE TTS (Neural voices — no API key required) ────────
@@ -132,12 +200,53 @@ contextBridge.exposeInMainWorld('sonara', {
   // ── NOTES ───────────────────────────────────────
   notes: {
     /** @returns {Promise<Note>} newly created note */
-    add:    (data)             => ipcRenderer.invoke('notes:add', data),
+    add:        (data)             => ipcRenderer.invoke('notes:add', data),
     /** @returns {Promise<Note[]>} all notes for book, ordered by chapter */
-    getAll: (bookId)           => ipcRenderer.invoke('notes:getAll', bookId),
+    getAll:     (bookId)           => ipcRenderer.invoke('notes:getAll', bookId),
     /** @returns {Promise<{success:true}>} */
-    update: (id, content, tag) => ipcRenderer.invoke('notes:update', id, content, tag),
+    update:     (id, content, tag) => ipcRenderer.invoke('notes:update', id, content, tag),
     /** @returns {Promise<{success:true}>} */
-    delete: (id)               => ipcRenderer.invoke('notes:delete', id),
-  },});
+    delete:     (id)               => ipcRenderer.invoke('notes:delete', id),
+    /** @returns {Promise<string|null>} chosen file path or null */
+    saveDialog: (opts)             => ipcRenderer.invoke('notes:saveDialog', opts),
+    /** @returns {Promise<{success:true}>} */
+    writeText:  (data)             => ipcRenderer.invoke('notes:writeText',  data),
+    /** @returns {Promise<{success:true}>} */
+    writePdf:   (data)             => ipcRenderer.invoke('notes:writePdf',   data),
+  },
+
+  // ── PLAYER STATE BRIDGE (renderer ↔ tray / mini player) ───────────
+  player: {
+    /** Push current playback state to tray + mini player */
+    updateState: (state) => ipcRenderer.send('player:updateState', state),
+    /** Listen for tray/mini-player commands: 'toggle' | 'prev' | 'next' */
+    onCommand:   (cb)    => ipcRenderer.on('player:command', (_, cmd) => cb(cmd)),
+  },
+
+  // ── MINI PLAYER WINDOW ───────────────────────────────────
+  miniPlayer: {
+    /** Toggle the mini floating player window */
+    toggle: () => ipcRenderer.send('miniPlayer:toggle'),
+  },
+
+  // ── BACKUP & RESTORE ─────────────────────────────────────
+  backup: {
+    /** @returns {Promise<BackupSettings>} */
+    getSettings:    ()       => ipcRenderer.invoke('backup:getSettings'),
+    /** @returns {Promise<BackupSettings>} merged settings */
+    setSettings:    (p)      => ipcRenderer.invoke('backup:setSettings', p),
+    /** @returns {Promise<{backupDir,dirName,totalSize}>} */
+    create:         (args)   => ipcRenderer.invoke('backup:create',        args || {}),
+    /** @returns {Promise<{booksCount,bookFilesCount}>} */
+    restore:        (args)   => ipcRenderer.invoke('backup:restore',       args),
+    /** @returns {Promise<BackupEntry[]>} sorted newest-first */
+    list:           (args)   => ipcRenderer.invoke('backup:list',          args || {}),
+    /** @returns {Promise<{success:true}>} */
+    deleteBackup:   (args)   => ipcRenderer.invoke('backup:delete',        args),
+    /** @returns {Promise<string|null>} chosen folder path */
+    chooseLocation: ()       => ipcRenderer.invoke('backup:chooseLocation'),
+    /** Listen for auto-backup completion events */
+    onDone:         (cb)     => ipcRenderer.on('backup:done', (_, data) => cb(data)),
+  },
+});
 

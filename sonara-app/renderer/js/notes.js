@@ -195,8 +195,10 @@ const Notes = (() => {
 
   // ── HELPERS ───────────────────────────────────────────────
   function _updateBadge() {
-    const badge = document.getElementById('notesTabCount');
-    if (badge) badge.textContent = _notes.length > 0 ? _notes.length : '';
+    const badge  = document.getElementById('notesTabCount');
+    const expRow = document.getElementById('notesExportRow');
+    if (badge)  badge.textContent  = _notes.length > 0 ? _notes.length : '';
+    if (expRow) expRow.style.display = _notes.length > 0 ? '' : 'none';
   }
 
   function _updatePositionLabel() {
@@ -213,21 +215,128 @@ const Notes = (() => {
     }
   }
 
+  // ── EXPORT ─────────────────────────────────────────────────
+  async function exportNotes(type) {
+    if (!_notes.length) {
+      UI.toast('No notes to export', 'error', 2000);
+      return;
+    }
+
+    // Grab book title from player bar if available
+    const titleEl  = document.getElementById('pbMetaTitle');
+    const bookTitle = (titleEl && titleEl.textContent.trim()) || 'My Reading Notes';
+    const defaultName = bookTitle + ' — Notes';
+    const exportDate  = new Date().toLocaleDateString(undefined, {
+      year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    try {
+      const filePath = await window.sonara.notes.saveDialog({ defaultName, type });
+      if (!filePath) return; // cancelled
+
+      if (type === 'txt') {
+        await window.sonara.notes.writeText({ path: filePath, content: _buildTextExport(bookTitle, exportDate) });
+      } else {
+        await window.sonara.notes.writePdf({ path: filePath, html: _buildHtmlExport(bookTitle, exportDate) });
+      }
+      UI.toast('Notes exported as ' + type.toUpperCase(), 'success', 2500);
+    } catch (err) {
+      UI.toast('Export failed: ' + err.message, 'error');
+    }
+  }
+
+  function _buildTextExport(bookTitle, exportDate) {
+    const sep = '─'.repeat(40);
+    const lines = [
+      sep,
+      '  SONARA — READING NOTES',
+      sep,
+      '  Book:     ' + bookTitle,
+      '  Exported: ' + exportDate,
+      '  Notes:    ' + _notes.length,
+      sep, '',
+    ];
+    _notes.forEach((n, i) => {
+      const def     = _tagDef(n.tag);
+      const date    = new Date(n.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const pos     = (n.chunk_title || '').trim() || ('Section ' + (n.chunk_index + 1));
+      const content = n.content.replace(/\n/g, '\n    ');
+      lines.push(
+        '',
+        '[' + (i + 1) + '] ' + def.emoji + ' ' + def.label + '  |  ' + pos,
+        '    Date: ' + date,
+        '',
+        '    ' + content,
+        '',
+        sep,
+      );
+    });
+    return lines.join('\n') + '\n';
+  }
+
+  function _buildHtmlExport(bookTitle, exportDate) {
+    const TAG_COLORS = { note: '#c8a96e', key: '#7ec8a4', quote: '#a96ec8', question: '#c8786e' };
+    const notesHtml = _notes.map((n, i) => {
+      const def    = _tagDef(n.tag);
+      const date   = new Date(n.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const pos    = (n.chunk_title || '').trim() || ('Section ' + (n.chunk_index + 1));
+      const color  = TAG_COLORS[n.tag] || '#c8a96e';
+      const body   = _esc(n.content);
+      return (
+        '<div class="note-card">' +
+          '<div class="note-head">' +
+            '<span class="note-idx">' + (i + 1) + '</span>' +
+            '<span class="note-tag" style="color:' + color + '">' + def.emoji + ' ' + def.label + '</span>' +
+            '<span class="note-pos">' + _esc(pos) + '</span>' +
+            '<span class="note-date">' + date + '</span>' +
+          '</div>' +
+          '<div class="note-body">' + body + '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>' + bookTitle + ' — Notes</title><style>' +
+      '* { box-sizing: border-box; margin: 0; padding: 0; }' +
+      'body { font-family: Georgia, serif; font-size: 13px; color: #1a1a1a; background: #fff; padding: 40px 48px; line-height: 1.6; }' +
+      '.page-header { border-bottom: 2px solid #c8a96e; padding-bottom: 16px; margin-bottom: 28px; }' +
+      '.page-header h1 { font-size: 22px; }' +
+      '.page-header p  { font-size: 12px; color: #666; margin-top: 4px; }' +
+      '.note-card { border: 1px solid #ddd; border-left: 3px solid #c8a96e; border-radius: 4px; padding: 12px 16px; margin-bottom: 14px; page-break-inside: avoid; }' +
+      '.note-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }' +
+      '.note-idx  { font-size: 11px; color: #999; min-width: 20px; }' +
+      '.note-tag  { font-size: 12px; font-weight: 600; }' +
+      '.note-pos  { font-size: 11px; color: #555; flex: 1; font-style: italic; }' +
+      '.note-date { font-size: 11px; color: #999; }' +
+      '.note-body { font-size: 13px; color: #333; white-space: pre-wrap; }' +
+      '.footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; color: #aaa; text-align: center; }' +
+      '@media print { body { padding: 20px 28px; } }' +
+    '</style></head><body>' +
+    '<div class="page-header"><h1>' + bookTitle + '</h1>' +
+    '<p>Reading Notes &bull; Exported ' + exportDate + ' &bull; ' + _notes.length + ' note' + (_notes.length !== 1 ? 's' : '') + '</p></div>' +
+    notesHtml +
+    '<div class="footer">Generated by Sonara</div></body></html>';
+  }
+
   // ── TAB SWITCH ────────────────────────────────────────────
   function switchTab(tab) {
-    const chWrap = document.getElementById('rpChaptersWrap');
-    const ntWrap = document.getElementById('rpNotesWrap');
-    const chTab  = document.getElementById('rpTabChapters');
-    const ntTab  = document.getElementById('rpTabNotes');
-    if (!chWrap || !ntWrap) return;
+    const ctrlPane = document.getElementById('paneControls');
+    const ntWrap   = document.getElementById('rpNotesWrap');
+    const ctrlTab  = document.getElementById('rpTabControls');
+    const ntTab    = document.getElementById('rpTabNotes');
 
-    const isNotes = (tab === 'notes');
-    chWrap.style.display = isNotes ? 'none' : '';
-    ntWrap.style.display = isNotes ? ''     : 'none';
-    if (chTab) chTab.classList.toggle('rp-tab-active', !isNotes);
-    if (ntTab) ntTab.classList.toggle('rp-tab-active',  isNotes);
+    // Hide all panes, deactivate all tabs
+    if (ctrlPane) ctrlPane.style.display = 'none';
+    if (ntWrap)   ntWrap.style.display   = 'none';
+    [ctrlTab, ntTab].forEach(t => t && t.classList.remove('rp-tab-active'));
 
-    if (isNotes) _updatePositionLabel();
+    if (tab === 'notes') {
+      if (ntWrap)  ntWrap.style.display = '';
+      if (ntTab)   ntTab.classList.add('rp-tab-active');
+      _updatePositionLabel();
+    } else {
+      if (ctrlPane) ctrlPane.style.display = '';
+      if (ctrlTab)  ctrlTab.classList.add('rp-tab-active');
+    }
   }
 
   function _esc(s) {
@@ -239,5 +348,5 @@ const Notes = (() => {
       .replace(/\n/g, '<br>');
   }
 
-  return { load, clear, save, remove, startEdit, _commitEdit, _cancelEdit, switchTab };
+  return { load, clear, save, remove, startEdit, _commitEdit, _cancelEdit, switchTab, exportNotes };
 })();

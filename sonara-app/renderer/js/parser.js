@@ -108,10 +108,15 @@ const Parser = (() => {
 
     const spans = [];
     const offsetMap = [];
-    let cumOffset = 0;
 
-    textContent.items.forEach((item, i) => {
-      if (!item.str) { cumOffset += 1; return; }
+    // Build the cleaned page text the same way parsePDF does so that offsets
+    // here match the charIndex values delivered by TTS boundary events (which
+    // are relative to the cleaned chunk text, not the raw item join).
+    const cleanedPageText = cleanText(textContent.items.map(x => x.str).join(' '));
+    let searchPos = 0;
+
+    textContent.items.forEach((item) => {
+      if (!item.str) return;
 
       const span = document.createElement('span');
       span.textContent = item.str;
@@ -137,10 +142,17 @@ const Parser = (() => {
       layerDiv.appendChild(span);
 
       if (item.str.trim()) {
-        offsetMap.push({ start: cumOffset, end: cumOffset + item.str.length, span });
+        // Locate this item's cleaned text within the cleaned page string so that
+        // start/end offsets are in the same coordinate space as TTS charIndex values.
+        const cleanedItem = cleanText(item.str);
+        if (cleanedItem) {
+          const idx = cleanedPageText.indexOf(cleanedItem, searchPos);
+          const start = idx !== -1 ? idx : searchPos;
+          offsetMap.push({ start, end: start + cleanedItem.length, span });
+          if (idx !== -1) searchPos = start + cleanedItem.length;
+        }
         spans.push(span);
       }
-      cumOffset += item.str.length + 1; // +1 for space separator
     });
 
     return { spans, offsetMap };
@@ -322,6 +334,23 @@ const Parser = (() => {
     }
   }
 
+  // ── MOBI / AZW3 (Kindle) ─────────────────────────────────
+  /**
+   * Parse a MOBI or AZW3 file. Parsing is done in the main process via IPC
+   * (Node.js Buffer access required). Progress is reported in three steps
+   * since parsing is synchronous on the main side.
+   */
+  async function parseMOBI(filePath, onProgress) {
+    onProgress && onProgress(10);
+    const result = await window.sonara.books.parseMOBI(filePath);
+    onProgress && onProgress(80);
+    if (!result || !result.chunks || !result.chunks.length) {
+      throw new Error('No readable text found in MOBI/AZW3 file.');
+    }
+    onProgress && onProgress(100);
+    return result.chunks; // [{ title, text, page, source }]
+  }
+
   // ── PUBLIC ───────────────────────────────────────────────
-  return { parsePDF, parseEPUB, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
+  return { parsePDF, parseEPUB, parseMOBI, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
 })();

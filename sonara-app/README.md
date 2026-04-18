@@ -1,138 +1,134 @@
-# 🎧 Sonara — PDF & EPUB Audiobook Player
+# Sonara — Audiobook & eBook Player for Windows
 
-A beautiful desktop audiobook app built with Electron. Reads PDF and EPUB files aloud with word-by-word highlight, saves progress to a SQLite database, and supports your full voice library.
-
----
-
-## ✨ Features
-
-- **3-panel layout** — Library left · Reader center · Controls right
-- **Word-by-word highlight** — Current word glows gold, current sentence has subtle background
-- **Progress saved to SQLite** — Resume exactly where you left off, even after closing
-- **Full voice picker** — Search, filter by language, preview any system voice
-- **PDF + EPUB support** — Spine-order EPUB parsing with chapter detection
-- **Optional Claude AI** — Smooth narration cleanup via Anthropic API
-- **Speed + Pitch control** — 0.75× to 2.5× speed
-- **Waveform visualizer** — Animated in the player bar
+> Read more, retain more. A beautiful offline-first desktop app for PDF, EPUB and audiobook lovers.
 
 ---
 
-## 🚀 Quick Start
+## ✨ What Sonara Does
 
-### Prerequisites
-- **Node.js 18+** — https://nodejs.org
-- **npm 9+** (comes with Node)
+Sonara is a professional-grade desktop reading + listening app that puts your entire book collection — eBooks **and** audiobooks — in one gorgeous library. Import a file, hit play, and Sonara handles the rest.
 
-### Run in Development
+---
+
+## 🚀 Features at a Glance
+
+### 📚 Unified Library
+- Import **PDF · EPUB · MOBI · AZW3 · MP3 · M4A · M4B** — all formats, one library
+- **Format grouping** — same book in PDF + audio shows as a single stacked card; pick your version on the fly
+- **Auto-classify** — one click sorts every book into genre collections (Sci-Fi, History, Romance …) via Claude AI
+- **Cover art** — embedded art extracted automatically from MP3/M4B; drag-drop or browse to set any image
+
+### 🎧 Audiobook Player
+- Play / pause, previous / next chapter, seek bar, variable speed (0.5× – 3×)
+- **Mini Player** — compact floating overlay, always on top while you work
+- System **tray** with playback controls and current track info
+
+### 📖 eBook Reader
+- Smooth paginated reader for PDF and EPUB/MOBI
+- **PDF text highlighting** with persistent, colour-coded highlights
+- Font size, line spacing and three themes: Black · White · Blue
+- **AI chat** — ask Claude AI questions about any chapter (BYOK)
+- **Text-to-Speech** — Microsoft neural voices read any section aloud; configurable skip-chars/words
+
+### 🗂️ Collections & Notes
+- Colour-coded collections; auto-classify populates them instantly
+- Per-book reading progress + chapter position saved automatically
+- Notes panel tied to each book; exportable as text
+
+### ☁️ Sync & Backup
+- **One-folder backup** — everything lives in `Sonara-Data/`; copy it anywhere
+- Move the database into Dropbox / OneDrive / Google Drive for automatic sync
+- **Turso cloud sync** — live SQLite replication (free tier available)
+- Full JSON export / import
+
+---
+
+## 🖥️ System Requirements
+
+| | Minimum |
+|---|---|
+| OS | Windows 10 / 11 (64-bit) |
+| RAM | 4 GB |
+| Disk | 250 MB free |
+| Internet | Only needed for AI features & TTS voice download |
+
+---
+
+## 📦 Installation
+
+### Option A — Installer *(recommended)*
+1. Download **`Sonara-Setup-2.0.0.exe`**
+2. Run it, choose your install folder
+3. A desktop shortcut and Start Menu entry are created automatically
+
+### Option B — Portable
+1. Download **`Sonara-Portable-2.0.0.exe`**
+2. Double-click to run — no installation, no admin rights needed
+3. Works from a USB drive
+
+---
+
+## 🗂️ Where Your Data Lives
+
+```
+%AppData%\Sonara\Sonara-Data\
+  books\              ← imported book & audio files
+  covers\             ← cover images
+  sonara.db           ← SQLite database (all progress, notes, collections)
+  sonara-config.json  ← settings
+```
+
+Open it instantly: **Settings → Data Folder → Open Folder**
+
+---
+
+## 🛠️ Building from Source
+
+**Requirements:** Node.js 18+, Windows
+
 ```bash
-# 1. Install dependencies (already done if you got this as a zip)
+git clone https://github.com/your-org/sonara.git
+cd sonara
 npm install
 
-# 2. Start the app
+# Development (hot-reloads on file change)
 npm start
-```
 
-### Build for Distribution
-```bash
-# Windows .exe
+# Production build — creates installer + portable in dist/
 npm run build:win
-
-# macOS .dmg
-npm run build:mac
-
-# Linux .AppImage
-npm run build:linux
-
-# All three platforms
-npm run build:all
-```
-Built files appear in the `dist/` folder.
-
----
-
-## 📁 Project Structure
-
-```
-sonara-app/
-├── main/
-│   ├── main.js          ← Electron main process, IPC handlers, window
-│   └── preload.js       ← Secure context bridge (main ↔ renderer)
-├── database/
-│   └── db.js            ← SQLite schema + all CRUD via better-sqlite3
-├── renderer/
-│   ├── index.html       ← 3-panel HTML shell
-│   ├── css/app.css      ← Complete stylesheet
-│   └── js/
-│       ├── parser.js    ← PDF.js + JSZip EPUB parser
-│       ├── reader.js    ← TTS engine, word highlight, waveform
-│       ├── library.js   ← Book cards, add/delete, refresh
-│       └── app.js       ← Main orchestrator, Claude, init
-├── assets/icons/        ← App icons (add icon.png/icns/ico here)
-└── package.json
 ```
 
 ---
 
-## 🗄️ Database
-
-SQLite file lives at:
-- **macOS**: `~/Library/Application Support/sonara/sonara.db`
-- **Windows**: `%APPDATA%\sonara\sonara.db`
-- **Linux**: `~/.config/sonara/sonara.db`
-
-**Tables:**
-| Table | Purpose |
-|---|---|
-| `books` | Title, format, file path, status, total chunks |
-| `progress` | Per-book: chunk index, word index, elapsed seconds, % |
-| `settings` | Voice, speed, pitch, font size, Claude key |
-
----
-
-## 🎙️ Voice Setup
-
-Sonara uses your system's Web Speech API voices. To get more/better voices:
-
-- **Windows**: Settings → Time & Language → Speech → Add voices
-- **macOS**: System Settings → Accessibility → Spoken Content → System Voice → Manage Voices
-- **Linux**: Install `espeak` or `festival` — `sudo apt install espeak`
-
----
-
-## 🤖 Claude AI (Optional)
-
-1. Get an API key from https://console.anthropic.com
-2. Click **Claude AI** pill in the top bar
-3. Paste your `sk-ant-api03-…` key
-4. The first 3 chapters/pages will be narration-optimized automatically
-
----
-
-## 🔨 Icons
-
-Add your app icons to `assets/icons/`:
-- `icon.png` — 512×512px PNG (Linux + fallback)
-- `icon.icns` — macOS (use `iconutil` or https://cloudconvert.com)
-- `icon.ico` — Windows (use https://convertico.com)
-
----
-
-## 🛠️ Tech Stack
+## 🧩 Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | Electron 28 |
-| Database | SQLite via better-sqlite3 |
-| PDF parsing | PDF.js 3.11 (CDN, loaded on demand) |
-| EPUB parsing | JSZip 3.10 (CDN, loaded on demand) |
-| Text-to-speech | Web Speech API (system voices) |
-| Build | electron-builder 24 |
+| Shell | Electron 28 |
+| Database | better-sqlite3 (SQLite) |
+| TTS | Edge-TTS (Microsoft neural voices) |
+| AI | Claude API (Anthropic) |
+| PDF rendering | PDF.js |
+| EPUB / MOBI | Custom renderer + mobi-parser |
 
 ---
 
-## 📝 Notes
+## 📋 Changelog
 
-- Files you add are **copied** to the app's data folder — safe to move/delete the originals
-- Cloud voices (Google, Microsoft Azure) require internet — local voices work offline
-- EPUB books must be text-based — scanned/image EPUBs are not supported
-- The Claude API key is stored in your local SQLite DB — never sent anywhere except Anthropic's API
+### v2.0.0 *(current)*
+- Audiobook cover extraction (ID3v2 MP3 + MP4 M4B atoms)
+- Format grouping — PDF + audio stacked into one library card
+- **Classify All** — one-click genre auto-classification for entire library
+- Unified `Sonara-Data/` folder for easy backup
+- Mini Player floating overlay
+- Turso cloud sync
+- Tray crash fix on quit
+
+### v1.0.0
+- Initial release: PDF + EPUB reader, TTS, highlights, progress sync
+
+---
+
+## 📄 License
+
+MIT © 2025 Sonara

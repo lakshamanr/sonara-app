@@ -11,7 +11,24 @@ const Reader = (() => {
   let isPlaying      = false;
   let speed          = 1.0;
   let pitch          = 1.0;
-  let chosenVoice    = null;
+  let volume         = 1.0;
+  let lastVolumeBeforeMute = 1.0;
+  let volumeApplyTimer = null;
+
+  // ── Reader display preferences ─────────────────────────
+  const FONT_MAP = {
+    serif:   "'Playfair Display', Georgia, serif",
+    sans:    "'Outfit', system-ui, sans-serif",
+    georgia: "Georgia, 'Times New Roman', serif",
+    mono:    "'Courier New', Courier, monospace",
+  };
+  let readerFont      = 'serif';
+  let readerFontSize  = 17;     // px
+  let readerLineH     = 2.0;
+  let readerMaxWidth  = 680;    // px
+  let chosenVoice          = null;
+  let pendingRestoreVoice  = null;  // voice name/ID to restore once cloud voices load
+  let _playPendingRetries  = 0;     // guard: max retries waiting for saved voice in _play()
   let voiceList      = [];
   let totalDuration  = 0;
   let elapsedTime    = 0;
@@ -19,6 +36,7 @@ const Reader = (() => {
   let waveAnimId     = null;
   let utterance      = null;
   let wordSpans      = [];      // flat array of all word <span> elements
+  let wordTtsOffsets = [];      // char offset of each wordSpan in the cleaned TTS text
   let sentenceMap    = [];      // [ { startWord, endWord, el } ]
   let currentWordIdx = 0;
   let bookId         = null;
@@ -29,6 +47,12 @@ const Reader = (() => {
   let audioMode      = false;
   let audioElement   = null;
   let audioBookData  = null;
+
+  // TTS skip characters — stripped from text before speaking
+  let ttsSkipChars   = '';   // raw string of chars; built into regex on use
+  let ttsSkipEnabled = true; // master on/off toggle
+  let ttsSkipWords   = '';   // comma-separated words to skip (whole-word, case-insensitive)
+  let currentCoverPath = '';
 
   // PDF visual mode state
   let pdfMode        = false;
@@ -77,6 +101,36 @@ const Reader = (() => {
 
       _populateLangFilter();
       renderVoiceList();
+
+      // Always try to restore pending saved voice before picking default
+      if (pendingRestoreVoice) {
+        const v = _findVoiceByIdOrName(pendingRestoreVoice);
+        if (v) {
+          chosenVoice = v;
+          pendingRestoreVoice = null;
+          _playPendingRetries = 0;
+          _updateVoiceBar();
+          renderVoiceList();
+          // Player may have already started with the wrong default voice while cloud
+          // voices were loading. Restart the current chunk with the correct voice now.
+          if (isPlaying) {
+            speechSynthesis.cancel();
+            CloudTTS.stop();
+            _speakChunk(currentChunk);
+          }
+          return;
+        }
+        // Voice not found yet — if cloud voices have loaded, it truly doesn't exist
+        if (cloudVoices.length > 0) {
+          pendingRestoreVoice = null;
+          _playPendingRetries = 0;
+          if (!chosenVoice) _pickDefaultVoice();
+          else _updateVoiceBar();
+        }
+        // If cloud voices haven't loaded yet, keep pendingRestoreVoice and wait
+        return;
+      }
+
       if (!chosenVoice) _pickDefaultVoice();
       else _updateVoiceBar();
     };
@@ -95,6 +149,10 @@ const Reader = (() => {
         const sysVoices = speechSynthesis.getVoices();
         _mergeVoices(sysVoices);
       }).catch(err => {
+        // Cloud TTS load failed — unblock playback so user isn't stuck waiting
+        pendingRestoreVoice = null;
+        _playPendingRetries = 0;
+        if (!chosenVoice && voiceList.length) _pickDefaultVoice();
       });
     }
 
@@ -146,6 +204,17 @@ const Reader = (() => {
     if (!chosenVoice) _pickDefaultVoice();
 
     UI.toast(`Found ${voiceList.length} voices (${neuralCount} natural, ${systemCount} system)`, 'success');
+  }
+
+  // Match a voice by stable shortName/edgeVoice ID or by display name (legacy saves).
+  function _findVoiceByIdOrName(id) {
+    if (!id || !voiceList.length) return null;
+    return voiceList.find(x =>
+      x.shortName === id ||
+      x._edgeVoice === id ||
+      x.voiceURI  === id ||
+      x.name      === id
+    ) || null;
   }
 
   function _pickDefaultVoice() {
@@ -365,8 +434,11 @@ const Reader = (() => {
     renderVoiceList();
     _updateVoiceBar();
     
-    // Save to settings globally (persists across all books)
-    window.sonara?.settings.set('voice', name).then(() => {
+    // Save the stable Edge TTS shortName (e.g. "en-US-AriaNeural") instead of the
+    // display name so restore survives any future friendly-name reformatting.
+    // Legacy saves (display name) still match via _findVoiceByIdOrName's x.name fallback.
+    const saveId = v.shortName || v._edgeVoice || v.voiceURI || v.name;
+    window.sonara?.settings.set('voice', saveId).then(() => {
     }).catch(err => {
     });
     
@@ -431,7 +503,7 @@ const Reader = (() => {
         u.voice = v;
         u.rate = speed;
         u.pitch = pitch;
-        u.volume = 1.0;
+        u.volume = volume;
         u.onerror = (e) => {
           if (e.error !== 'interrupted') {
             UI.toast('Preview failed: ' + e.error, 'error');
@@ -507,15 +579,17 @@ const Reader = (() => {
   function _initPDFNav() {
     document.getElementById('pdfPrevPage').addEventListener('click', () => {
       if (pdfCurrentPage > 1) {
-        _showPDFPage(pdfCurrentPage - 1);
+        const targetPage = pdfCurrentPage - 1;
+        _showPDFPage(targetPage);
         // Sync chunk to match the page
-        _syncChunkToPage(pdfCurrentPage);
+        _syncChunkToPage(targetPage);
       }
     });
     document.getElementById('pdfNextPage').addEventListener('click', () => {
       if (pdfCurrentPage < Parser.getPDFPageCount()) {
-        _showPDFPage(pdfCurrentPage + 1);
-        _syncChunkToPage(pdfCurrentPage);
+        const targetPage = pdfCurrentPage + 1;
+        _showPDFPage(targetPage);
+        _syncChunkToPage(targetPage);
       }
     });
     document.getElementById('pdfZoomIn').addEventListener('click', () => {
@@ -530,6 +604,10 @@ const Reader = (() => {
 
   // Sync reader chunk index to match a PDF page number
   function _syncChunkToPage(pageNum) {
+    if (pdfMode && pageNum !== pdfCurrentPage) {
+      _showPDFPage(pageNum);
+    }
+
     const idx = chunks.findIndex(c => c.page === pageNum);
     if (idx >= 0 && idx !== currentChunk) {
       currentChunk = idx;
@@ -808,6 +886,7 @@ const Reader = (() => {
     // Detect PDF visual mode
     const isPDF = chunks.length > 0 && chunks[0].source === 'pdf' && Parser.hasPDFDoc();
     pdfMode = isPDF;
+    _setVoiceControlsVisible(true);
 
     // Build chapter list
     _buildChapterList();
@@ -875,7 +954,7 @@ const Reader = (() => {
       const words = sentence.split(/(\s+)/);
       let sentStartIdx = wordGlobalIdx;
       const wordHtml = words.map(tok => {
-        if (/^\s+$/.test(tok)) return tok; // whitespace — preserve
+        if (!tok || /^\s+$/.test(tok)) return tok; // empty or whitespace — preserve
         const idx = wordGlobalIdx++;
         return `<span class="word word-unspoken" data-wi="${idx}">${_escHtml(tok)}</span>`;
       }).join('');
@@ -887,6 +966,29 @@ const Reader = (() => {
 
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
+
+    // Precompute char offsets of each word span in the cleaned TTS text so that
+    // charIndex values from boundary events (which reference the cleaned text) map
+    // correctly even when skip-chars embed extra characters inside displayed words.
+    {
+      const ttsText = _cleanTextForTTS(text);
+      wordTtsOffsets = [];
+      let searchPos = 0;
+      for (const span of wordSpans) {
+        const cleanedWord = _cleanTextForTTS(span.textContent);
+        if (!cleanedWord) {
+          wordTtsOffsets.push(searchPos);
+          continue;
+        }
+        const idx = ttsText.indexOf(cleanedWord, searchPos);
+        if (idx !== -1) {
+          wordTtsOffsets.push(idx);
+          searchPos = idx + cleanedWord.length;
+        } else {
+          wordTtsOffsets.push(searchPos);
+        }
+      }
+    }
 
     // Show the text reader, hide audio/pdf reader
     document.getElementById('readerWelcome').style.display   = 'none';
@@ -905,18 +1007,24 @@ const Reader = (() => {
       return;
     }
 
-    // Find the word span whose charIndex corresponds
-    // We walk wordSpans by accumulated charIndex
     if (!wordSpans.length) return;
 
-    // Find which word contains this charIndex
-    let acc = 0;
-    const chunkText = chunks[currentChunk]?.text || '';
+    // Use precomputed TTS offsets so that charIndex (from the cleaned TTS text)
+    // maps correctly regardless of skip-chars embedded in displayed words.
     let targetIdx = 0;
-    for (let i = 0; i < wordSpans.length; i++) {
-      const word = wordSpans[i].textContent;
-      if (acc + word.length > charIndex) { targetIdx = i; break; }
-      acc += word.length + 1; // +1 for space
+    if (wordTtsOffsets.length === wordSpans.length) {
+      targetIdx = wordTtsOffsets.length - 1;
+      for (let i = 1; i < wordTtsOffsets.length; i++) {
+        if (wordTtsOffsets[i] > charIndex) { targetIdx = i - 1; break; }
+      }
+    } else {
+      // Fallback: accumulate word lengths (less accurate)
+      let acc = 0;
+      for (let i = 0; i < wordSpans.length; i++) {
+        const word = wordSpans[i].textContent;
+        if (acc + word.length > charIndex) { targetIdx = i; break; }
+        acc += word.length + 1;
+      }
     }
 
     if (targetIdx === currentWordIdx && wordSpans[targetIdx]?.classList.contains('word-active')) return;
@@ -958,6 +1066,45 @@ const Reader = (() => {
   }
 
   // ── PLAYBACK ─────────────────────────────────────────────
+
+  // Push current player state to main process (updates tray menu + mini player)
+  function _pushPlayerState() {
+    const title        = document.getElementById('pbMetaTitle')?.textContent?.trim() || '';
+    const chapterTitle = chunks[currentChunk]?.title || '';
+    const percent      = chunks.length ? Math.round((currentChunk / chunks.length) * 100) : 0;
+    window.sonara?.player?.updateState({
+      isPlaying,
+      title,
+      chapterTitle,
+      percent,
+      coverPath: currentCoverPath || ''
+    });
+    window.dispatchEvent(new CustomEvent('sonara:playback-state', {
+      detail: { isPlaying, bookId }
+    }));
+  }
+
+  function _updatePlayerCover() {
+    const coverEl = document.getElementById('pbCoverPlaceholder');
+    if (!coverEl) return;
+    if (currentCoverPath) {
+      const url = 'file:///' + currentCoverPath.replace(/\\/g, '/');
+      coverEl.style.backgroundImage    = 'url("' + url + '")';
+      coverEl.style.backgroundSize     = 'cover';
+      coverEl.style.backgroundPosition = 'center';
+      coverEl.classList.add('has-cover');
+    } else {
+      coverEl.style.backgroundImage = '';
+      coverEl.classList.remove('has-cover');
+    }
+  }
+
+  function setBookCoverPath(coverPath) {
+    currentCoverPath = typeof coverPath === 'string' ? coverPath : '';
+    _updatePlayerCover();
+    _pushPlayerState();
+  }
+
   function togglePlay() {
     if (audioMode) {
       _toggleAudioPlay();
@@ -970,6 +1117,22 @@ const Reader = (() => {
     if (!chunks.length) {
       UI.toast('Please add a book first', 'error');
       return;
+    }
+
+    // If still waiting for the user's saved cloud voice to finish loading,
+    // hold off instead of snapping to the default voice. Retry up to 5×.
+    if (!chosenVoice && pendingRestoreVoice) {
+      if (_playPendingRetries < 5) {
+        _playPendingRetries++;
+        UI.toast('Loading your saved voice…', '');
+        setTimeout(() => { if (!isPlaying) _play(); }, 800);
+        return;
+      }
+      // Gave up waiting (~4 s) — proceed with best available voice
+      pendingRestoreVoice = null;
+      _playPendingRetries = 0;
+    } else {
+      _playPendingRetries = 0;
     }
 
     // Try to pick a voice if none selected
@@ -998,6 +1161,7 @@ const Reader = (() => {
       _speakChunk(currentChunk);
     }
     _startTimer();
+    _pushPlayerState();
   }
 
   function _pause() {
@@ -1007,6 +1171,7 @@ const Reader = (() => {
     CloudTTS.pause();
     _stopTimer();
     _saveProgress();
+    _pushPlayerState();
   }
 
   function stop() {
@@ -1024,6 +1189,56 @@ const Reader = (() => {
     _stopTimer();
     _updatePlayIcon(false);
     _clearWordHighlight();
+    _pushPlayerState();
+  }
+
+  // ── TTS TEXT CLEANER ─────────────────────────────────────
+  // Strips skip-characters from text before speaking so the TTS
+  // engine never reads stray markdown / formatting symbols aloud.
+  function _cleanTextForTTS(text) {
+    if (!ttsSkipEnabled || !text) return text;
+    // 1. Strip specified characters
+    if (ttsSkipChars) {
+      const escaped = ttsSkipChars
+        .split('')
+        .map(c => c.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&'))
+        .join('');
+      if (escaped) text = text.replace(new RegExp(`[${escaped}]`, 'g'), ' ');
+    }
+    // 2. Strip whole words (case-insensitive, word-boundary safe)
+    if (ttsSkipWords) {
+      const words = ttsSkipWords
+        .split(',')
+        .map(w => w.trim())
+        .filter(Boolean)
+        .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      if (words.length) {
+        const wordPattern = new RegExp(`\\b(${words.join('|')})\\b`, 'gi');
+        text = text.replace(wordPattern, ' ');
+      }
+    }
+    return text.replace(/ {2,}/g, ' ').trim();
+  }
+
+  function _updateSkipBtn() {
+    const btn = document.getElementById('pbCleanTextBtn');
+    if (!btn) return;
+    btn.classList.toggle('active', ttsSkipEnabled);
+    btn.title = ttsSkipEnabled
+      ? 'Character filter ON — click to disable'
+      : 'Character filter OFF — click to enable';
+  }
+
+  function toggleSkipChars() {
+    ttsSkipEnabled = !ttsSkipEnabled;
+    _updateSkipBtn();
+    window.sonara?.settings.set('ttsSkipEnabled', ttsSkipEnabled);
+    // If currently reading, restart the current chunk with updated filter
+    if (isPlaying) {
+      CloudTTS.stop();
+      speechSynthesis.cancel();
+      _speakChunk(currentChunk);
+    }
   }
 
   function _speakChunk(idx) {
@@ -1063,7 +1278,7 @@ const Reader = (() => {
       _pickDefaultVoice();
     }
 
-    const chunkText = chunks[idx].text;
+    const chunkText = _cleanTextForTTS(chunks[idx].text);
 
     // ── EDGE TTS (Neural voice) ──
     if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
@@ -1090,11 +1305,11 @@ const Reader = (() => {
   }
 
   function _speakChunkWithSystem(idx) {
-    const chunkText = chunks[idx].text;
+    const chunkText = _cleanTextForTTS(chunks[idx].text);
     const u = new SpeechSynthesisUtterance(chunkText);
     u.rate   = speed;
     u.pitch  = pitch;
-    u.volume = 1.0;
+    u.volume = volume;
 
     if (chosenVoice && !chosenVoice._cloudVoice) {
       u.voice = chosenVoice;
@@ -1142,6 +1357,7 @@ const Reader = (() => {
       _updateChapterTitleBar(next);
       _highlightChapterItem(next);
     }
+    _pushPlayerState();
   }
 
   function jumpToChunk(idx) {
@@ -1170,6 +1386,17 @@ const Reader = (() => {
     elapsedTime  = Math.round(ratio * totalDuration);
     const target = Math.floor(ratio * chunks.length);
     document.getElementById('pbTimeCur').textContent = _fmt(elapsedTime);
+    jumpToChunk(Math.max(0, Math.min(target, chunks.length - 1)));
+  }
+
+  function seekBy(seconds) {
+    if (audioMode && audioElement) {
+      audioElement.currentTime = Math.max(0, Math.min(audioElement.currentTime + seconds, audioElement.duration || 0));
+      return;
+    }
+    elapsedTime = Math.max(0, Math.min(elapsedTime + seconds, totalDuration));
+    document.getElementById('pbTimeCur').textContent = _fmt(elapsedTime);
+    const target = Math.floor((elapsedTime / (totalDuration || 1)) * chunks.length);
     jumpToChunk(Math.max(0, Math.min(target, chunks.length - 1)));
   }
 
@@ -1205,6 +1432,135 @@ const Reader = (() => {
     window.sonara?.settings.set('pitch', pitch);
   }
 
+  function onVolumeChange(val) {
+    const raw = parseFloat(val);
+    const pct = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 100;
+    volume = pct / 100;
+    if (volume > 0) lastVolumeBeforeMute = volume;
+
+    const volumeSlider = document.getElementById('volumeSlider');
+    const pbVolumeSlider = document.getElementById('pbVolumeSlider');
+    const volumeVal = document.getElementById('volumeVal');
+    const pbVolumeVal = document.getElementById('pbVolumeVal');
+
+    if (volumeSlider && Number(volumeSlider.value) !== pct) volumeSlider.value = String(pct);
+    if (pbVolumeSlider && Number(pbVolumeSlider.value) !== pct) pbVolumeSlider.value = String(pct);
+    if (volumeVal) volumeVal.textContent = Math.round(pct) + '%';
+    if (pbVolumeVal) pbVolumeVal.textContent = Math.round(pct) + '%';
+
+    _updateVolumeButton(pct);
+
+    window.sonara?.settings.set('volume', volume);
+
+    if (audioElement) {
+      audioElement.volume = volume;
+    }
+
+    if (CloudTTS && typeof CloudTTS.setVolume === 'function') {
+      CloudTTS.setVolume(volume);
+    }
+
+    // Browser system voices may not apply volume changes mid-utterance.
+    // Restart current chunk shortly after slider settles to apply the new level.
+    const isSystemVoiceReading = isPlaying && !audioMode && (!chosenVoice || !chosenVoice._cloudVoice);
+    if (isSystemVoiceReading) {
+      if (utterance) utterance.volume = volume;
+      if (volumeApplyTimer) clearTimeout(volumeApplyTimer);
+      volumeApplyTimer = setTimeout(() => {
+        const stillReadingSystemVoice = isPlaying && !audioMode && (!chosenVoice || !chosenVoice._cloudVoice);
+        if (stillReadingSystemVoice) {
+          speechSynthesis.cancel();
+          _speakChunk(currentChunk);
+        }
+      }, 180);
+    }
+  }
+
+  function _updateVolumeButton(pct) {
+    const btn = document.getElementById('pbVolumeBtn');
+    const wave = document.getElementById('pbVolumeWave');
+    const mute1 = document.getElementById('pbVolumeMute');
+    const mute2 = document.getElementById('pbVolumeMute2');
+    if (!btn || !wave || !mute1 || !mute2) return;
+
+    const muted = pct <= 0;
+    btn.classList.toggle('muted', muted);
+    btn.title = muted ? 'Unmute' : 'Mute';
+    wave.style.display = muted ? 'none' : '';
+    mute1.style.display = muted ? '' : 'none';
+    mute2.style.display = muted ? '' : 'none';
+  }
+
+  function toggleMute() {
+    if (volume <= 0.001) {
+      const restore = Math.max(0.05, Math.min(1.0, lastVolumeBeforeMute || 1.0));
+      onVolumeChange(String(Math.round(restore * 100)));
+      return;
+    }
+
+    lastVolumeBeforeMute = volume;
+    onVolumeChange('0');
+  }
+
+  // ── DISPLAY / TYPOGRAPHY CONTROLS ─────────────────────────
+  function _applyReadingStyle() {
+    const el = document.getElementById('readerText');
+    if (!el) return;
+    el.style.fontFamily  = FONT_MAP[readerFont] || FONT_MAP.serif;
+    el.style.fontSize    = readerFontSize + 'px';
+    el.style.lineHeight  = readerLineH;
+    el.style.maxWidth    = readerMaxWidth + 'px';
+  }
+
+  function _syncFontUI() {
+    document.querySelectorAll('.font-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.font === readerFont);
+    });
+    const sizeEl  = document.getElementById('fontSizeSlider');
+    const sizeVal = document.getElementById('fontSizeVal');
+    const lhEl    = document.getElementById('lineHeightSlider');
+    const lhVal   = document.getElementById('lineHeightVal');
+    const wEl     = document.getElementById('readerWidthSlider');
+    const wVal    = document.getElementById('readerWidthVal');
+    if (sizeEl)  sizeEl.value            = readerFontSize;
+    if (sizeVal) sizeVal.textContent     = readerFontSize + 'px';
+    if (lhEl)    lhEl.value             = readerLineH.toFixed(1);
+    if (lhVal)   lhVal.textContent      = readerLineH.toFixed(1);
+    if (wEl)     wEl.value              = readerMaxWidth;
+    if (wVal)    wVal.textContent       = readerMaxWidth + 'px';
+  }
+
+  function onFontChange(font) {
+    readerFont = font;
+    _applyReadingStyle();
+    _syncFontUI();
+    window.sonara?.settings.set('readerFont', font);
+  }
+
+  function onFontSizeChange(val) {
+    readerFontSize = parseInt(val, 10);
+    _applyReadingStyle();
+    const el = document.getElementById('fontSizeVal');
+    if (el) el.textContent = readerFontSize + 'px';
+    window.sonara?.settings.set('readerFontSize', readerFontSize);
+  }
+
+  function onLineHeightChange(val) {
+    readerLineH = parseFloat(parseFloat(val).toFixed(1));
+    _applyReadingStyle();
+    const el = document.getElementById('lineHeightVal');
+    if (el) el.textContent = readerLineH.toFixed(1);
+    window.sonara?.settings.set('readerLineH', readerLineH);
+  }
+
+  function onReaderWidthChange(val) {
+    readerMaxWidth = parseInt(val, 10);
+    _applyReadingStyle();
+    const el = document.getElementById('readerWidthVal');
+    if (el) el.textContent = readerMaxWidth + 'px';
+    window.sonara?.settings.set('readerMaxWidth', readerMaxWidth);
+  }
+
   // ── TIMER ─────────────────────────────────────────────────
   function _startTimer() {
     _stopTimer();
@@ -1225,21 +1581,8 @@ const Reader = (() => {
   function _buildChapterList() {
     const isEpub   = chunks.length > 0 && chunks[0].source === 'epub';
     const label    = isEpub ? 'Chapters' : 'Sections';
-    document.getElementById('chaptersLabel').textContent = label;
-    document.getElementById('chaptersCount').textContent = chunks.length;
 
-    const itemsHTML = chunks.map((c, i) => `
-      <div class="chapter-item${i === 0 ? ' active' : ''}" id="ch-item-${i}" onclick="Reader.jumpToChunk(${i})">
-        <span class="ci-num">${String(i + 1).padStart(2, '0')}</span>
-        <span class="ci-dot"></span>
-        <span class="ci-name">${_escHtml(c.title || (label.slice(0,-1) + ' ' + (i+1)))}</span>
-        <span class="ci-dur">${_estimateDur(c.text)}</span>
-      </div>`
-    ).join('');
-
-    document.getElementById('chaptersList').innerHTML = itemsHTML;
-
-    // ── Mirror to left nav panel ──
+    // Populate left nav panel
     const navLabel = document.getElementById('navListLabel');
     const navCount = document.getElementById('navListCount');
     const navList  = document.getElementById('navChapterList');
@@ -1257,11 +1600,6 @@ const Reader = (() => {
   }
 
   function _highlightChapterItem(idx) {
-    // Right panel
-    document.querySelectorAll('.chapter-item').forEach((el, i) => {
-      el.classList.toggle('active', i === idx);
-    });
-    document.getElementById('ch-item-' + idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     // Left nav panel
     document.querySelectorAll('.nav-ch-item').forEach((el, i) => {
       el.classList.toggle('active', i === idx);
@@ -1279,10 +1617,21 @@ const Reader = (() => {
     document.getElementById('ctbBarFill').style.width  = pct + '%';
 
     // Top bar center
-    document.getElementById('tbCenter').textContent = c?.title || '';
+    _setTopbarTitle(c?.title || '');
 
     // Reader header badge
     document.getElementById('readerProgBadge')?.textContent && (document.getElementById('readerProgBadge').textContent = pct + '%');
+  }
+
+  function _setTopbarTitle(text) {
+    const el = document.getElementById('tbCenter');
+    if (!el) return;
+    if (el.textContent === text) return;
+
+    el.textContent = text;
+    el.classList.remove('tb-center-anim');
+    void el.offsetWidth;
+    el.classList.add('tb-center-anim');
   }
 
   // ── WAVEFORM ──────────────────────────────────────────────
@@ -1347,53 +1696,100 @@ const Reader = (() => {
   async function applySettings() {
     if (!window.sonara) return;
 
-    const savedVoice = await window.sonara.settings.get('voice');
-    const savedSpeed = await window.sonara.settings.get('speed', 1.0);
-    const savedPitch = await window.sonara.settings.get('pitch', 1.0);
+    // Wire tray / mini-player commands (only once)
+    if (!applySettings._cmdWired) {
+      applySettings._cmdWired = true;
+      window.sonara.player?.onCommand(cmd => {
+        if      (cmd === 'toggle')      togglePlay();
+        else if (cmd === 'prev')        skipChunk(-1);
+        else if (cmd === 'next')        skipChunk(1);
+        else if (cmd === '__pushState') _pushPlayerState();
+      });
+    }
+
+    if (!applySettings._epubPageKeysWired) {
+      applySettings._epubPageKeysWired = true;
+      document.addEventListener('keydown', (e) => {
+        const t = e.target;
+        const isEditable = t && (
+          t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable
+        );
+        if (isEditable) return;
+        if (audioMode || pdfMode) return;
+        if (!chunks.length || chunks[0].source !== 'epub') return;
+
+        if (e.key === 'PageDown') {
+          e.preventDefault();
+          skipChunk(1);
+        } else if (e.key === 'PageUp') {
+          e.preventDefault();
+          skipChunk(-1);
+        }
+      });
+    }
+    const savedVoice     = await window.sonara.settings.get('voice');
+    const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
+    const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
+    const savedVolume    = await window.sonara.settings.get('volume', 1.0);
+    const savedSkipChars    = await window.sonara.settings.get('ttsSkipChars', '*_~#');
+    const savedSkipEnabled  = await window.sonara.settings.get('ttsSkipEnabled', true);
+    const savedSkipWords    = await window.sonara.settings.get('ttsSkipWords', '');
+    ttsSkipChars   = savedSkipChars || '';
+    ttsSkipEnabled = savedSkipEnabled !== false; // default true
+    ttsSkipWords   = savedSkipWords  || '';
+    _updateSkipBtn();
 
     speed = parseFloat(savedSpeed) || 1.0;
     pitch = parseFloat(savedPitch) || 1.0;
+    volume = parseFloat(savedVolume);
+    if (!Number.isFinite(volume)) volume = 1.0;
+    volume = Math.max(0, Math.min(1, volume));
+    if (volume > 0) lastVolumeBeforeMute = volume;
 
     document.getElementById('speedSlider').value  = speed;
     document.getElementById('speedVal').textContent = speed.toFixed(2) + '×';
     document.getElementById('pbSpeedLabel').textContent = speed.toFixed(1) + '×';
     document.getElementById('pitchSlider').value  = pitch;
     document.getElementById('pitchVal').textContent = pitch.toFixed(1);
+    onVolumeChange(String(Math.round(volume * 100)));
+
+    // ── Restore display/typography preferences ──
+    readerFont     = (await window.sonara.settings.get('readerFont',     'serif'))  || 'serif';
+    readerFontSize =  parseInt(await window.sonara.settings.get('readerFontSize', 17),  10) || 17;
+    readerLineH    =  parseFloat(await window.sonara.settings.get('readerLineH',  2.0)) || 2.0;
+    readerMaxWidth =  parseInt(await window.sonara.settings.get('readerMaxWidth', 680), 10) || 680;
+    _applyReadingStyle();
+    _syncFontUI();
     
     // Try to restore saved voice (global setting - persists across all books)
     if (savedVoice) {
-      // If voices already loaded, select immediately
+      // Set pendingRestoreVoice so _mergeVoices can restore it whenever cloud voices arrive
+      pendingRestoreVoice = savedVoice;
+
+      // If voices are already loaded, try immediately
       if (voiceList.length) {
-        const v = voiceList.find(x => x.name === savedVoice);
-        if (v) { 
+        const v = _findVoiceByIdOrName(savedVoice);
+        if (v) {
           chosenVoice = v;
+          pendingRestoreVoice = null;
           _updateVoiceBar();
           renderVoiceList();
-        } else {
-          _pickDefaultVoice();
         }
-      } else {
-        // Voices not loaded yet - retry after delays
-        const tryRestore = async () => {
-          if (voiceList.length) {
-            const v = voiceList.find(x => x.name === savedVoice);
-            if (v) { 
-              chosenVoice = v;
-              _updateVoiceBar();
-              renderVoiceList();
-            } else {
-              _pickDefaultVoice();
-            }
-          } else {
-            // Still no voices, pick default when available
-            if (!chosenVoice && voiceList.length) {
-              _pickDefaultVoice();
-            }
-          }
-        };
-        setTimeout(tryRestore, 1000);
-        setTimeout(tryRestore, 2000);
+        // If not found yet (cloud voices not loaded), pendingRestoreVoice stays
+        // and _mergeVoices will restore it once cloud voices arrive
       }
+      // Safety net: if the cloud service is unreachable and the voice never loads,
+      // unblock after 8s so the app doesn't stay stuck with no voice at all.
+      setTimeout(() => {
+        if (pendingRestoreVoice) {
+          pendingRestoreVoice = null;
+          _playPendingRetries = 0;
+          if (!chosenVoice && voiceList.length) _pickDefaultVoice();
+        }
+      }, 8000);
     } else {
       if (voiceList.length && !chosenVoice) {
         _pickDefaultVoice();
@@ -1412,7 +1808,10 @@ const Reader = (() => {
 
   function _updateSeekBar() {
     const p = totalDuration > 0 ? (elapsedTime / totalDuration) * 100 : 0;
-    document.getElementById('pbSeeker').value = p;
+    const seeker = document.getElementById('pbSeeker');
+    if (!seeker) return;
+    seeker.value = p;
+    seeker.style.setProperty('--seeker-pct', p.toFixed(2) + '%');
   }
 
   function saveBookmark() {
@@ -1460,10 +1859,19 @@ const Reader = (() => {
 
   // ── AUDIOBOOK MODE ──────────────────────────────────────────
 
+  function _setVoiceControlsVisible(visible) {
+    const section = document.getElementById('rpVoiceSection');
+    if (!section) return;
+    section.style.display = visible ? '' : 'none';
+  }
+
   function loadAudioBook(bookData, resumeData) {
     audioMode = true;
+    _setVoiceControlsVisible(false);
     audioBookData = bookData;
     bookId = bookData.id;
+    currentCoverPath = bookData.cover_path || '';
+    _updatePlayerCover();
     chunks = [];
 
     // Hide text/pdf reader, show audio reader
@@ -1477,6 +1885,7 @@ const Reader = (() => {
     audioElement = document.getElementById('audioPlayer');
     audioElement.src = 'file:///' + bookData.file_path.replace(/\\/g, '/');
     audioElement.playbackRate = speed;
+    audioElement.volume = volume;
 
     // Set title
     document.getElementById('rasTitle').textContent = bookData.title;
@@ -1513,14 +1922,24 @@ const Reader = (() => {
     audioElement.removeEventListener('ended', _onAudioEnded);
     audioElement.addEventListener('ended', _onAudioEnded);
 
-    // Update topbar
-    document.getElementById('tbCenter').textContent = bookData.title;
+    // Update topbar and player bar book info
+    _setTopbarTitle(bookData.title || '');
+    const pmTitle = document.getElementById('pbMetaTitle');
+    const pmAuthor = document.getElementById('pbMetaAuthor');
+    if (pmTitle) pmTitle.textContent = bookData.title || '';
+    if (pmAuthor) pmAuthor.textContent = bookData.author || '';
 
-    // Chapter list (single entry for audiobook)
-    document.getElementById('chaptersLabel').textContent = 'Audiobook';
-    document.getElementById('chaptersCount').textContent = '1';
-    document.getElementById('chaptersList').innerHTML =
-      '<div class="chapter-item active"><span class="ci-name">' + _escHtml(bookData.title) + '</span></div>';
+    // Left nav panel — single entry for audiobook
+    const navLabel = document.getElementById('navListLabel');
+    const navCount = document.getElementById('navListCount');
+    const navList  = document.getElementById('navChapterList');
+    if (navLabel) navLabel.textContent = 'Audiobook';
+    if (navCount) navCount.textContent = '1';
+    if (navList)  navList.innerHTML =
+      '<div class="nav-ch-item active" id="nav-ch-item-0"><span class="nav-ci-name">' + _escHtml(bookData.title) + '</span></div>';
+
+    // Sync tray + mini player
+    _pushPlayerState();
   }
 
   function _onAudioMeta() {
@@ -1540,13 +1959,18 @@ const Reader = (() => {
 
     const pct = audioElement.duration > 0
       ? (audioElement.currentTime / audioElement.duration) * 100 : 0;
-    document.getElementById('pbSeeker').value = pct;
+    const seeker = document.getElementById('pbSeeker');
+    if (seeker) {
+      seeker.value = pct;
+      seeker.style.setProperty('--seeker-pct', pct.toFixed(2) + '%');
+    }
   }
 
   function _onAudioEnded() {
     isPlaying = false;
     _updatePlayIcon(false);
     _saveAudioProgress(true);
+    _pushPlayerState();
     UI.toast('Audiobook complete!', 'success');
   }
 
@@ -1564,6 +1988,7 @@ const Reader = (() => {
       _stopTimer();
       _saveAudioProgress();
     }
+    _pushPlayerState();
   }
 
   function _saveAudioProgress(finished = false) {
@@ -1586,12 +2011,19 @@ const Reader = (() => {
     initVoices, refreshVoices, filterVoices, renderVoiceList,
     selectVoice, previewVoice, previewSelectedVoice,
     loadBook, loadAudioBook,
-    togglePlay, stop, skipChunk, jumpToChunk, seekAudio,
-    cycleSpeed, onSpeedChange, onPitchChange,
+    togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
+    cycleSpeed, onSpeedChange, onPitchChange, onVolumeChange, toggleMute,
+    onFontChange, onFontSizeChange, onLineHeightChange, onReaderWidthChange,
     applySettings,
+    /** Update the skip chars at runtime (called from settings save) */
+    setSkipChars:   (val)  => { ttsSkipChars   = val || ''; },
+    setSkipWords:   (val)  => { ttsSkipWords   = val || ''; },
+    setSkipEnabled: (val)  => { ttsSkipEnabled = !!val; _updateSkipBtn(); },
+    setBookCoverPath,
+    toggleSkipChars,
     saveProgress: _saveProgress,
     saveBookmark,
-    getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, chosenVoice }),
+    getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, volume, chosenVoice }),
     getChunks: () => chunks
   };
 })();

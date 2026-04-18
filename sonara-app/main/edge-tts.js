@@ -11,6 +11,7 @@
 
 const crypto = require('crypto');
 const https  = require('https');
+const zlib   = require('zlib');
 
 // ── CONSTANTS ────────────────────────────────────────────
 const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
@@ -73,7 +74,8 @@ function generateConnectionId() {
 // ── HEADERS ──────────────────────────────────────────────
 const BASE_HEADERS = {
   'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/${CHROMIUM_MAJOR_VERSION}.0.0.0`,
-  'Accept-Encoding': 'gzip, deflate, br, zstd',
+  // Keep encodings to formats Node can decode reliably.
+  'Accept-Encoding': 'gzip, deflate, br',
   'Accept-Language': 'en-US,en;q=0.9',
 };
 
@@ -98,6 +100,15 @@ const VOICE_HEADERS = {
   'Sec-Fetch-Dest': 'empty',
 };
 
+function decodeHttpBody(buffer, contentEncoding) {
+  const encoding = (contentEncoding || '').toLowerCase().trim();
+  if (!encoding || encoding === 'identity') return buffer;
+  if (encoding.includes('br')) return zlib.brotliDecompressSync(buffer);
+  if (encoding.includes('gzip')) return zlib.gunzipSync(buffer);
+  if (encoding.includes('deflate')) return zlib.inflateSync(buffer);
+  return buffer;
+}
+
 // ── VOICE LIST CACHE ─────────────────────────────────────
 let cachedVoices = null;
 let cacheTime    = 0;
@@ -112,14 +123,38 @@ async function getVoices() {
   }
 
   return new Promise((resolve, reject) => {
+    const voiceHeaders = {
+      ...VOICE_HEADERS,
+      'Sec-MS-GEC': generateSecMsGec(),
+      'Sec-MS-GEC-Version': SEC_MS_GEC_VERSION,
+      'Cookie': `muid=${generateMuid()};`,
+    };
+
     https.get(VOICE_LIST_URL, {
-      headers: VOICE_HEADERS
+      headers: voiceHeaders,
+      timeout: 15000,
     }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         try {
+          const status = res.statusCode || 0;
+          const rawBuffer = Buffer.concat(chunks);
+          const decoded = decodeHttpBody(rawBuffer, res.headers['content-encoding']);
+          const data = decoded.toString('utf8');
+
+          if (status < 200 || status >= 300) {
+            const bodySnippet = data.slice(0, 180).replace(/\s+/g, ' ');
+            reject(new Error(`Edge voice list HTTP ${status}${bodySnippet ? `: ${bodySnippet}` : ''}`));
+            return;
+          }
+
           const voices = JSON.parse(data);
+          if (!Array.isArray(voices)) {
+            reject(new Error('Edge voice list returned invalid payload'));
+            return;
+          }
+
           cachedVoices = voices.map(v => ({
             name:         v.ShortName,
             friendlyName: v.FriendlyName,
@@ -136,7 +171,11 @@ async function getVoices() {
         }
       });
       res.on('error', reject);
-    }).on('error', reject);
+    })
+      .on('timeout', function() {
+        this.destroy(new Error('Edge voice list request timed out'));
+      })
+      .on('error', reject);
   });
 }
 

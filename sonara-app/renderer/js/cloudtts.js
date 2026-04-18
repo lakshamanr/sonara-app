@@ -17,6 +17,7 @@ const CloudTTS = (() => {
   let onBoundaryCb  = null;
   let requestId     = 0;       // Monotonic counter to cancel stale synthesis
   let boundaryRafId = null;    // requestAnimationFrame ID for word tracking
+  let volume        = 1.0;     // Global output volume (0..1)
 
   // ── LOAD VOICES FROM EDGE TTS SERVICE ──────────────────
   async function loadVoices() {
@@ -127,6 +128,7 @@ const CloudTTS = (() => {
 
       currentAudio = new Audio(url);
       currentAudio.playbackRate = 1.0; // Rate already applied in SSML
+      currentAudio.volume = volume;
       onEndCb = onEnd;
 
       // Word boundary highlighting — poll at ~60fps for smooth tracking
@@ -247,6 +249,18 @@ const CloudTTS = (() => {
     return currentAudio && !currentAudio.paused && !currentAudio.ended;
   }
 
+  function setVolume(val) {
+    const next = Number.isFinite(val) ? Math.max(0, Math.min(1, val)) : 1.0;
+    volume = next;
+    if (currentAudio) {
+      currentAudio.volume = next;
+    }
+  }
+
+  function getVolume() {
+    return volume;
+  }
+
   return {
     loadVoices,
     shouldEnable,
@@ -258,7 +272,9 @@ const CloudTTS = (() => {
     stop,
     pause,
     resume,
-    isPlaying
+    isPlaying,
+    setVolume,
+    getVolume
   };
 
 })();

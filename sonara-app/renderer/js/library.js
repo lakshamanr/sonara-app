@@ -16,11 +16,18 @@ const Library = (() => {
   let _assignBookId = null;     // for assign-to-collection modal
   let _editCollectionId = null; // for edit collection modal
   let _contextMenu = null;      // active context menu element
+  let _currentGroupKey = null;  // for format picker modal
+  let _playingBookId = null;
+  let _isPlaying = false;
+  let _renameBookIds = [];
+  let _renameMode = 'single';
 
   const AUDIO_FORMATS = ['mp3', 'm4b', 'm4a', 'ogg'];
 
   // ── LOAD ─────────────────────────────────────────────────
   async function load() {
+    _renderSkeletonGrid();
+
     try {
       books = await window.sonara.library.getAll() || [];
       collections = await window.sonara.collections.getAll() || [];
@@ -42,6 +49,7 @@ const Library = (() => {
       if (!_initialized) {
         _initSearchAndFilters();
         _initCollectionListeners();
+        _initSetCoverModal();
         _initialized = true;
       }
 
@@ -49,6 +57,21 @@ const Library = (() => {
       books = [];
       renderGrid();
     }
+  }
+
+  function _renderSkeletonGrid() {
+    const grid  = document.getElementById('libGrid');
+    const empty = document.getElementById('libEmptyHero');
+    if (!grid || !empty) return;
+
+    empty.style.display = 'none';
+    grid.innerHTML = Array.from({ length: 8 }, () => (
+      '<div class="lib-card-skeleton">' +
+        '<div class="skel-cover"></div>' +
+        '<div class="skel-line"></div>' +
+        '<div class="skel-line short"></div>' +
+      '</div>'
+    )).join('');
   }
 
   // ── FILTER + SORT ─────────────────────────────────────────
@@ -122,8 +145,10 @@ const Library = (() => {
       return;
     }
 
-    grid.innerHTML = filtered.map(b => _coverCardHTML(b)).join('');
+    const groups = _buildGroups(filtered);
+    grid.innerHTML = groups.map(g => g.books.length > 1 ? _groupCardHTML(g) : _coverCardHTML(g.books[0])).join('');
     _attachCardListeners();
+    _syncPlaybackMarkers();
   }
 
   function _coverCardHTML(b) {
@@ -145,12 +170,16 @@ const Library = (() => {
         '<span class="lc-cover-title">' + title + '</span></div>';
     }
 
-    return '<div class="lib-card" data-book-id="' + b.id + '" data-format="' + b.format + '">' +
+    const isCurrent = App.currentBookId === b.id;
+    const isNowPlaying = _isPlaying && _playingBookId === b.id;
+
+    return '<div class="lib-card' + (isCurrent ? ' is-current' : '') + (isNowPlaying ? ' is-now-playing' : '') + '" data-book-id="' + b.id + '" data-format="' + b.format + '">' +
       '<button class="lc-menu-btn" data-menu-id="' + b.id + '" title="More options">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">' +
           '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' +
         '</svg></button>' +
       '<div class="lc-cover">' +
+        _playbackBadgeHTML() +
         coverHTML +
         '<span class="lc-format-badge ' + fmtClass + '">' + fmtLabel + '</span>' +
         '<div class="lc-progress-bar"><div class="lc-progress-fill" style="width:' + pct + '%"></div></div>' +
@@ -169,6 +198,99 @@ const Library = (() => {
       '</div></div>';
   }
 
+  // ── TITLE NORMALISATION & GROUPING ──────────────────────
+  function _normalizeTitle(title) {
+    return (title || '')
+      .toLowerCase()
+      .replace(/[_\-–—]+/g, ' ')                        // separators → space
+      .replace(/[^\w\s]/g, ' ')                          // other punctuation → space
+      .replace(/\b(the|a|an)\b/g, ' ')                  // drop leading articles
+      .replace(/\b(unabridged|audiobook|audio\s*book|narrated\s*by|complete|full)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function _buildGroups(filtered) {
+    const groupMap = new Map();
+    for (const book of filtered) {
+      const key = _normalizeTitle(book.title);
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key).push(book);
+    }
+    const seen = new Set();
+    const result = [];
+    for (const book of filtered) {
+      const key = _normalizeTitle(book.title);
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ key, books: groupMap.get(key) });
+      }
+    }
+    return result;
+  }
+
+  // ── GROUP CARD HTML ───────────────────────────────────────
+  function _groupCardHTML(group) {
+    const grpBooks = group.books;
+    const rep   = grpBooks.find(b => b.cover_path) || grpBooks[0];
+    const pct   = Math.max(...grpBooks.map(b => b.percent || 0));
+    const title = _escHtml(rep.title);
+    const hasActive = grpBooks.some(b => b.status === 'reading');
+    const ids = grpBooks.map(b => String(b.id));
+    const currentId = String(App.currentBookId || '');
+    const playingId = String(_playingBookId || '');
+    const isCurrent = !!currentId && ids.includes(currentId);
+    const isNowPlaying = _isPlaying && !!playingId && ids.includes(playingId);
+
+    let coverHTML;
+    if (rep.cover_path) {
+      coverHTML = '<img class="lc-cover-img" src="file:///' + _escHtml(rep.cover_path.replace(/\\/g, '/')) + '" alt="" />';
+    } else {
+      const style  = _generatePlaceholderStyle(rep.title);
+      const letter = _escHtml((rep.title || '?')[0].toUpperCase());
+      coverHTML = '<div class="lc-cover-placeholder" style="' + style + '">' +
+        '<span class="lc-cover-letter">' + letter + '</span>' +
+        '<span class="lc-cover-title">' + title + '</span></div>';
+    }
+
+    const badges = grpBooks.map(b => {
+      const isAudio = AUDIO_FORMATS.includes(b.format);
+      const label   = isAudio ? 'AUDIO' : b.format.toUpperCase();
+      const cls     = isAudio ? 'audio' : b.format;
+      return '<span class="lc-format-badge lcg-badge ' + cls + '">' + label + '</span>';
+    }).join('');
+
+    return '<div class="lib-card lib-card-group' + (isCurrent ? ' is-current' : '') + (isNowPlaying ? ' is-now-playing' : '') + '" data-group-key="' + _escHtml(group.key) + '" data-book-ids="' + ids.join(',') + '">' +
+      '<div class="lcg-stack lcg-stack-2"></div>' +
+      '<div class="lcg-stack lcg-stack-1"></div>' +
+      '<button class="lc-menu-btn" data-menu-group="' + _escHtml(group.key) + '" title="More options">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">' +
+          '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' +
+        '</svg></button>' +
+      '<div class="lc-cover">' +
+        _playbackBadgeHTML() +
+        coverHTML +
+        '<div class="lcg-badges">' + badges + '</div>' +
+        '<div class="lc-progress-bar"><div class="lc-progress-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="lc-hover-overlay">' +
+          '<button class="lc-play-btn" title="Choose Format">' +
+            '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+              '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>' +
+              '<line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>' +
+              '<line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>' +
+            '</svg>' +
+          '</button></div>' +
+      '</div>' +
+      '<div class="lc-info">' +
+        '<div class="lc-title" title="' + title + '">' + title + '</div>' +
+        (rep.author ? '<div class="lc-author">' + _escHtml(rep.author) + '</div>' : '') +
+        '<div class="lc-meta">' +
+          '<span class="lcg-count">' + grpBooks.length + ' formats</span>' +
+          (hasActive ? '<span class="lc-status reading">In progress</span>' : '') +
+        '</div>' +
+      '</div></div>';
+  }
+
   function _generatePlaceholderStyle(title) {
     let hash = 0;
     for (let i = 0; i < title.length; i++) {
@@ -180,21 +302,74 @@ const Library = (() => {
     return 'background:linear-gradient(135deg,hsl(' + hue1 + ',25%,15%),hsl(' + hue2 + ',30%,22%))';
   }
 
+  function _playbackBadgeHTML() {
+    return '<span class="lc-now-playing" style="display:none">' +
+      '<span class="lc-np-eq"><i></i><i></i><i></i></span>' +
+    '</span>';
+  }
+
   function _attachCardListeners() {
-    // Card click -> open book
-    document.querySelectorAll('.lib-card').forEach(card => {
+    // Single card click -> open book
+    document.querySelectorAll('.lib-card:not(.lib-card-group)').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('.lc-menu-btn')) return;
-        const id = card.dataset.bookId;
-        App.openBook(id).catch(err => console.error('openBook error:', err));
+        App.openBook(card.dataset.bookId).catch(err => console.error('openBook error:', err));
       });
     });
-    // Menu button -> context menu
-    document.querySelectorAll('.lc-menu-btn').forEach(btn => {
+    // Group card click -> format picker
+    document.querySelectorAll('.lib-card-group').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.lc-menu-btn')) return;
+        _showFormatPicker(card.dataset.groupKey);
+      });
+    });
+    // Single card menu button
+    document.querySelectorAll('.lc-menu-btn[data-menu-id]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const id = btn.dataset.menuId;
-        _showContextMenu(e, id);
+        _showContextMenu(e, btn.dataset.menuId);
+      });
+    });
+    // Group card menu button
+    document.querySelectorAll('.lc-menu-btn[data-menu-group]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _showGroupContextMenu(e, btn.dataset.menuGroup);
+      });
+    });
+
+    _attachCardDragListeners();
+  }
+
+  function _attachCardDragListeners() {
+    document.querySelectorAll('.lib-card').forEach(card => {
+      card.setAttribute('draggable', 'true');
+
+      card.addEventListener('dragstart', (e) => {
+        if (e.target.closest('.lc-menu-btn')) {
+          e.preventDefault();
+          return;
+        }
+
+        const ids = card.dataset.bookIds
+          ? String(card.dataset.bookIds).split(',').map(id => id.trim()).filter(Boolean)
+          : (card.dataset.bookId ? [String(card.dataset.bookId)] : []);
+
+        if (!ids.length) {
+          e.preventDefault();
+          return;
+        }
+
+        const payload = JSON.stringify({ bookIds: ids });
+        e.dataTransfer.setData('application/x-sonara-books', payload);
+        e.dataTransfer.setData('text/plain', payload);
+        e.dataTransfer.effectAllowed = 'move';
+        card.classList.add('is-dragging');
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('is-dragging');
+        document.querySelectorAll('.collection-item.drag-over').forEach(el => el.classList.remove('drag-over'));
       });
     });
   }
@@ -209,7 +384,10 @@ const Library = (() => {
     menu.className = 'lib-context-menu';
     menu.innerHTML =
       '<div class="lib-ctx-item" data-action="open">Open</div>' +
+      '<div class="lib-ctx-item" data-action="rename">Rename Book</div>' +
       '<div class="lib-ctx-item" data-action="assign">Add to Collection</div>' +
+      '<div class="lib-ctx-item" data-action="classify">✨ Auto-classify</div>' +
+      '<div class="lib-ctx-item" data-action="setcover">🖼 Set Cover Image</div>' +
       '<div class="lib-ctx-sep"></div>' +
       '<div class="lib-ctx-item danger" data-action="delete">Remove from Library</div>';
 
@@ -225,9 +403,15 @@ const Library = (() => {
     menu.addEventListener('click', async (ev) => {
       const action = ev.target.closest('.lib-ctx-item')?.dataset.action;
       _closeContextMenu();
-      if (action === 'open')   App.openBook(bookId).catch(err => console.error('openBook error:', err));
-      if (action === 'assign') showAssignModal(bookId);
-      if (action === 'delete') deleteBook(bookId);
+      if (action === 'open')     App.openBook(bookId).catch(err => console.error('openBook error:', err));
+      if (action === 'rename')   renameBook(bookId);
+      if (action === 'assign')   showAssignModal(bookId);
+      if (action === 'classify') {
+        UI.toast('Classifying…', 'success', 2000);
+        App._classifyExisting(bookId, book.title);
+      }
+      if (action === 'setcover') setCoverImage(bookId);
+      if (action === 'delete')   deleteBook(bookId);
     });
 
     // Close on outside click
@@ -238,6 +422,203 @@ const Library = (() => {
 
   function _closeContextMenu() {
     if (_contextMenu) { _contextMenu.remove(); _contextMenu = null; }
+  }
+
+  // ── GROUP CONTEXT MENU ────────────────────────────────────
+  function _showGroupContextMenu(e, key) {
+    _closeContextMenu();
+    const grpBooks = _buildGroups(_getFilteredBooks()).find(g => g.key === key)?.books || [];
+    if (!grpBooks.length) return;
+    const rep = grpBooks.find(b => b.cover_path) || grpBooks[0];
+
+    const menu = document.createElement('div');
+    menu.className = 'lib-context-menu';
+    menu.innerHTML =
+      '<div class="lib-ctx-item" data-action="open">Choose Format…</div>' +
+      '<div class="lib-ctx-item" data-action="renamegroup">Rename All Versions</div>' +
+      '<div class="lib-ctx-item" data-action="classify">✨ Auto-classify</div>' +
+      '<div class="lib-ctx-item" data-action="setcover">🖼 Set Cover Image</div>' +
+      '<div class="lib-ctx-sep"></div>' +
+      '<div class="lib-ctx-item danger" data-action="deletegroup">Remove All Versions</div>';
+
+    document.body.appendChild(menu);
+    const x = Math.min(e.clientX, window.innerWidth - 210);
+    const y = Math.min(e.clientY, window.innerHeight - 180);
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+    _contextMenu = menu;
+
+    menu.addEventListener('click', async (ev) => {
+      const action = ev.target.closest('.lib-ctx-item')?.dataset.action;
+      _closeContextMenu();
+      if (action === 'open')        _showFormatPicker(key);
+      if (action === 'renamegroup') renameGroupBooks(key, rep.title);
+      if (action === 'classify') { UI.toast('Classifying…', 'success', 2000); App._classifyExisting(rep.id, rep.title); }
+      if (action === 'setcover')    setCoverImage(rep.id);
+      if (action === 'deletegroup') {
+        const titles = grpBooks.map(b => b.format.toUpperCase()).join(', ');
+        if (!confirm('Remove all ' + grpBooks.length + ' versions of "' + rep.title + '" (' + titles + ') from your library?')) return;
+        for (const b of grpBooks) {
+          await window.sonara.library.deleteBook(b.id);
+          const last = await window.sonara.settings.get('lastBookId', null);
+          if (last === b.id) await window.sonara.settings.set('lastBookId', '');
+          if (App.currentBookId === b.id) App.clearCurrentBook();
+        }
+        await load();
+        UI.toast(grpBooks.length + ' versions removed', '');
+      }
+    });
+    setTimeout(() => { document.addEventListener('click', _closeContextMenu, { once: true }); }, 10);
+  }
+
+  // ── FORMAT PICKER MODAL ───────────────────────────────────
+  function _showFormatPicker(key) {
+    _currentGroupKey = key;
+    const groups  = _buildGroups(_getFilteredBooks());
+    const group   = groups.find(g => g.key === key);
+    if (!group) return;
+
+    const rep = group.books[0];
+    document.getElementById('fpTitle').textContent = rep.title;
+    document.getElementById('fpCount').textContent = group.books.length + ' version' + (group.books.length > 1 ? 's' : '') + ' available';
+
+    const listEl = document.getElementById('fpList');
+    listEl.innerHTML = group.books.map(b => {
+      const isAudio   = AUDIO_FORMATS.includes(b.format);
+      const fmtLabel  = isAudio ? 'Audiobook' : b.format.toUpperCase();
+      const fmtClass  = isAudio ? 'audio' : b.format;
+      const pct       = b.percent || 0;
+      const statusLbl = { unstarted: 'Not started', reading: 'In progress', done: 'Completed' }[b.status] || '';
+
+      let iconSvg;
+      if (isAudio) {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+      } else if (b.format === 'epub' || b.format === 'mobi' || b.format === 'azw3') {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+      } else {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+      }
+
+      let coverThumb = '';
+      if (b.cover_path) {
+        coverThumb = '<img class="fp-thumb" src="file:///' + b.cover_path.replace(/\\/g, '/') + '" alt=""/>';
+      }
+
+      return '<div class="fp-item" data-book-id="' + b.id + '">' +
+        '<div class="fp-icon fp-icon-' + fmtClass + '">' + iconSvg + '</div>' +
+        '<div class="fp-info">' +
+          '<div class="fp-format">' + fmtLabel + ' <span class="fp-ext">.' + b.format + '</span></div>' +
+          '<div class="fp-progress-bar"><div class="fp-progress-fill" style="width:' + pct + '%"></div></div>' +
+          '<div class="fp-meta">' + pct + '% &middot; ' + statusLbl + '</div>' +
+        '</div>' +
+        '<button class="fp-open-btn" data-book-id="' + b.id + '">Open</button>' +
+      '</div>';
+    }).join('');
+
+    listEl.querySelectorAll('.fp-open-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        UI.closeModal('modalFormatPicker');
+        await App.openBook(btn.dataset.bookId);
+      });
+    });
+
+    UI.openModal('modalFormatPicker');
+  }
+
+  // ── SET COVER IMAGE MODAL ─────────────────────────────────
+  let _setCoverId   = null;
+  let _setCoverPath = null; // chosen image path
+
+  async function setCoverImage(bookId) {
+    _setCoverId   = bookId;
+    _setCoverPath = null;
+    const book = books.find(b => b.id === bookId);
+    document.getElementById('setCoverSub').textContent =
+      'Choose a cover for "' + _escHtml(book?.title || '') + '"';
+    _scReset();
+    UI.openModal('modalSetCover');
+  }
+
+  function _scReset() {
+    _setCoverPath = null;
+    document.getElementById('scPreviewWrap').style.display = 'none';
+    document.getElementById('scPlaceholder').style.display = 'flex';
+    document.getElementById('scPreviewImg').src = '';
+    document.getElementById('scSaveBtn').disabled = true;
+  }
+
+  function _scSetPreview(filePath) {
+    _setCoverPath = filePath;
+    const img = document.getElementById('scPreviewImg');
+    img.src = 'file:///' + filePath.replace(/\\/g, '/');
+    document.getElementById('scPreviewWrap').style.display = 'flex';
+    document.getElementById('scPlaceholder').style.display = 'none';
+    document.getElementById('scSaveBtn').disabled = false;
+  }
+
+  async function _scSave() {
+    if (!_setCoverId || !_setCoverPath) return;
+    try {
+      await window.sonara.cover.saveFromFile(_setCoverId, _setCoverPath);
+      UI.closeModal('modalSetCover');
+      UI.toast('Cover image updated!', 'success');
+      await load();
+    } catch (err) {
+      UI.toast('Could not save cover: ' + (err.message || err), 'error');
+    }
+  }
+
+  function _initSetCoverModal() {
+    const dropZone   = document.getElementById('scDropZone');
+    const browseBtn  = document.getElementById('scBrowseBtn');
+    const clearBtn   = document.getElementById('scClearBtn');
+    const saveBtn    = document.getElementById('scSaveBtn');
+
+    // Browse button → file picker dialog
+    browseBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const imagePath = await window.sonara.dialog.openImage();
+      if (imagePath) _scSetPreview(imagePath);
+    });
+
+    // Click anywhere on drop zone → file picker
+    dropZone.addEventListener('click', async (e) => {
+      if (e.target.closest('#scBrowseBtn') || e.target.closest('#scClearBtn')) return;
+      if (document.getElementById('scPreviewWrap').style.display !== 'none') return;
+      const imagePath = await window.sonara.dialog.openImage();
+      if (imagePath) _scSetPreview(imagePath);
+    });
+
+    // Clear preview
+    clearBtn.addEventListener('click', (e) => { e.stopPropagation(); _scReset(); });
+
+    // Save button
+    saveBtn.addEventListener('click', _scSave);
+
+    // Drag-and-drop
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer?.files?.[0];
+      if (file && file.type.startsWith('image/')) {
+        // Use file URL path for local files
+        const url = URL.createObjectURL(file);
+        // We need the real path — Electron exposes it via file.path
+        if (file.path) {
+          _scSetPreview(file.path);
+          URL.revokeObjectURL(url);
+        } else {
+          // Fallback: show blob preview only (no save path)
+          document.getElementById('scPreviewImg').src = url;
+          document.getElementById('scPreviewWrap').style.display = 'flex';
+          document.getElementById('scPlaceholder').style.display = 'none';
+          document.getElementById('scSaveBtn').disabled = true;
+          UI.toast('Drag-and-drop works best with local files. Use Browse instead.', 'error', 3000);
+        }
+      }
+    });
   }
 
   // ── RENDER COLLECTIONS SIDEBAR ────────────────────────────
@@ -255,13 +636,18 @@ const Library = (() => {
       return;
     }
 
-    container.innerHTML = collections.map(c => {
+    const ordered = _orderedCollections();
+    container.innerHTML = ordered.map(({ col: c, depth }) => {
       const count = bookCollectionMap[c.id]?.size || 0;
       const isActive = activeCollection === c.id;
+      const marker = depth > 0 ? '<span class="collection-tree-marker">↳</span>' : '';
       return '<div class="collection-item' + (isActive ? ' active' : '') + '" data-collection="' + c.id + '">' +
+        '<span class="collection-indent" style="--indent:' + (depth * 14) + 'px"></span>' +
+        marker +
         '<div class="user-col-dot" style="background:' + _escHtml(c.color) + '"></div>' +
         '<span class="col-name">' + _escHtml(c.name) + '</span>' +
         '<span class="col-count">' + count + '</span>' +
+        '<button class="col-add-child-btn" data-col-child="' + c.id + '" title="Create subfolder">+</button>' +
         '<button class="col-delete-btn" data-col-del="' + c.id + '" title="Delete collection">&times;</button>' +
       '</div>';
     }).join('');
@@ -281,6 +667,129 @@ const Library = (() => {
         _deleteCollection(colId);
       });
     });
+    container.querySelectorAll('.col-add-child-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const colId = parseInt(btn.dataset.colChild, 10);
+        showCreateCollectionModal(colId);
+      });
+    });
+
+    _wireCollectionDropTargets(container);
+  }
+
+  function _wireCollectionDropTargets(container) {
+    container.querySelectorAll('.collection-item[data-collection]').forEach(item => {
+      const colId = parseInt(item.dataset.collection, 10);
+      if (Number.isNaN(colId)) return;
+
+      item.addEventListener('dragover', (e) => {
+        if (!_hasBookDragData(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        item.classList.add('drag-over');
+      });
+
+      item.addEventListener('dragleave', (e) => {
+        if (!item.contains(e.relatedTarget)) {
+          item.classList.remove('drag-over');
+        }
+      });
+
+      item.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        item.classList.remove('drag-over');
+        const ids = _extractDraggedBookIds(e);
+        if (!ids.length) return;
+
+        const addedCount = await _addBooksToCollection(ids, colId);
+        if (!addedCount) {
+          UI.toast('Book already in this collection', '', 1800);
+          return;
+        }
+
+        const col = collections.find(c => c.id === colId);
+        const label = col?.name || 'collection';
+        const noun = addedCount === 1 ? 'book' : 'books';
+        UI.toast('Added ' + addedCount + ' ' + noun + ' to ' + label, 'success', 2200);
+        await load();
+      });
+    });
+  }
+
+  function _extractDraggedBookIds(e) {
+    const custom = e.dataTransfer?.getData('application/x-sonara-books') || '';
+    const plain = e.dataTransfer?.getData('text/plain') || '';
+    const raw = custom || plain;
+    if (!raw) return [];
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.bookIds)) {
+        return parsed.bookIds.map(id => String(id).trim()).filter(Boolean);
+      }
+    } catch {
+      return [];
+    }
+    return [];
+  }
+
+  function _hasBookDragData(e) {
+    const types = Array.from(e.dataTransfer?.types || []);
+    return types.includes('application/x-sonara-books') || types.includes('text/plain');
+  }
+
+  async function _addBooksToCollection(bookIds, collectionId) {
+    let added = 0;
+    const uniqueIds = [...new Set(bookIds.map(id => String(id)))] ;
+    if (!bookCollectionMap[collectionId]) bookCollectionMap[collectionId] = new Set();
+
+    for (const bookId of uniqueIds) {
+      const alreadyIn = bookCollectionMap[collectionId].has(bookId);
+      if (alreadyIn) continue;
+      try {
+        await window.sonara.collections.addBook(bookId, collectionId);
+        bookCollectionMap[collectionId].add(bookId);
+        added++;
+      } catch {
+        // Ignore duplicates/race errors and continue with remaining books.
+      }
+    }
+
+    return added;
+  }
+
+  function _orderedCollections() {
+    const byParent = new Map();
+    for (const col of collections) {
+      const parent = Number.isInteger(col.parent_id) ? col.parent_id : null;
+      if (!byParent.has(parent)) byParent.set(parent, []);
+      byParent.get(parent).push(col);
+    }
+    for (const arr of byParent.values()) {
+      arr.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
+    }
+
+    const ordered = [];
+    const seen = new Set();
+    const walk = (parentId, depth) => {
+      const children = byParent.get(parentId) || [];
+      for (const child of children) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        ordered.push({ col: child, depth });
+        walk(child.id, depth + 1);
+      }
+    };
+
+    walk(null, 0);
+
+    for (const col of collections) {
+      if (!seen.has(col.id)) {
+        ordered.push({ col, depth: 0 });
+      }
+    }
+    return ordered;
   }
 
   function _setActiveCollection(val) {
@@ -296,15 +805,37 @@ const Library = (() => {
   }
 
   // ── COLLECTION CRUD ───────────────────────────────────────
-  function showCreateCollectionModal() {
+  function showCreateCollectionModal(parentId = null) {
     _editCollectionId = null;
     document.getElementById('colModalTitle').textContent = 'New Collection';
     document.getElementById('colNameInput').value = '';
     document.getElementById('colModalSave').textContent = 'Create';
+    _populateParentOptions(parentId);
     // Reset color swatches
     document.querySelectorAll('.col-swatch').forEach((s, i) => s.classList.toggle('active', i === 0));
     UI.openModal('modalCollection');
     document.getElementById('colNameInput').focus();
+  }
+
+  function _populateParentOptions(selectedParentId = null) {
+    const select = document.getElementById('colParentSelect');
+    if (!select) return;
+
+    const ordered = _orderedCollections();
+    const options = ['<option value="">Top level</option>'];
+    for (const { col, depth } of ordered) {
+      const indent = '&nbsp;'.repeat(depth * 4);
+      options.push('<option value="' + col.id + '">' + indent + _escHtml(col.name) + '</option>');
+    }
+    select.innerHTML = options.join('');
+
+    const activeParent = Number.isInteger(selectedParentId)
+      ? selectedParentId
+      : (typeof activeCollection === 'number' ? activeCollection : null);
+
+    if (activeParent !== null) {
+      select.value = String(activeParent);
+    }
   }
 
   async function _saveCollection() {
@@ -313,13 +844,15 @@ const Library = (() => {
 
     const activeSwatch = document.querySelector('.col-swatch.active');
     const color = activeSwatch?.dataset.color || '#c8a96e';
+    const parentRaw = document.getElementById('colParentSelect')?.value;
+    const parentId = parentRaw ? parseInt(parentRaw, 10) : null;
 
     try {
       if (_editCollectionId) {
-        await window.sonara.collections.update(_editCollectionId, { name, color });
+        await window.sonara.collections.update(_editCollectionId, { name, color, parent_id: parentId });
         UI.toast('Collection updated', 'success');
       } else {
-        await window.sonara.collections.create(name, color);
+        await window.sonara.collections.create(name, color, parentId);
         UI.toast('Collection created', 'success');
       }
       UI.closeModal('modalCollection');
@@ -329,14 +862,37 @@ const Library = (() => {
     }
   }
 
+  let _deleteColResolve = null;
+
   async function _deleteCollection(id) {
     const col = collections.find(c => c.id === id);
     if (!col) return;
-    if (!confirm('Delete collection "' + col.name + '"?\nBooks will not be deleted.')) return;
+    const bookCount = bookCollectionMap[id]?.size || 0;
+
+    // Populate and open the confirmation modal
+    document.getElementById('delColName').textContent      = col.name;
+    document.getElementById('delColDot').style.background  = col.color || '#888';
+    document.getElementById('delColBookCount').textContent = bookCount;
+    document.getElementById('delColSub').textContent =
+      'You are about to delete “' + col.name + '”.';
+
+    const confirmed = await new Promise(resolve => {
+      _deleteColResolve = resolve;
+      document.getElementById('delColConfirmBtn').onclick = () => { resolve(true);  UI.closeModal('modalDeleteCollection'); };
+      UI.openModal('modalDeleteCollection');
+    });
+    _deleteColResolve = null;
+    if (!confirmed) return;
+
     await window.sonara.collections.delete(id);
     if (activeCollection === id) _setActiveCollection('all');
-    UI.toast('Collection deleted', '');
+    UI.toast('Collection “' + col.name + '” deleted — ' + bookCount + ' book(s) kept', 'success', 3500);
     await load();
+  }
+
+  function closeDeleteColModal() {
+    if (_deleteColResolve) { _deleteColResolve(false); _deleteColResolve = null; }
+    UI.closeModal('modalDeleteCollection');
   }
 
   // ── ASSIGN TO COLLECTION ──────────────────────────────────
@@ -428,6 +984,29 @@ const Library = (() => {
     // Add book buttons (library view)
     document.getElementById('libAddBtn').addEventListener('click', () => App.addBook());
     document.getElementById('libEmptyAddBtn').addEventListener('click', () => App.addBook());
+
+    // Drag-and-drop import directly into library grid
+    const gridWrap = document.getElementById('libGridWrap');
+    if (gridWrap) {
+      gridWrap.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        gridWrap.classList.add('drag-over');
+      });
+
+      gridWrap.addEventListener('dragleave', (e) => {
+        if (!gridWrap.contains(e.relatedTarget)) {
+          gridWrap.classList.remove('drag-over');
+        }
+      });
+
+      gridWrap.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        gridWrap.classList.remove('drag-over');
+        const droppedFiles = Array.from(e.dataTransfer?.files || []);
+        if (!droppedFiles.length) return;
+        await App.addDroppedFiles(droppedFiles);
+      });
+    }
   }
 
   function _initCollectionListeners() {
@@ -460,6 +1039,16 @@ const Library = (() => {
 
     // Assign collection modal save
     document.getElementById('assignColSave').addEventListener('click', saveAssignments);
+
+    const renameInput = document.getElementById('renameBookInput');
+    if (renameInput) {
+      renameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveRename();
+        }
+      });
+    }
   }
 
   // ── STATS ─────────────────────────────────────────────────
@@ -566,6 +1155,8 @@ const Library = (() => {
     const reading = books.filter(b => b.status === 'reading').length;
     const readingEl = document.getElementById('lsmReading');
     if (readingEl) readingEl.textContent = reading + ' reading';
+
+    _syncPlaybackMarkers();
   }
 
   // ── ADD BOOK ──────────────────────────────────────────────
@@ -577,6 +1168,82 @@ const Library = (() => {
   }
 
   // ── DELETE ────────────────────────────────────────────────
+  async function renameBook(id) {
+    const book = books.find(b => b.id === id);
+    if (!book) return;
+
+    _renameBookIds = [book.id];
+    _renameMode = 'single';
+
+    const titleEl = document.getElementById('renameBookTitle');
+    const subEl = document.getElementById('renameBookSub');
+    const input = document.getElementById('renameBookInput');
+    if (titleEl) titleEl.textContent = 'Rename Book';
+    if (subEl) subEl.textContent = 'Update the title in your library';
+    if (input) {
+      input.value = book.title || '';
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+    }
+
+    UI.openModal('modalRenameBook');
+  }
+
+  async function renameGroupBooks(groupKey, currentTitle) {
+    const group = _buildGroups(_getFilteredBooks()).find(g => g.key === groupKey);
+    if (!group || !group.books.length) return;
+
+    _renameBookIds = group.books.map(b => b.id);
+    _renameMode = 'group';
+
+    const titleEl = document.getElementById('renameBookTitle');
+    const subEl = document.getElementById('renameBookSub');
+    const input = document.getElementById('renameBookInput');
+    if (titleEl) titleEl.textContent = 'Rename All Versions';
+    if (subEl) subEl.textContent = 'Apply one title to ' + _renameBookIds.length + ' version' + (_renameBookIds.length > 1 ? 's' : '');
+    if (input) {
+      input.value = currentTitle || group.books[0].title || '';
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+    }
+
+    UI.openModal('modalRenameBook');
+  }
+
+  async function saveRename() {
+    if (!_renameBookIds.length) return;
+
+    const input = document.getElementById('renameBookInput');
+    const clean = String(input?.value || '').trim();
+    if (!clean) {
+      UI.toast('Title cannot be empty', 'error');
+      input?.focus();
+      return;
+    }
+
+    let changed = 0;
+    for (const id of _renameBookIds) {
+      const book = books.find(b => b.id === id);
+      if (!book || book.title === clean) continue;
+      await window.sonara.library.updateBook(id, { title: clean });
+      changed++;
+    }
+
+    closeRenameModal();
+    if (!changed) return;
+
+    await load();
+    if (_renameMode === 'group') {
+      UI.toast('Renamed ' + changed + ' version' + (changed > 1 ? 's' : ''), 'success');
+    } else {
+      UI.toast('Book renamed', 'success');
+    }
+  }
+
+  function closeRenameModal() {
+    _renameBookIds = [];
+    _renameMode = 'single';
+    UI.closeModal('modalRenameBook');
+  }
+
   async function deleteBook(id) {
     const book = books.find(b => b.id === id);
     if (!book) return;
@@ -596,6 +1263,59 @@ const Library = (() => {
   function setActiveCard(id) {
     document.querySelectorAll('.book-card').forEach(el => el.classList.remove('active'));
     if (id) document.getElementById('bc-' + id)?.classList.add('active');
+    _syncPlaybackMarkers();
+  }
+
+  function setPlaybackState(bookId, isPlaying) {
+    _playingBookId = bookId || null;
+    _isPlaying = !!isPlaying;
+    _syncPlaybackMarkers();
+  }
+
+  function _syncPlaybackMarkers() {
+    const currentId = String(App.currentBookId || '');
+    const playingId = _isPlaying && _playingBookId ? String(_playingBookId) : '';
+    const playingBook = playingId ? books.find(b => String(b.id) === playingId) : null;
+    const currentBook = currentId ? books.find(b => String(b.id) === currentId) : null;
+
+    document.querySelectorAll('.lib-card').forEach(card => {
+      let ids = [];
+      if (card.dataset.bookId) ids = [String(card.dataset.bookId)];
+      else if (card.dataset.bookIds) ids = String(card.dataset.bookIds).split(',');
+
+      const isCurrent = !!currentId && ids.includes(currentId);
+      const isNowPlaying = !!playingId && ids.includes(playingId);
+
+      card.classList.toggle('is-current', isCurrent);
+      card.classList.toggle('is-now-playing', isNowPlaying);
+
+      const badge = card.querySelector('.lc-now-playing');
+      if (!badge) return;
+
+      if (isNowPlaying) {
+        badge.style.display = 'inline-flex';
+        return;
+      }
+      if (isCurrent) {
+        badge.style.display = 'inline-flex';
+        return;
+      }
+      badge.style.display = 'none';
+    });
+
+    const nowPlayingEl = document.getElementById('libNowPlaying');
+    if (nowPlayingEl) {
+      if (playingBook) {
+        nowPlayingEl.classList.add('active');
+        nowPlayingEl.textContent = 'Now Playing: ' + playingBook.title;
+      } else if (currentBook) {
+        nowPlayingEl.classList.remove('active');
+        nowPlayingEl.textContent = 'Current: ' + currentBook.title;
+      } else {
+        nowPlayingEl.classList.remove('active');
+        nowPlayingEl.textContent = '';
+      }
+    }
   }
 
   // ── ON SHOW (called when switching to library mode) ──────
@@ -621,8 +1341,10 @@ const Library = (() => {
   // ── PUBLIC API ────────────────────────────────────────────
   return {
     load, render: renderGrid, renderGrid, refreshCard, addBookToList,
-    deleteBook, setActiveCard, onShow,
+    deleteBook, setActiveCard, setPlaybackState, onShow,
     showCreateCollectionModal, showAssignModal, saveAssignments,
+    closeDeleteColModal, setCoverImage,
+    saveRename, closeRenameModal,
     getBooks: () => books
   };
 })();
