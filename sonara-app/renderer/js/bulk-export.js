@@ -393,6 +393,7 @@ const BulkExportUI = (() => {
   let _voices       = [];
   let _selectedBooks = [];   // populated when config modal opens
   let _voiceOverrides = {};  // { bookId: { voice, speed, pitch } }
+  let _voicesLoading = false;
 
   // ── HELPERS ───────────────────────────────────────────────
   function _escHtml(s) {
@@ -400,11 +401,56 @@ const BulkExportUI = (() => {
   }
 
   function _defaultVoice() {
-    // Try to pick up the global app voice setting if Reader is active
+    // Get the voice ID from Reader's chosen voice
     try {
       const state = Reader?.getState?.();
-      return state?.chosenVoice?._edgeVoice || 'en-US-AriaNeural';
-    } catch (_) { return 'en-US-AriaNeural'; }
+      const chosenVoice = state?.chosenVoice;
+      
+      // Try to extract the voice identifier in order of likelihood
+      if (chosenVoice?.shortName) return chosenVoice.shortName;
+      if (chosenVoice?._edgeVoice) return chosenVoice._edgeVoice;
+      if (chosenVoice?.Name) return chosenVoice.Name;
+      if (chosenVoice?.name) return chosenVoice.name;
+      if (chosenVoice?.voiceURI) return chosenVoice.voiceURI;
+    } catch (_) {}
+    
+    return 'en-US-AriaNeural'; // Ultimate fallback
+  }
+
+  async function _loadVoices() {
+    // Single concrete source: CloudTTS (already populated by Reader)
+    let voiceList = CloudTTS?.getVoices?.();
+    
+    // If CloudTTS not ready, fetch directly from IPC
+    if (!voiceList || voiceList.length === 0) {
+      try {
+        voiceList = await window.sonara.tts.getVoices() || [];
+      } catch (err) {
+        console.error('[BulkExportUI] Failed to load voices:', err);
+        voiceList = [];
+      }
+    }
+    
+    // Normalize voice objects to ensure they have shortName and name properties
+    _voices = voiceList.map(v => {
+      // If already has shortName and name (CloudTTS format), use as-is
+      if (v.shortName && v.name) {
+        return v;
+      }
+      
+      // Handle raw API format (Name, FriendlyName)
+      if (v.Name || v.name) {
+        return {
+          shortName: v.Name || v.name,      // e.g., 'en-US-AriaNeural'
+          name: v.FriendlyName || v.name,   // e.g., 'Microsoft Aria (Natural)'
+          _edgeVoice: v.Name || v.name,
+          ...v
+        };
+      }
+      
+      // Fallback: use as-is
+      return v;
+    });
   }
 
   // ── OPEN CONFIG ───────────────────────────────────────────
@@ -414,6 +460,11 @@ const BulkExportUI = (() => {
       UI.toast('Select at least one book first', 'error');
       return;
     }
+
+    // Show loading state immediately
+    UI.openModal('modalBulkConfig');
+    const tbody = document.getElementById('bulkCfgTableBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">Loading voices...</td></tr>';
 
     // Load saved concurrency preference
     let savedConcurrency = 3;
@@ -430,15 +481,14 @@ const BulkExportUI = (() => {
     const sub = document.getElementById('bulkConfigSub');
     if (sub) sub.textContent = 'Export ' + _selectedBooks.length + ' book' + (_selectedBooks.length !== 1 ? 's' : '') + ' to M4B.';
 
-    // Lazy-load voice list
-    if (!_voices.length) {
-      try {
-        _voices = await window.sonara.tts.getVoices() || [];
-      } catch (_) { _voices = []; }
+    // Load voices (only once per session)
+    if (!_voicesLoading && _voices.length === 0) {
+      _voicesLoading = true;
+      await _loadVoices();
+      _voicesLoading = false;
     }
 
     _renderConfigTable();
-    UI.openModal('modalBulkConfig');
   }
 
   function _renderConfigTable() {
@@ -453,32 +503,47 @@ const BulkExportUI = (() => {
       const speed = ov.speed != null ? ov.speed : 1.0;
       const pitch = ov.pitch != null ? ov.pitch : 1.0;
 
-      const voiceOptions = _voices.map(v => {
-        const selected = v.ShortName === voice ? ' selected' : '';
-        return '<option value="' + _escHtml(v.ShortName) + '"' + selected + '>' + _escHtml(v.FriendlyName || v.ShortName) + '</option>';
-      }).join('');
-
       const isAudio = ['mp3', 'm4a', 'ogg', 'm4b', 'aac'].includes((book.format || '').toLowerCase());
-      const voiceCell = isAudio
-        ? '<td><span style="color:var(--text-muted);font-size:11px">Re-encode only</span></td><td>—</td><td>—</td>'
-        : '<td><select class="bulk-cfg-select" data-book-id="' + bookId + '" data-field="voice">' + voiceOptions + '</select></td>' +
-          '<td><input type="range" class="bulk-cfg-mini-slider" min="0.5" max="2" step="0.1" value="' + speed + '" data-book-id="' + bookId + '" data-field="speed" oninput="BulkExportUI._onSliderChange(this)"/>' +
-          '<span class="bulk-cfg-mini-val" id="bcs-speed-' + bookId + '">' + speed.toFixed(1) + 'x</span></td>' +
-          '<td><input type="range" class="bulk-cfg-mini-slider" min="0.5" max="2" step="0.1" value="' + pitch + '" data-book-id="' + bookId + '" data-field="pitch" oninput="BulkExportUI._onSliderChange(this)"/>' +
-          '<span class="bulk-cfg-mini-val" id="bcs-pitch-' + bookId + '">' + pitch.toFixed(1) + 'x</span></td>';
+      
+      let voiceCell;
+      if (isAudio) {
+        voiceCell = '<td colspan="3" style="color:var(--text-muted);font-size:11px;font-style:italic">Re-encode audio only</td>';
+      } else {
+        // Build voice options - ensure value is set to shortName for proper matching
+        const voiceOptions = _voices.map(v => {
+          const voiceId = v.shortName || v.Name || v.name;
+          const voiceName = v.name || v.FriendlyName || voiceId;
+          const selected = voiceId === voice ? ' selected' : '';
+          return '<option value="' + _escHtml(voiceId) + '"' + selected + '>' + _escHtml(voiceName) + '</option>';
+        }).join('');
+
+        voiceCell = 
+          '<td style="min-width:180px"><select class="bulk-cfg-select voice-select" data-book-id="' + bookId + '"><option value="">— Select Voice —</option>' + voiceOptions + '</select></td>' +
+          '<td style="min-width:130px"><input type="range" class="bulk-cfg-mini-slider" min="0.5" max="2" step="0.1" value="' + speed + '" data-book-id="' + bookId + '" data-field="speed" oninput="BulkExportUI._onSliderChange(this)"/><span class="bulk-cfg-mini-val" id="bcs-speed-' + bookId + '">' + speed.toFixed(1) + 'x</span></td>' +
+          '<td style="min-width:130px"><input type="range" class="bulk-cfg-mini-slider" min="0.5" max="2" step="0.1" value="' + pitch + '" data-book-id="' + bookId + '" data-field="pitch" oninput="BulkExportUI._onSliderChange(this)"/><span class="bulk-cfg-mini-val" id="bcs-pitch-' + bookId + '">' + pitch.toFixed(1) + 'x</span></td>';
+      }
 
       return '<tr>' +
-        '<td title="' + _escHtml(book.title) + '">' + _escHtml(book.title) + '</td>' +
+        '<td style="min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _escHtml(book.title) + '">' + _escHtml(book.title) + '</td>' +
         voiceCell +
       '</tr>';
     }).join('');
 
-    // Wire voice select changes
-    tbody.querySelectorAll('.bulk-cfg-select[data-field=voice]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const id = sel.dataset.bookId;
-        if (!_voiceOverrides[id]) _voiceOverrides[id] = {};
-        _voiceOverrides[id].voice = sel.value;
+    // Use event delegation on tbody for voice selection changes (more reliable than attaching to individual selects)
+    console.log('[BulkExportUI] Attaching listeners to voice selects. Found:', tbody.querySelectorAll('.voice-select').length);
+    tbody.querySelectorAll('.voice-select').forEach(sel => {
+      console.log('[BulkExportUI] Attaching listener to select with data-book-id:', sel.dataset.bookId);
+      sel.addEventListener('change', (e) => {
+        const bookId = e.target.dataset.bookId;
+        const voiceId = e.target.value;
+        
+        console.log('[BulkExportUI] CHANGE EVENT - BookId:', bookId, 'VoiceId:', voiceId);
+        
+        if (!_voiceOverrides[bookId]) {
+          _voiceOverrides[bookId] = {};
+        }
+        _voiceOverrides[bookId].voice = voiceId;
+        console.log('[BulkExportUI] Stored voice. _voiceOverrides:', _voiceOverrides);
       });
     });
   }
@@ -505,6 +570,77 @@ const BulkExportUI = (() => {
       book,
       voiceSettings: _voiceOverrides[String(book.id)] || {},
     }));
+
+    // ─ VALIDATE VOICE SELECTION FOR TEXT BOOKS ─────────────────
+    // Check if any text books lack a voice selection
+    const textBooksWithoutVoice = jobs.filter(job => {
+      const fmt = (job.book.format || '').toLowerCase();
+      const isAudio = ['mp3', 'm4a', 'ogg', 'm4b', 'aac'].includes(fmt);
+      if (isAudio) return false; // Audio books don't need voice selection
+      
+      const vs = job.voiceSettings || {};
+      const hasVoice = !!vs.voice;
+      console.log('[BulkExportUI] Book:', job.book.title, 'Voice:', vs.voice, 'Has voice:', hasVoice);
+      return !vs.voice; // Text books must have a voice selected
+    });
+
+    console.log('[BulkExportUI] Books without voice:', textBooksWithoutVoice.length, 'Total jobs:', jobs.length);
+    console.log('[BulkExportUI] Voice overrides:', _voiceOverrides);
+
+    if (textBooksWithoutVoice.length > 0) {
+      const bookList = textBooksWithoutVoice
+        .slice(0, 3)
+        .map(j => j.book.title)
+        .join(', ');
+      const more = textBooksWithoutVoice.length > 3 
+        ? ' and ' + (textBooksWithoutVoice.length - 3) + ' more'
+        : '';
+      
+      const confirmed = await new Promise(resolve => {
+        // Show confirmation modal
+        const modalEl = document.getElementById('modalBulkVoiceConfirm');
+        if (!modalEl) {
+          // Fallback to confirm() if modal doesn't exist
+          resolve(confirm(
+            'Some books have no voice selected:\n\n' + bookList + more +
+            '\n\nProceed anyway?\n\n' +
+            'A default voice will be used for these books.'
+          ));
+          return;
+        }
+        
+        const msgEl = document.getElementById('bulkVoiceConfirmMsg');
+        if (msgEl) {
+          msgEl.textContent = 
+            'The following books have no voice selected:\n\n' +
+            bookList + more + '\n\n' +
+            'A default voice will be used for these books.';
+        }
+        
+        const confirmBtn = document.getElementById('btnBulkVoiceConfirm');
+        const cancelBtn = document.getElementById('btnBulkVoiceCancel');
+        
+        const cleanup = () => {
+          if (confirmBtn) confirmBtn.onclick = null;
+          if (cancelBtn) cancelBtn.onclick = null;
+        };
+        
+        if (confirmBtn) confirmBtn.onclick = () => {
+          cleanup();
+          UI.closeModal('modalBulkVoiceConfirm');
+          resolve(true);
+        };
+        if (cancelBtn) cancelBtn.onclick = () => {
+          cleanup();
+          UI.closeModal('modalBulkVoiceConfirm');
+          resolve(false);
+        };
+        
+        UI.openModal('modalBulkVoiceConfirm');
+      });
+
+      if (!confirmed) return; // User cancelled, stay in config modal
+    }
 
     UI.closeModal('modalBulkConfig');
     _openProgressModal(jobs.length);

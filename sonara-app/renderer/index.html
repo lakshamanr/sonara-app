@@ -1252,6 +1252,28 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
+     BULK M4B EXPORT — VOICE CONFIRMATION MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalBulkVoiceConfirm">
+  <div class="modal">
+    <button class="modal-close" onclick="UI.closeModal('modalBulkVoiceConfirm')" title="Close">&times;</button>
+    <h2 class="modal-title">Voice Selection Required</h2>
+    <p class="modal-sub" id="bulkVoiceConfirmMsg">
+      Some books have no voice selected. A default voice will be used for these books. Proceed anyway?
+    </p>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" id="btnBulkVoiceCancel">Back to Settings</button>
+      <button class="modal-btn-primary" id="btnBulkVoiceConfirm">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:5px">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Proceed with Export
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
      BULK M4B EXPORT — PROGRESS MODAL
 ══════════════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="modalBulkProgress">

@@ -927,11 +927,13 @@ ipcMain.handle('export:packageM4B', async (_, { mp3Path, ffmetaPath, coverPath, 
   args.push('-map', '0:a', '-map_metadata', '1');
   if (hasCover) args.push('-map', '2', '-disposition:v:0', 'attached_pic');
 
-  args.push('-c:a', 'aac', '-b:a', '64k');
+  args.push('-c:a', 'aac', '-b:a', '128k');
   if (hasCover) args.push('-c:v', 'copy');
 
   if (metadata?.title)    args.push('-metadata', `title=${metadata.title}`);
   if (metadata?.author)   args.push('-metadata', `artist=${metadata.author}`);
+  if (metadata?.title)    args.push('-metadata', `album=${metadata.title}`);
+  if (metadata?.author)   args.push('-metadata', `album_artist=${metadata.author}`);
   if (metadata?.narrator) args.push('-metadata', `composer=${metadata.narrator}`);
   if (metadata?.year)     args.push('-metadata', `date=${metadata.year}`);
   args.push('-metadata', 'genre=Audiobook');
@@ -990,11 +992,13 @@ ipcMain.handle('export:reencodeToM4B', async (event, { inputPath, outputPath, co
   args.push('-map', '0:a');
   if (hasCover) args.push('-map', '1', '-disposition:v:0', 'attached_pic');
 
-  args.push('-c:a', 'aac', '-b:a', '64k');
+  args.push('-c:a', 'aac', '-b:a', '128k');
   if (hasCover) args.push('-c:v', 'copy');
 
   if (metadata?.title)    args.push('-metadata', `title=${metadata.title}`);
   if (metadata?.author)   args.push('-metadata', `artist=${metadata.author}`);
+  if (metadata?.title)    args.push('-metadata', `album=${metadata.title}`);
+  if (metadata?.author)   args.push('-metadata', `album_artist=${metadata.author}`);
   if (metadata?.narrator) args.push('-metadata', `composer=${metadata.narrator}`);
   if (metadata?.year)     args.push('-metadata', `date=${metadata.year}`);
   args.push('-metadata', 'genre=Audiobook');
