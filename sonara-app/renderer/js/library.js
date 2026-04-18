@@ -21,6 +21,8 @@ const Library = (() => {
   let _isPlaying = false;
   let _renameBookIds = [];
   let _renameMode = 'single';
+  let _bulkSelectMode = false;
+  let _selectedBooks  = new Set();  // Set of book IDs (strings)
 
   const AUDIO_FORMATS = ['mp3', 'm4b', 'm4a', 'ogg'];
 
@@ -170,10 +172,20 @@ const Library = (() => {
         '<span class="lc-cover-title">' + title + '</span></div>';
     }
 
-    const isCurrent = App.currentBookId === b.id;
+    const isCurrent    = App.currentBookId === b.id;
     const isNowPlaying = _isPlaying && _playingBookId === b.id;
+    const isSelected   = _bulkSelectMode && _selectedBooks.has(String(b.id));
+    const bulkCheck    = _bulkSelectMode
+      ? '<label class="lc-bulk-check" title="Select for export"><input type="checkbox" data-bulk-id="' + b.id + '"' + (isSelected ? ' checked' : '') + '/><span class="lc-bulk-checkmark"></span></label>'
+      : '';
 
-    return '<div class="lib-card' + (isCurrent ? ' is-current' : '') + (isNowPlaying ? ' is-now-playing' : '') + '" data-book-id="' + b.id + '" data-format="' + b.format + '">' +
+    return '<div class="lib-card' +
+        (isCurrent      ? ' is-current'     : '') +
+        (isNowPlaying   ? ' is-now-playing' : '') +
+        (isSelected     ? ' bulk-selected'  : '') +
+        (_bulkSelectMode ? ' bulk-mode-card' : '') +
+        '" data-book-id="' + b.id + '" data-format="' + b.format + '">' +
+      bulkCheck +
       '<button class="lc-menu-btn" data-menu-id="' + b.id + '" title="More options">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">' +
           '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' +
@@ -260,9 +272,22 @@ const Library = (() => {
       return '<span class="lc-format-badge lcg-badge ' + cls + '">' + label + '</span>';
     }).join('');
 
-    return '<div class="lib-card lib-card-group' + (isCurrent ? ' is-current' : '') + (isNowPlaying ? ' is-now-playing' : '') + '" data-group-key="' + _escHtml(group.key) + '" data-book-ids="' + ids.join(',') + '">' +
+    // In bulk mode, a group card selects all its constituent books
+    const allSelected   = _bulkSelectMode && ids.every(id => _selectedBooks.has(id));
+    const someSelected  = _bulkSelectMode && ids.some(id => _selectedBooks.has(id));
+    const bulkCheck     = _bulkSelectMode
+      ? '<label class="lc-bulk-check" title="Select all formats for export"><input type="checkbox" data-bulk-ids="' + ids.join(',') + '"' + (allSelected ? ' checked' : '') + (someSelected && !allSelected ? ' data-indeterminate="1"' : '') + '/><span class="lc-bulk-checkmark"></span></label>'
+      : '';
+
+    return '<div class="lib-card lib-card-group' +
+        (isCurrent      ? ' is-current'     : '') +
+        (isNowPlaying   ? ' is-now-playing' : '') +
+        (someSelected   ? ' bulk-selected'  : '') +
+        (_bulkSelectMode ? ' bulk-mode-card' : '') +
+        '" data-group-key="' + _escHtml(group.key) + '" data-book-ids="' + ids.join(',') + '">' +
       '<div class="lcg-stack lcg-stack-2"></div>' +
       '<div class="lcg-stack lcg-stack-1"></div>' +
+      bulkCheck +
       '<button class="lc-menu-btn" data-menu-group="' + _escHtml(group.key) + '" title="More options">' +
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">' +
           '<circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>' +
@@ -309,20 +334,77 @@ const Library = (() => {
   }
 
   function _attachCardListeners() {
-    // Single card click -> open book
-    document.querySelectorAll('.lib-card:not(.lib-card-group)').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('.lc-menu-btn')) return;
-        App.openBook(card.dataset.bookId).catch(err => console.error('openBook error:', err));
+    // In bulk-select mode, card clicks toggle selection instead of opening the book
+    if (_bulkSelectMode) {
+      document.querySelectorAll('.lib-card:not(.lib-card-group)').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.lc-menu-btn')) return;
+          // Allow the checkbox label to handle its own click natively
+          if (e.target.closest('.lc-bulk-check')) return;
+          const id = String(card.dataset.bookId || '');
+          if (!id) return;
+          if (_selectedBooks.has(id)) _selectedBooks.delete(id);
+          else _selectedBooks.add(id);
+          _syncBulkToolbar();
+          renderGrid();
+        });
+      });
+      document.querySelectorAll('.lib-card-group').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.lc-menu-btn')) return;
+          if (e.target.closest('.lc-bulk-check')) return;
+          const ids = (card.dataset.bookIds || '').split(',').map(s => s.trim()).filter(Boolean);
+          const allSel = ids.every(id => _selectedBooks.has(id));
+          if (allSel) ids.forEach(id => _selectedBooks.delete(id));
+          else ids.forEach(id => _selectedBooks.add(id));
+          _syncBulkToolbar();
+          renderGrid();
+        });
+      });
+    } else {
+      // Normal mode — open book / format picker
+      document.querySelectorAll('.lib-card:not(.lib-card-group)').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.lc-menu-btn')) return;
+          App.openBook(card.dataset.bookId).catch(err => console.error('openBook error:', err));
+        });
+      });
+      document.querySelectorAll('.lib-card-group').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.lc-menu-btn')) return;
+          _showFormatPicker(card.dataset.groupKey);
+        });
+      });
+    }
+
+    // Bulk checkboxes (native input change for keyboard users)
+    document.querySelectorAll('.lc-bulk-check input[data-bulk-id]').forEach(cb => {
+      // Set indeterminate state for partial group selection
+      if (cb.dataset.indeterminate === '1') cb.indeterminate = true;
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const id = String(cb.dataset.bulkId || '');
+        if (cb.checked) _selectedBooks.add(id);
+        else _selectedBooks.delete(id);
+        _syncBulkToolbar();
+        // Reflect selected class on the card without full re-render
+        const card = cb.closest('.lib-card');
+        if (card) card.classList.toggle('bulk-selected', cb.checked);
       });
     });
-    // Group card click -> format picker
-    document.querySelectorAll('.lib-card-group').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('.lc-menu-btn')) return;
-        _showFormatPicker(card.dataset.groupKey);
+    document.querySelectorAll('.lc-bulk-check input[data-bulk-ids]').forEach(cb => {
+      if (cb.dataset.indeterminate === '1') cb.indeterminate = true;
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const ids = (cb.dataset.bulkIds || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (cb.checked) ids.forEach(id => _selectedBooks.add(id));
+        else ids.forEach(id => _selectedBooks.delete(id));
+        _syncBulkToolbar();
+        const card = cb.closest('.lib-card');
+        if (card) card.classList.toggle('bulk-selected', cb.checked);
       });
     });
+
     // Single card menu button
     document.querySelectorAll('.lc-menu-btn[data-menu-id]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -1338,6 +1420,54 @@ const Library = (() => {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  // ── BULK SELECT MODE ──────────────────────────────────────
+
+  function toggleBulkSelectMode() {
+    _bulkSelectMode = !_bulkSelectMode;
+    if (!_bulkSelectMode) {
+      _selectedBooks.clear();
+      _syncBulkToolbar();
+    }
+    const btn = document.getElementById('btnBulkSelect');
+    if (btn) btn.classList.toggle('active', _bulkSelectMode);
+    renderGrid();
+    _syncBulkToolbar();
+  }
+
+  function _syncBulkToolbar() {
+    const toolbar = document.getElementById('bulkActionBar');
+    const countEl = document.getElementById('bulkSelCount');
+    const exportBtn = document.getElementById('btnBulkExportM4B');
+    const selColBtn = document.getElementById('btnSelectCollection');
+
+    if (!toolbar) return;
+
+    if (_bulkSelectMode) {
+      toolbar.style.display = 'flex';
+      const n = _selectedBooks.size;
+      if (countEl) countEl.textContent = n + ' book' + (n !== 1 ? 's' : '') + ' selected';
+      if (exportBtn) exportBtn.disabled = n === 0;
+    } else {
+      toolbar.style.display = 'none';
+    }
+  }
+
+  /**
+   * Select all books in the currently active collection (or all filtered books).
+   */
+  function selectCurrentCollection() {
+    const filtered = _getFilteredBooks();
+    filtered.forEach(b => _selectedBooks.add(String(b.id)));
+    _syncBulkToolbar();
+    renderGrid();
+  }
+
+  /** Return the book objects for all currently selected IDs. */
+  function getSelectedBooks() {
+    const idSet = _selectedBooks;
+    return books.filter(b => idSet.has(String(b.id)));
+  }
+
   // ── PUBLIC API ────────────────────────────────────────────
   return {
     load, render: renderGrid, renderGrid, refreshCard, addBookToList,
@@ -1345,6 +1475,10 @@ const Library = (() => {
     showCreateCollectionModal, showAssignModal, saveAssignments,
     closeDeleteColModal, setCoverImage,
     saveRename, closeRenameModal,
-    getBooks: () => books
+    getBooks: () => books,
+    toggleBulkSelectMode,
+    selectCurrentCollection,
+    getSelectedBooks,
+    isBulkSelectMode: () => _bulkSelectMode,
   };
 })();

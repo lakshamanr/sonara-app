@@ -30,6 +30,8 @@ const Reader = (() => {
   let pendingRestoreVoice  = null;  // voice name/ID to restore once cloud voices load
   let _playPendingRetries  = 0;     // guard: max retries waiting for saved voice in _play()
   let voiceList      = [];
+  let favoriteVoiceIds = new Set(); // stable voice IDs user starred as favorites
+  let favoriteSaveChain = Promise.resolve();
   let totalDuration  = 0;
   let elapsedTime    = 0;
   let timerInterval  = null;
@@ -322,6 +324,79 @@ const Reader = (() => {
     renderVoiceList();
   }
 
+  function _getVoiceId(voice) {
+    if (!voice) return '';
+    return voice.shortName || voice._edgeVoice || voice.voiceURI || voice.name || '';
+  }
+
+  function _isFavoriteVoice(voice) {
+    const id = _getVoiceId(voice);
+    return !!id && favoriteVoiceIds.has(id);
+  }
+
+  function _renderVoiceItem(v) {
+    const voiceId = _getVoiceId(v) || v.name;
+    const sel = chosenVoice && chosenVoice.name === v.name;
+    const isNatural = !!v._edgeVoice;
+    const isCloud = !v.localService;
+    const serviceType = isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD');
+    const serviceBadge = isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote');
+    const tooltip = isNatural ? 'Microsoft Neural voice - high quality, natural sounding'
+      : (v.localService ? 'Offline voice - works without internet' : 'Online voice - requires internet');
+    const favorite = _isFavoriteVoice(v);
+
+    return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-id="${_escHtml(voiceId)}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isNatural ? 'natural' : (isCloud ? 'cloud' : 'local')}">
+      <div class="vi-radio"></div>
+      <div class="vi-info">
+        <div class="vi-name">${_escHtml(v.name)}</div>
+        <div class="vi-lang">${_escHtml(v.lang)}${v.gender ? ' · ' + _escHtml(v.gender) : ''}</div>
+      </div>
+      <div class="vi-badges">
+        ${v.lang && v.lang.startsWith('en') ? '<span class="vi-badge badge-en">EN</span>' : ''}
+        <span class="vi-badge ${serviceBadge}" title="${tooltip}">${serviceType}</span>
+      </div>
+      <button class="vi-fbtn${favorite ? ' active' : ''}" data-favorite-voice="${_escHtml(voiceId)}" title="${favorite ? 'Remove from favorites' : 'Add to favorites'}" aria-label="${favorite ? 'Remove from favorites' : 'Add to favorites'}">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+      </button>
+      <button class="vi-pbtn" data-preview-voice="${_escHtml(voiceId)}" title="Preview this voice">
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+    </div>`;
+  }
+
+  function _saveFavoriteVoices() {
+    const snapshot = [...favoriteVoiceIds];
+    favoriteSaveChain = favoriteSaveChain
+      .then(() => window.sonara?.settings.set('favoriteVoices', snapshot))
+      .catch(() => {});
+    return favoriteSaveChain;
+  }
+
+  function toggleFavoriteVoice(idOrName) {
+    const v = _findVoiceByIdOrName(idOrName);
+    if (!v) {
+      UI.toast('Voice not found', 'error');
+      return;
+    }
+
+    const id = _getVoiceId(v);
+    if (!id) {
+      UI.toast('Cannot favorite this voice', 'error');
+      return;
+    }
+
+    if (favoriteVoiceIds.has(id)) {
+      favoriteVoiceIds.delete(id);
+      UI.toast('Removed from favorites: ' + v.name, '', 1800);
+    } else {
+      favoriteVoiceIds.add(id);
+      UI.toast('Added to favorites: ' + v.name, 'success', 1800);
+    }
+
+    _saveFavoriteVoices();
+    renderVoiceList();
+  }
+
   function renderVoiceList() {
     const search = document.getElementById('voiceSearch')?.value.toLowerCase() || '';
     const lang   = document.getElementById('langFilter')?.value.toUpperCase() || '';
@@ -358,31 +433,28 @@ const Reader = (() => {
       return; 
     }
 
-    // Render voice items WITHOUT inline onclick (CSP/frozen issue)
-    el.innerHTML = filtered.map((v, i) => {
-      const sel = chosenVoice && chosenVoice.name === v.name;
-      const isNatural = !!v._edgeVoice;
-      const isCloud = !v.localService;
-      const serviceType = isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD');
-      const serviceBadge = isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote');
-      const tooltip = isNatural ? 'Microsoft Neural voice — high quality, natural sounding'
-        : (v.localService ? 'Offline voice — works without internet' : 'Online voice — requires internet');
+    const favorites = filtered.filter(_isFavoriteVoice);
+    const others = filtered.filter(v => !_isFavoriteVoice(v));
 
-      return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isNatural ? 'natural' : (isCloud ? 'cloud' : 'local')}">
-        <div class="vi-radio"></div>
-        <div class="vi-info">
-          <div class="vi-name">${_escHtml(v.name)}</div>
-          <div class="vi-lang">${_escHtml(v.lang)}${v.gender ? ' · ' + _escHtml(v.gender) : ''}</div>
-        </div>
-        <div class="vi-badges">
-          ${v.lang && v.lang.startsWith('en') ? '<span class="vi-badge badge-en">EN</span>' : ''}
-          <span class="vi-badge ${serviceBadge}" title="${tooltip}">${serviceType}</span>
-        </div>
-        <button class="vi-pbtn" data-preview-voice="${_escHtml(v.name)}" title="Preview this voice">
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        </button>
-      </div>`;
-    }).join('');
+    const sections = [];
+    if (favorites.length) {
+      sections.push(
+        `<div class="voice-group">` +
+          `<div class="voice-group-label">Favorites (${favorites.length})</div>` +
+          favorites.map(_renderVoiceItem).join('') +
+        `</div>`
+      );
+    }
+    if (others.length) {
+      sections.push(
+        `<div class="voice-group">` +
+          `<div class="voice-group-label">All Voices</div>` +
+          others.map(_renderVoiceItem).join('') +
+        `</div>`
+      );
+    }
+
+    el.innerHTML = sections.join('');
     
     // Attach event listeners using event delegation
     _attachVoiceListeners();
@@ -400,10 +472,22 @@ const Reader = (() => {
     // Event delegation for voice item clicks
     listEl.addEventListener('click', (e) => {
       const item = e.target.closest('.voice-item');
-      if (item && !e.target.closest('.vi-pbtn')) {
-        const voiceName = item.getAttribute('data-voice-name');
-        if (voiceName) {
-          selectVoice(voiceName);
+      if (item && !e.target.closest('.vi-pbtn') && !e.target.closest('.vi-fbtn')) {
+        const voiceId = item.getAttribute('data-voice-id') || item.getAttribute('data-voice-name');
+        if (voiceId) {
+          selectVoice(voiceId);
+        }
+      }
+    });
+
+    // Event delegation for favorite buttons
+    listEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.vi-fbtn');
+      if (btn) {
+        e.stopPropagation();
+        const voiceId = btn.getAttribute('data-favorite-voice');
+        if (voiceId) {
+          toggleFavoriteVoice(voiceId);
         }
       }
     });
@@ -413,16 +497,16 @@ const Reader = (() => {
       const btn = e.target.closest('.vi-pbtn');
       if (btn) {
         e.stopPropagation();
-        const voiceName = btn.getAttribute('data-preview-voice');
-        if (voiceName) {
-          previewVoice(voiceName);
+        const voiceId = btn.getAttribute('data-preview-voice');
+        if (voiceId) {
+          previewVoice(voiceId);
         }
       }
     });
   }
 
-  function selectVoice(name) {
-    const v = voiceList.find(x => x.name === name);
+  function selectVoice(idOrName) {
+    const v = _findVoiceByIdOrName(idOrName);
     if (!v) {
       UI.toast('Voice not found', 'error');
       return;
@@ -477,8 +561,8 @@ const Reader = (() => {
     
   }
 
-  function previewVoice(name) {
-    const v = voiceList.find(x => x.name === name);
+  function previewVoice(idOrName) {
+    const v = _findVoiceByIdOrName(idOrName);
     if (!v) {
       UI.toast('Voice not found', 'error');
       return;
@@ -1750,6 +1834,7 @@ const Reader = (() => {
       });
     }
     const savedVoice     = await window.sonara.settings.get('voice');
+    const savedFavorites = await window.sonara.settings.get('favoriteVoices', []);
     const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
     const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
     const savedVolume    = await window.sonara.settings.get('volume', 1.0);
@@ -1759,6 +1844,7 @@ const Reader = (() => {
     ttsSkipChars   = savedSkipChars || '';
     ttsSkipEnabled = savedSkipEnabled !== false; // default true
     ttsSkipWords   = savedSkipWords  || '';
+    favoriteVoiceIds = new Set(Array.isArray(savedFavorites) ? savedFavorites.filter(x => typeof x === 'string' && x) : []);
     _updateSkipBtn();
 
     speed = parseFloat(savedSpeed) || 1.0;
@@ -2028,7 +2114,7 @@ const Reader = (() => {
   // ── PUBLIC API ────────────────────────────────────────────
   return {
     initVoices, refreshVoices, filterVoices, renderVoiceList,
-    selectVoice, previewVoice, previewSelectedVoice,
+    selectVoice, previewVoice, previewSelectedVoice, toggleFavoriteVoice,
     loadBook, loadAudioBook,
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
     cycleSpeed, onSpeedChange, onPitchChange, onVolumeChange, toggleMute,

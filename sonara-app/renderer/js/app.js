@@ -1589,33 +1589,49 @@ const App = (() => {
 
     document.body.appendChild(modal);
 
-    // Copy voice list content
+    // Copy and sync voice list content from desktop panel
     const sourceList = document.getElementById('voiceList');
     const targetList = document.getElementById('mobileVoiceList');
+    const syncVoiceList = () => {
+      const refreshed = document.getElementById('voiceList');
+      if (refreshed && targetList) {
+        targetList.innerHTML = refreshed.innerHTML;
+      }
+    };
+
     if (sourceList && targetList) {
-      targetList.innerHTML = sourceList.innerHTML;
+      syncVoiceList();
 
-      // Re-attach event listeners
-      targetList.querySelectorAll('.voice-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          if (!e.target.closest('.vi-pbtn')) {
-            const voiceName = item.getAttribute('data-voice-name');
-            if (voiceName) {
-              Reader.selectVoice(voiceName);
-              modal.remove();
-            }
-          }
-        });
-      });
-
-      targetList.querySelectorAll('.vi-pbtn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+      targetList.addEventListener('click', (e) => {
+        const favBtn = e.target.closest('.vi-fbtn');
+        if (favBtn) {
           e.stopPropagation();
-          const voiceName = btn.getAttribute('data-preview-voice');
-          if (voiceName) {
-            Reader.previewVoice(voiceName);
+          const voiceId = favBtn.getAttribute('data-favorite-voice');
+          if (voiceId) {
+            Reader.toggleFavoriteVoice(voiceId);
+            syncVoiceList();
           }
-        });
+          return;
+        }
+
+        const previewBtn = e.target.closest('.vi-pbtn');
+        if (previewBtn) {
+          e.stopPropagation();
+          const voiceId = previewBtn.getAttribute('data-preview-voice');
+          if (voiceId) {
+            Reader.previewVoice(voiceId);
+          }
+          return;
+        }
+
+        const item = e.target.closest('.voice-item');
+        if (item) {
+          const voiceId = item.getAttribute('data-voice-id') || item.getAttribute('data-voice-name');
+          if (voiceId) {
+            Reader.selectVoice(voiceId);
+            modal.remove();
+          }
+        }
       });
     }
 
@@ -1631,6 +1647,20 @@ const App = (() => {
     const sourceSearch = document.getElementById('voiceSearch');
     if (searchInput && sourceSearch) {
       searchInput.value = sourceSearch.value;
+      searchInput.addEventListener('input', () => {
+        sourceSearch.value = searchInput.value;
+        Reader.filterVoices();
+        syncVoiceList();
+      });
+    }
+
+    if (sourceLang && targetLang) {
+      targetLang.value = sourceLang.value;
+      targetLang.addEventListener('change', () => {
+        sourceLang.value = targetLang.value;
+        Reader.filterVoices();
+        syncVoiceList();
+      });
     }
 
     // Close on backdrop click

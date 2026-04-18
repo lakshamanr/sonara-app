@@ -925,6 +925,95 @@ ipcMain.handle('export:deleteTemp', (_, filePath) => {
 });
 
 // ────────────────────────────────────────────────────────────
+//  IPC — BULK EXPORT HELPERS
+// ────────────────────────────────────────────────────────────
+
+// Compute a unique .m4b output path alongside the source file.
+// Strips the source extension, appends .m4b, increments _1, _2 … on conflict.
+ipcMain.handle('export:getAutoSavePath', (_, { filePath, title }) => {
+  const dir  = path.dirname(filePath || '');
+  const safe = (title || 'audiobook').replace(/[<>:"/\\|?*]/g, '_').trim() || 'audiobook';
+  let candidate = path.join(dir, safe + '.m4b');
+  let n = 0;
+  while (fs.existsSync(candidate)) {
+    n++;
+    candidate = path.join(dir, safe + '_' + n + '.m4b');
+  }
+  return candidate;
+});
+
+// Re-encode an existing audio file (MP3 / M4A / OGG / M4B) to .m4b using ffmpeg.
+// Sends incremental progress events back to the requesting window via 'bulk-export:ffmpeg-progress'.
+ipcMain.handle('export:reencodeToM4B', async (event, { inputPath, outputPath, coverPath, metadata }) => {
+  const { spawn } = require('child_process');
+  let ffmpegPath;
+  try { ffmpegPath = require('ffmpeg-static'); } catch (e) { throw new Error('ffmpeg-static not installed'); }
+  if (!ffmpegPath || !fs.existsSync(ffmpegPath)) throw new Error('FFmpeg binary not found');
+  if (!inputPath || !fs.existsSync(inputPath))    throw new Error('Input file not found: ' + inputPath);
+
+  const hasCover = coverPath && fs.existsSync(coverPath);
+
+  const args = ['-y', '-i', inputPath];
+  if (hasCover) args.push('-i', coverPath);
+
+  args.push('-map_metadata', '-1');
+  args.push('-map', '0:a');
+  if (hasCover) args.push('-map', '1', '-disposition:v:0', 'attached_pic');
+
+  args.push('-c:a', 'aac', '-b:a', '64k');
+  if (hasCover) args.push('-c:v', 'copy');
+
+  if (metadata?.title)    args.push('-metadata', `title=${metadata.title}`);
+  if (metadata?.author)   args.push('-metadata', `artist=${metadata.author}`);
+  if (metadata?.narrator) args.push('-metadata', `composer=${metadata.narrator}`);
+  if (metadata?.year)     args.push('-metadata', `date=${metadata.year}`);
+  args.push('-metadata', 'genre=Audiobook');
+
+  args.push('-f', 'mp4', outputPath);
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, args, { windowsHide: true });
+    let stderr = '';
+    let totalDurationSec = null;
+
+    proc.stderr.on('data', chunk => {
+      const text = chunk.toString();
+      stderr += text;
+
+      // Parse total duration once from "Duration: HH:MM:SS.ss" line
+      if (totalDurationSec === null) {
+        const dm = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (dm) {
+          totalDurationSec = parseInt(dm[1], 10) * 3600 + parseInt(dm[2], 10) * 60 + parseFloat(dm[3]);
+        }
+      }
+
+      // Parse current position from "time=HH:MM:SS.ss" lines
+      const tm = text.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g);
+      if (tm && tm.length && totalDurationSec > 0) {
+        const last = tm[tm.length - 1];
+        const tp   = last.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (tp) {
+          const posSec = parseInt(tp[1], 10) * 3600 + parseInt(tp[2], 10) * 60 + parseFloat(tp[3]);
+          const pct    = Math.min(99, Math.round((posSec / totalDurationSec) * 100));
+          try { event.sender.send('bulk-export:ffmpeg-progress', { outputPath, pct }); } catch (_) {}
+        }
+      }
+    });
+
+    proc.on('error', reject);
+    proc.on('close', code => {
+      if (code === 0) {
+        try { event.sender.send('bulk-export:ffmpeg-progress', { outputPath, pct: 100 }); } catch (_) {}
+        resolve({ success: true });
+      } else {
+        reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-400)}`));
+      }
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
 //  IPC — EXPORT NOTES (TXT / PDF)
 // ────────────────────────────────────────────────────────────
 ipcMain.handle('notes:saveDialog', async (_, { defaultName, type }) => {

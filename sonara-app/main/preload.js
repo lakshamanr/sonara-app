@@ -220,6 +220,14 @@ contextBridge.exposeInMainWorld('sonara', {
     packageM4B: (data)  => ipcRenderer.invoke('export:packageM4B', data),
     /** Delete a temporary file. */
     deleteTemp: (p)     => ipcRenderer.invoke('export:deleteTemp', p),
+    /** Compute a unique auto-save path for a bulk M4B export. */
+    getAutoSavePath: (data) => ipcRenderer.invoke('export:getAutoSavePath', data),
+    /** Re-encode an audio file to .m4b via ffmpeg (for bulk audio export). */
+    reencodeToM4B:   (data) => ipcRenderer.invoke('export:reencodeToM4B', data),
+    /** Listen for incremental ffmpeg re-encode progress pushed from main. */
+    onFfmpegProgress: (cb) => ipcRenderer.on('bulk-export:ffmpeg-progress', (_, data) => cb(data)),
+    /** Remove the ffmpeg-progress listener. */
+    offFfmpegProgress: (cb) => ipcRenderer.removeListener('bulk-export:ffmpeg-progress', cb),
   },
   // ── NOTES ───────────────────────────────────────
   notes: {

@@ -172,6 +172,12 @@
           </svg>
           Classify All
         </button>
+        <button class="lib-bulk-select-btn" id="btnBulkSelect" title="Select books for bulk M4B export" onclick="Library.toggleBulkSelectMode()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+          </svg>
+          Select
+        </button>
         <button class="lib-add-btn" id="libAddBtn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -179,6 +185,24 @@
           Add Book
         </button>
       </div>
+    </div>
+
+    <!-- Bulk action bar (visible only in bulk-select mode) -->
+    <div class="bulk-action-bar" id="bulkActionBar" style="display:none">
+      <span class="bulk-sel-count" id="bulkSelCount">0 books selected</span>
+      <button class="bulk-bar-btn" id="btnSelectCollection" onclick="Library.selectCurrentCollection()" title="Select all books in current view">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        Select All Visible
+      </button>
+      <button class="bulk-bar-btn bulk-bar-btn-export" id="btnBulkExportM4B" disabled onclick="BulkExportUI.openConfig()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Export to M4B
+      </button>
+      <button class="bulk-bar-btn bulk-bar-btn-cancel" onclick="Library.toggleBulkSelectMode()">Cancel</button>
     </div>
 
     <!-- Stats bar -->
@@ -1178,12 +1202,85 @@
 <!-- Toast -->
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- ══════════════════════════════════════════════════════════
+     BULK M4B EXPORT — CONFIG MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalBulkConfig">
+  <div class="modal modal-bulk-config">
+    <button class="modal-close" onclick="UI.closeModal('modalBulkConfig')" title="Close">&times;</button>
+    <h2 class="modal-title">Export to M4B</h2>
+    <p class="modal-sub" id="bulkConfigSub">Configure voice settings and concurrency for the bulk export.</p>
+
+    <!-- Concurrency slider -->
+    <div class="bulk-cfg-row">
+      <label class="bulk-cfg-label">Parallel conversions</label>
+      <div class="bulk-cfg-slider-wrap">
+        <input type="range" id="bulkConcurrency" min="1" max="5" value="3" class="bulk-cfg-slider"
+               oninput="document.getElementById('bulkConcurrencyVal').textContent = this.value"/>
+        <span class="bulk-cfg-slider-val" id="bulkConcurrencyVal">3</span>
+      </div>
+      <p class="bulk-cfg-hint">Higher = faster batch; more CPU &amp; network usage per book.</p>
+    </div>
+
+    <!-- Per-book voice override table -->
+    <div class="bulk-cfg-table-wrap">
+      <table class="bulk-cfg-table">
+        <thead>
+          <tr>
+            <th>Book</th>
+            <th>Voice</th>
+            <th>Speed</th>
+            <th>Pitch</th>
+          </tr>
+        </thead>
+        <tbody id="bulkCfgTableBody">
+          <!-- Rows injected by BulkExportUI.openConfig() -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="UI.closeModal('modalBulkConfig')">Cancel</button>
+      <button class="modal-btn-primary" id="btnStartBulkExport" onclick="BulkExportUI.startExport()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:5px">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Start Export
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     BULK M4B EXPORT — PROGRESS MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalBulkProgress">
+  <div class="modal modal-bulk-progress">
+    <!-- No close button during export — shown when done -->
+    <button class="modal-close" id="bulkProgressClose" style="display:none" onclick="BulkExportUI.closProgress()" title="Close">&times;</button>
+    <h2 class="modal-title">
+      Exporting to M4B
+      <span class="bulk-prog-overall" id="bulkProgOverall">— 0 / 0</span>
+    </h2>
+
+    <div class="bulk-prog-list" id="bulkProgList">
+      <!-- Rows injected dynamically by BulkExportUI -->
+    </div>
+
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="modal-btn-danger" id="btnCancelBulk" onclick="BulkExportUI.cancel()">Cancel</button>
+      <button class="modal-btn-primary" id="btnCloseBulkDone" style="display:none" onclick="BulkExportUI.closProgress()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="js/parser.js"></script>
 <script src="js/cloudtts.js"></script>
 <script src="js/reader.js"></script>
 <script src="js/library.js"></script>
 <script src="js/export.js"></script>
+<script src="js/bulk-export.js"></script>
 <script src="js/notes.js"></script>
 <script src="js/quicktext.js"></script>
 <script src="js/app.js"></script>
