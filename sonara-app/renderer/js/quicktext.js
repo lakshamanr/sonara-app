@@ -21,6 +21,9 @@ const QuickText = (() => {
     _setStatus('');
     if (!_voicesLoaded) {
       await _loadVoices();
+    } else {
+      // Re-sync to the reader's currently active voice each time the modal opens
+      _syncToReaderVoice();
     }
   }
 
@@ -48,15 +51,37 @@ const QuickText = (() => {
         sel.appendChild(opt);
       }
 
-      // Default to en-US-AriaNeural if available
-      const aria = sorted.find(v => (v._edgeVoice || '').includes('Aria'));
-      if (aria) sel.value = aria._edgeVoice || aria.shortName;
+      // Default to the reader's active voice; fall back to Aria
+      _syncToReaderVoice(sorted);
 
       _voicesLoaded = true;
     } catch (err) {
       sel.innerHTML = '<option value="en-US-AriaNeural">Aria (Natural) - en-US</option>';
       _voicesLoaded = true;
     }
+  }
+
+  // ── VOICE SYNC ─────────────────────────────────────────────
+  // Sync the QT voice dropdown to match the reader's active voice.
+  // Falls back to Aria if the reader voice is not in the list.
+  function _syncToReaderVoice(voiceArray) {
+    const sel = document.getElementById('qtVoice');
+    if (!sel) return;
+    const readerVoice = (typeof Reader !== 'undefined') ? Reader.getState?.()?.chosenVoice : null;
+    const readerId    = readerVoice?._edgeVoice || readerVoice?.shortName || readerVoice?.voiceURI;
+    if (readerId) {
+      // Try to select the reader's voice in the dropdown
+      const options = voiceArray
+        ? voiceArray.map(v => v._edgeVoice || v.shortName)
+        : [...sel.options].map(o => o.value);
+      if (options.includes(readerId)) {
+        sel.value = readerId;
+        return;
+      }
+    }
+    // Fallback: use Aria
+    const fallback = [...sel.options].find(o => o.value.includes('Aria'));
+    if (fallback) sel.value = fallback.value;
   }
 
   // ── PLAY / PAUSE ──────────────────────────────────────────

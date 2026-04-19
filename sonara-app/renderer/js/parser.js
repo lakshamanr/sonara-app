@@ -48,14 +48,39 @@ const Parser = (() => {
     const total = pdf.numPages;
     const raw = [];
 
+    // ── PASS 1: collect all items with positions ────────────
+    const allPageItems = [];  // [ [{str, y, pageH}, …], … ]
     for (let i = 1; i <= total; i++) {
-      const page    = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const text    = cleanText(content.items.map(x => x.str).join(' '));
+      const page     = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1.0 });
+      const pageH    = viewport.height;
+      const content  = await page.getTextContent();
+      allPageItems.push(
+        content.items
+          .filter(item => item.str && item.str.trim())
+          .map(item => ({ str: item.str, y: item.transform[5], pageH }))
+      );
+      onProgress && onProgress(Math.round((i / total) * 50));  // 0 → 50%
+    }
+
+    // ── DETECT REPEATING HEADERS/FOOTERS ────────────────────
+    // If the same short text appears on ≥ 3 pages AND those occurrences
+    // are consistently in the top or bottom 15% of the page, it is a
+    // running header/footer and should be silently skipped by TTS.
+    // Books with no headers/footers produce an empty set — nothing filtered.
+    const repeating = _detectHeaderFooters(allPageItems, total);
+
+    // ── PASS 2: build TTS chunks, filtering repeating items ──
+    for (let i = 0; i < allPageItems.length; i++) {
+      const items    = allPageItems[i];
+      const filtered = repeating.size > 0
+        ? items.filter(item => !repeating.has(item.str.trim().toLowerCase()))
+        : items;
+      const text = cleanText(filtered.map(x => x.str).join(' '));
       if (text.length > 30) {
-        raw.push({ title: 'Page ' + i, text, page: i, source: 'pdf' });
+        raw.push({ title: 'Page ' + (i + 1), text, page: i + 1, source: 'pdf' });
       }
-      onProgress && onProgress(Math.round((i / total) * 100));
+      onProgress && onProgress(50 + Math.round(((i + 1) / allPageItems.length) * 50));  // 50 → 100%
     }
 
     // Improve chapter titles from first sentence
@@ -156,6 +181,43 @@ const Parser = (() => {
     });
 
     return { spans, offsetMap };
+  }
+
+  // ── HEADER / FOOTER DETECTOR ──────────────────────────────
+  // Returns a Set of normalised text strings that are repeating headers or
+  // footers across the PDF (and should not be read aloud by TTS).
+  function _detectHeaderFooters(allPageItems, total) {
+    const repeating = new Set();
+    if (total < 4) return repeating;  // too few pages to detect reliably
+
+    // Map: normalised text → array of { pageIndex, relY } occurrences
+    const occMap = new Map();
+    for (let pi = 0; pi < allPageItems.length; pi++) {
+      const seenOnPage = new Set();
+      for (const item of allPageItems[pi]) {
+        const norm = item.str.trim().toLowerCase();
+        if (!norm || norm.length > 80) continue;   // skip blank / long body text
+        if (seenOnPage.has(norm)) continue;         // count once per page
+        seenOnPage.add(norm);
+        if (!occMap.has(norm)) occMap.set(norm, []);
+        const relY = item.pageH > 0 ? item.y / item.pageH : 0.5;
+        occMap.get(norm).push({ pageIndex: pi, relY });
+      }
+    }
+
+    // A candidate is a header/footer if:
+    //  1. It appears on at least 3 pages (but not on virtually every page as
+    //     normal body words do — cap at 95% of total pages).
+    //  2. ≥ 70% of those occurrences sit in the top 15% or bottom 15% of
+    //     their respective page (PDF Y: 0=bottom, 1=top).
+    const minPages = 3;
+    const maxPages = Math.floor(total * 0.95);
+    for (const [norm, occs] of occMap) {
+      if (occs.length < minPages || occs.length > maxPages) continue;
+      const zoneHits = occs.filter(o => o.relY >= 0.85 || o.relY <= 0.15).length;
+      if (zoneHits / occs.length >= 0.7) repeating.add(norm);
+    }
+    return repeating;
   }
 
   function getPDFDoc() { return _pdfDoc; }
