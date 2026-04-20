@@ -13,8 +13,8 @@ const DEFAULT_REDIRECT_URI = 'http://localhost';
 // Split across concatenation so static secret scanners don't flag the repo.
 // These are public OAuth desktop-app credentials (not server secrets).
 const DEFAULT_GOOGLE_OAUTH = {
-  clientId: '213710810411-in4d51sp52d8vi' + 'q6g18vl29cs2d8cu2v.apps.googleusercontent.com',
-  clientSecret: 'GOCSPX-ZrqHCymn3' + 'qPfjiQ2Qw40MXa4htiD',
+  clientId: '',
+  clientSecret: '',
   redirectUri: DEFAULT_REDIRECT_URI,
 };
 
