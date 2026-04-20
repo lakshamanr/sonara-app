@@ -975,12 +975,55 @@ const Reader = (() => {
     });
   }
 
+  // ── LONG TEXT SPLITTER ────────────────────────────────────
+  // Edge TTS can time out on very long chapters (novels, textbooks).
+  // Split at sentence boundaries to stay within a safe synthesis size.
+  const MAX_TTS_CHUNK_CHARS = 4000;
+
+  function _splitTextToChunks(text, maxChars) {
+    if (text.length <= maxChars) return [text];
+    const parts = [];
+    let remaining = text;
+    while (remaining.length > maxChars) {
+      // Find the last sentence boundary within maxChars
+      const window = remaining.slice(0, maxChars);
+      const sentEnd  = window.lastIndexOf('. ');
+      const questEnd = window.lastIndexOf('? ');
+      const exclEnd  = window.lastIndexOf('! ');
+      const best = Math.max(sentEnd, questEnd, exclEnd);
+      const cutAt = best > maxChars * 0.4 ? best + 2 : maxChars;
+      parts.push(remaining.slice(0, cutAt).trim());
+      remaining = remaining.slice(cutAt).trim();
+    }
+    if (remaining) parts.push(remaining);
+    return parts;
+  }
+
   // ── LOAD BOOK ────────────────────────────────────────────
   async function loadBook(newChunks, newBookId, resumeData) {
     // Stop any current playback
     stop();
 
-    chunks       = newChunks;
+    // Split very long EPUB/text chunks so Edge TTS never times out.
+    // PDF chunks are left as-is (already page-sized).
+    const splitChunks = [];
+    for (const chunk of newChunks) {
+      if (!chunk.text || chunk.text.length <= MAX_TTS_CHUNK_CHARS || chunk.source === 'pdf') {
+        splitChunks.push(chunk);
+      } else {
+        const parts = _splitTextToChunks(chunk.text, MAX_TTS_CHUNK_CHARS);
+        parts.forEach((part, i) => {
+          splitChunks.push({
+            ...chunk,
+            text: part,
+            // Image blocks only belong to the first part; subsequent parts are pure text
+            contentBlocks: i === 0 ? chunk.contentBlocks : undefined,
+            title: parts.length > 1 && i > 0 ? chunk.title + ' (cont. ' + (i + 1) + ')' : chunk.title
+          });
+        });
+      }
+    }
+    chunks = splitChunks;
     bookId       = newBookId;
     currentChunk = resumeData?.chunk_index || 0;
     elapsedTime  = resumeData?.elapsed_seconds || 0;
@@ -1278,11 +1321,20 @@ const Reader = (() => {
     isPlaying = true;
     _updatePlayIcon(true);
 
-    // Resume if paused, otherwise start fresh
-    if (speechSynthesis.paused) {
+    // Resume if paused, otherwise start fresh.
+    // NOTE: speechSynthesis.paused can be true in Electron even when nothing has
+    // spoken (a Chromium bug). Guard with `utterance` to detect a real paused
+    // SpeechSynthesis mid-sentence. For CloudTTS use isPaused() directly.
+    const cloudIsPaused = CloudTTS.isPaused ? CloudTTS.isPaused() : false;
+    if (cloudIsPaused) {
+      // CloudTTS (neural voice) was paused — resume it
+      CloudTTS.resume();
+    } else if (speechSynthesis.paused && utterance) {
+      // System TTS was genuinely paused mid-utterance — resume it
       speechSynthesis.resume();
     } else {
-      CloudTTS.resume();
+      // Fresh start (or stuck speechSynthesis.paused with no real utterance)
+      if (speechSynthesis.paused) speechSynthesis.cancel(); // clear stale paused state
       _speakChunk(currentChunk);
     }
     _startTimer();
@@ -1292,8 +1344,15 @@ const Reader = (() => {
   function _pause() {
     isPlaying = false;
     _updatePlayIcon(false);
-    speechSynthesis.pause();
-    CloudTTS.pause();
+    // Only pause SpeechSynthesis when it is actually active (system voice).
+    // Calling speechSynthesis.pause() while CloudTTS is playing permanently
+    // sets speechSynthesis.paused = true even though no utterance is queued,
+    // which breaks every subsequent _play() resume-vs-fresh-start decision.
+    if (chosenVoice && chosenVoice._cloudVoice) {
+      CloudTTS.pause();
+    } else {
+      speechSynthesis.pause();
+    }
     _stopTimer();
     _saveProgress();
     _pushPlayerState();
@@ -1379,6 +1438,9 @@ const Reader = (() => {
 
     speechSynthesis.cancel();
     CloudTTS.stop();
+    // Reset stale utterance reference so _play()'s resume guard doesn't
+    // mistake a completed utterance for a genuinely paused mid-sentence one.
+    utterance = null;
     currentChunk = idx;
 
     // In PDF mode, sync visual page (text layer highlights directly on PDF)
@@ -1404,6 +1466,16 @@ const Reader = (() => {
     }
 
     const chunkText = _cleanTextForTTS(chunks[idx].text);
+
+    // Image-only / non-speakable chunks can appear in EPUB content flow.
+    // Skip them so playback continues instead of stalling on empty text.
+    if (!chunkText || chunkText.length < 2) {
+      if (isPlaying) {
+        _saveProgress();
+        _speakChunk(idx + 1);
+      }
+      return;
+    }
 
     // ── EDGE TTS (Neural voice) ──
     if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
@@ -1431,6 +1503,10 @@ const Reader = (() => {
 
   function _speakChunkWithSystem(idx) {
     const chunkText = _cleanTextForTTS(chunks[idx].text);
+    if (!chunkText || chunkText.length < 2) {
+      if (isPlaying) _speakChunk(idx + 1);
+      return;
+    }
     const u = new SpeechSynthesisUtterance(chunkText);
     u.rate   = speed;
     u.pitch  = pitch;
@@ -1455,7 +1531,12 @@ const Reader = (() => {
 
     u.onerror = (e) => {
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        UI.toast('Speech error: ' + e.error, 'error');
+        // Don't stall the reader on a system voice error — advance to next chunk.
+        // Log the error but keep playback going.
+        console.warn('[TTS] System voice error:', e.error, 'chunk', idx);
+        if (isPlaying) {
+          setTimeout(() => _speakChunk(idx + 1), 300);
+        }
       }
     };
 

@@ -249,6 +249,10 @@ const CloudTTS = (() => {
     return currentAudio && !currentAudio.paused && !currentAudio.ended;
   }
 
+  function isPaused() {
+    return !!(currentAudio && currentAudio.paused && !currentAudio.ended);
+  }
+
   function setVolume(val) {
     const next = Number.isFinite(val) ? Math.max(0, Math.min(1, val)) : 1.0;
     volume = next;
@@ -273,6 +277,7 @@ const CloudTTS = (() => {
     pause,
     resume,
     isPlaying,
+    isPaused,
     setVolume,
     getVolume
   };
