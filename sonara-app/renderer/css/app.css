@@ -817,6 +817,31 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   user-select: text;
 }
 
+/* ── EPUB READER STYLES ── */
+/* Text paragraphs inside epub content blocks */
+.epub-para {
+  margin: 0 0 1.1em 0;
+  display: block;
+}
+/* Figures that wrap inline epub images */
+.epub-figure {
+  display: block;
+  margin: 28px auto;
+  text-align: center;
+  page-break-inside: avoid;
+}
+/* The image itself */
+.epub-image {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 520px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
 /* ── PDF VISUAL VIEWER ── */
 .reader-pdf-wrap {
   flex: 1;

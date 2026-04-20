@@ -1039,33 +1039,55 @@ const Reader = (() => {
   }
 
   // ── RENDER CHUNK TEXT (word spans) ────────────────────────
-  function _renderChunkText(idx) {
-    const chunk = chunks[idx];
+  function _renderChunkText(chunkIdx) {
+    const chunk = chunks[chunkIdx];
     if (!chunk) return;
 
     const container = document.getElementById('readerText');
     const text      = chunk.text;
-
-    // Split into sentences, then words, build spans
-    // A "sentence" is delimited by . ! ? — used for background highlight
-    const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
     wordSpans   = [];
     sentenceMap = [];
-
     let wordGlobalIdx = 0;
-    const html = sentences.map((sentence, si) => {
-      const words = sentence.split(/(\s+)/);
-      let sentStartIdx = wordGlobalIdx;
-      const wordHtml = words.map(tok => {
-        if (!tok || /^\s+$/.test(tok)) return tok; // empty or whitespace — preserve
-        const idx = wordGlobalIdx++;
-        return `<span class="word word-unspoken" data-wi="${idx}">${_escHtml(tok)}</span>`;
-      }).join('');
-      sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
-      return `<span class="sentence" data-si="${si}">${wordHtml}</span>`;
-    }).join(' ');
 
-    container.innerHTML = html;
+    // ── EPUB with content blocks: render text + images in document order ──
+    if (chunk.source === 'epub' && Array.isArray(chunk.contentBlocks) && chunk.contentBlocks.length) {
+      let html = '';
+      for (const block of chunk.contentBlocks) {
+        if (block.type === 'image') {
+          html += `<figure class="epub-figure"><img class="epub-image" src="${block.dataUrl}" alt="${_escHtml(block.alt || '')}" loading="lazy" /></figure>`;
+        } else if (block.type === 'text' && block.text) {
+          const sentences = block.text.match(/[^.!?]+[.!?]*/g) || [block.text];
+          html += '<p class="epub-para">';
+          for (const sentence of sentences) {
+            const si = sentenceMap.length;
+            const sentStartIdx = wordGlobalIdx;
+            const wordHtml = sentence.split(/(\s+)/).map(tok => {
+              if (!tok || /^\s+$/.test(tok)) return tok;
+              const wi = wordGlobalIdx++;
+              return `<span class="word word-unspoken" data-wi="${wi}">${_escHtml(tok)}</span>`;
+            }).join('');
+            sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
+            html += `<span class="sentence" data-si="${si}">${wordHtml}</span> `;
+          }
+          html += '</p>';
+        }
+      }
+      container.innerHTML = html;
+    } else {
+      // ── Plain text mode (PDF, MOBI, epub without images) ──
+      const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+      const html = sentences.map((sentence, si) => {
+        const sentStartIdx = wordGlobalIdx;
+        const wordHtml = sentence.split(/(\s+)/).map(tok => {
+          if (!tok || /^\s+$/.test(tok)) return tok;
+          const wi = wordGlobalIdx++;
+          return `<span class="word word-unspoken" data-wi="${wi}">${_escHtml(tok)}</span>`;
+        }).join('');
+        sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
+        return `<span class="sentence" data-si="${si}">${wordHtml}</span>`;
+      }).join(' ');
+      container.innerHTML = html;
+    }
 
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
