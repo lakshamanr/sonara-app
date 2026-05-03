@@ -17,7 +17,6 @@ const ExportMP3 = (() => {
 
   const MAX_SEGMENT = 3000;
 
-  // ── TEXT SPLITTER ─────────────────────────────────────────
   function _splitText(text) {
     if (!text || !text.trim()) return [];
     if (text.length <= MAX_SEGMENT) return [text.trim()];
@@ -30,18 +29,56 @@ const ExportMP3 = (() => {
       const sentMarks = ['. ', '! ', '? ', '.\n', '!\n', '?\n'];
       let bestBreak = -1;
 
-      for (const mark of sentMarks) {
-        const idx = remaining.lastIndexOf(mark, MAX_SEGMENT - 1);
-        if (idx > bestBreak && idx > MAX_SEGMENT * 0.4) {
-          bestBreak = idx + mark.length;
+      // Smart paragraph split first
+      const parIdx = remaining.lastIndexOf('\n\n', MAX_SEGMENT - 1);
+      if (parIdx > MAX_SEGMENT * 0.4) {
+        bestBreak = parIdx + 2;
+      } else {
+        for (const mark of sentMarks) {
+          let idx = remaining.lastIndexOf(mark, MAX_SEGMENT - 1);
+          
+          // Ignore splits on common abbreviations
+          while (idx > 0 && mark.startsWith('.')) {
+            const pre = remaining.slice(Math.max(0, idx - 6), idx);
+            if (/(Mr|Mrs|Ms|Dr|Prof|Sr|Jr|vs|etc)\s*$/i.test(pre)) {
+              idx = remaining.lastIndexOf(mark, idx - 1);
+            } else {
+              break;
+            }
+          }
+
+          if (idx > bestBreak && idx > MAX_SEGMENT * 0.4) {
+            bestBreak = idx + mark.length;
+          }
         }
       }
+
       if (bestBreak > 0) splitAt = bestBreak;
       parts.push(remaining.slice(0, splitAt).trim());
       remaining = remaining.slice(splitAt).trim();
     }
     if (remaining.length > 0) parts.push(remaining);
     return parts;
+  }
+
+  function _cleanupText(text, skipChars, skipWordsStr) {
+    let t = text;
+    if (skipChars) {
+      const escaped = skipChars.split('').map(c => '\\\\' + c).join('');
+      try {
+        t = t.replace(new RegExp(`[${escaped}]`, 'g'), '');
+      } catch (e) { /* ignore invalid regex */ }
+    }
+    if (skipWordsStr) {
+      const words = skipWordsStr.split(',').map(w => w.trim()).filter(Boolean);
+      if (words.length > 0) {
+        try {
+          const pattern = '\\\\b(' + words.join('|') + ')\\\\b';
+          t = t.replace(new RegExp(pattern, 'gi'), '');
+        } catch (e) { /* ignore invalid regex */ }
+      }
+    }
+    return t;
   }
 
   // ── OPTIONS FLOW ──────────────────────────────────────────
@@ -115,6 +152,9 @@ const ExportMP3 = (() => {
       }
     } catch (_) {}
 
+    const skipChars = await window.sonara.settings.get('ttsSkipChars', '*_~#');
+    const skipWordsStr = await window.sonara.settings.get('ttsSkipWords', '');
+
     // Save dialog
     const savePath = await window.sonara.export.saveDialog({ title: bookTitle, format });
     if (!savePath) return;
@@ -152,8 +192,11 @@ const ExportMP3 = (() => {
       _updateProgress(i, segments.length, seg.chunkTitle || `Part ${i + 1}`);
 
       try {
+        const cleanText = _cleanupText(seg.text, skipChars, skipWordsStr);
+        if (!cleanText.trim()) continue;
+
         const result = await window.sonara.tts.synthesize({
-          text:  seg.text,
+          text:  cleanText,
           voice: edgeVoice,
           speed: state.speed || 1.0,
           pitch: state.pitch || 1.0

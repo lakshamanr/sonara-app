@@ -270,6 +270,25 @@ function escapeXml(text) {
 }
 
 /**
+ * Inject SSML break tags to enhance human-like prosody and rhythm
+ */
+function injectProsody(escapedText) {
+  let res = escapedText;
+  res = res.replace(/\n\s*\n/g, '<break time="800ms"/>\n\n');
+  res = res.replace(/\.\.\./g, '<break time="600ms"/>');
+  res = res.replace(/…/g, '<break time="600ms"/>');
+  res = res.replace(/--|—/g, '<break time="300ms"/>');
+  const sentenceRegex = /(?<!\bMr|\bMrs|\bMs|\bDr|\bProf|\bSr|\bJr|\bvs|\betc)([.!?]+)(\s+)(?=["'“A-Z])/g;
+  res = res.replace(sentenceRegex, (match, punc, space) => punc + '<break time="500ms"/>' + space);
+  const commaRegex = /([,:;])(\s+)/g;
+  res = res.replace(commaRegex, (match, punc, space) => {
+    const pause = punc === ',' ? '200ms' : '400ms';
+    return punc + `<break time="${pause}"/>` + space;
+  });
+  return res;
+}
+
+/**
  * Generate date string for X-Timestamp header
  */
 function dateToString() {
@@ -345,11 +364,13 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
       ws.send(configMsg);
 
       // 2. Send SSML
+      const prosodyText = injectProsody(escapeXml(text));
+
       const ssml =
         `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
         `<voice name='${escapeXml(voice)}'>` +
         `<prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>` +
-        `${escapeXml(text)}` +
+        `${prosodyText}` +
         `</prosody></voice></speak>`;
 
       const ssmlMsg =
