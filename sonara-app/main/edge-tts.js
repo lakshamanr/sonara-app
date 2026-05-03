@@ -271,25 +271,73 @@ function escapeXml(text) {
 
 /**
  * Inject SSML break tags into PLAIN (unescaped) text.
- * Uses placeholders so XML escaping never corrupts break tag syntax.
- * Punctuation regexes run before escaping so they never match XML entities.
- * Returns XML-safe content for embedding inside an SSML element.
+ * Strategy: locate break positions in raw text, then escape each plain-text
+ * segment individually and interleave real SSML <break> tags between them.
+ * No null-byte placeholders — avoids WebSocket UTF-8 frame rejection.
  */
 function injectProsody(plainText) {
-  const breaks = [];
-  const PH = '\x00B\x00';
-  function ph(ms) { breaks.push(ms); return PH + (breaks.length - 1) + PH; }
-  let res = plainText;
-  res = res.replace(/\n\s*\n/g, () => ph('800ms') + '\n\n');
-  res = res.replace(/\.\.\./g, () => ph('600ms'));
-  res = res.replace(/\u2026/g, () => ph('600ms'));
-  res = res.replace(/--|—/g, () => ph('300ms'));
-  const sentenceRe = /(?<!\bMr|\bMrs|\bMs|\bDr|\bProf|\bSr|\bJr|\bvs|\betc)([.!?]+)(\s+)(?=["\u201cA-Z])/g;
-  res = res.replace(sentenceRe, (m, punc, sp) => punc + ph('500ms') + sp);
-  const commaRe = /([,:;])( )/g;
-  res = res.replace(commaRe, (m, punc, sp) => punc + ph(punc === ',' ? '200ms' : '400ms') + sp);
-  const safe = escapeXml(res);
-  return safe.replace(/\x00B\x00(\d+)\x00B\x00/g, (_, i) => '<break time="' + breaks[+i] + '"/>');
+  // Each entry: { pos: number, len: number, tag: string }
+  const marks = [];
+
+  function addMark(pos, len, ms) {
+    marks.push({ pos, len, tag: '<break time="' + ms + '"/>' });
+  }
+
+  // Helper: run regex on text, collect all match positions
+  function collect(re, msOrFn) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(plainText)) !== null) {
+      const ms = typeof msOrFn === 'function' ? msOrFn(m) : msOrFn;
+      if (ms) addMark(m.index, m[0].length, ms);
+    }
+  }
+
+  // 1. Paragraph breaks — replace the blank-line gap itself
+  collect(/\n[ \t]*\n/g, '800ms');
+
+  // 2. Ellipses
+  collect(/\.\.\.|…/g, '600ms');
+
+  // 3. Em-dashes
+  collect(/--|—/g, '300ms');
+
+  // 4. Sentence endings (skip common abbreviations)
+  //    Match the period/!? and the following whitespace; insert break BEFORE the whitespace
+  const sentenceRe = /(?<!\bMr|\bMrs|\bMs|\bDr|\bProf|\bSr|\bJr|\bvs|\betc)([.!?]+)([ \t]+)(?=[A-Z\u201c\u2018"])/g;
+  sentenceRe.lastIndex = 0;
+  let sm;
+  while ((sm = sentenceRe.exec(plainText)) !== null) {
+    // Insert after the punctuation chars, before the whitespace
+    const punctEnd = sm.index + sm[1].length;
+    addMark(punctEnd, 0, '500ms'); // zero-width: insert without consuming input
+  }
+
+  // 5. Commas, colons, semicolons followed by exactly one space
+  const commaRe = /([,:;]) /g;
+  commaRe.lastIndex = 0;
+  let cm;
+  while ((cm = commaRe.exec(plainText)) !== null) {
+    const ms = cm[1] === ',' ? '200ms' : '400ms';
+    // Insert after the punctuation char, keep the space
+    addMark(cm.index + 1, 0, ms); // zero-width insert after the comma
+  }
+
+  // Sort marks by position; resolve overlaps by keeping first
+  marks.sort((a, b) => a.pos - b.pos);
+
+  // Build result: alternate plain-text segments (escaped) with break tags
+  let out = '';
+  let cursor = 0;
+  for (const { pos, len, tag } of marks) {
+    if (pos < cursor) continue; // skip overlapping marks
+    out += escapeXml(plainText.slice(cursor, pos));
+    // For zero-width marks (len===0) we don't consume input
+    cursor = pos + len;
+    out += tag;
+  }
+  out += escapeXml(plainText.slice(cursor));
+  return out;
 }
 /**
  * Generate date string for X-Timestamp header
