@@ -298,60 +298,18 @@ const Parser = (() => {
 
     if (!spineIds.length) throw new Error('No readable content in EPUB');
 
-    // 3. Walk each spine document in order → interleaved text + image blocks
-    const raw     = [];
-    let chapterNum = 0;
-
-    // Walk a single EPUB body node, emitting {type:'text'} and {type:'image'} blocks
-    // in document order so images appear exactly where they do in the original HTML.
-    async function _walkBody(bodyEl, chapterDir) {
-      const blocks = [];
-      let textBuffer = [];
-      const BLOCK_TAGS = new Set(['p','h1','h2','h3','h4','h5','h6','div','section',
-                                   'article','figure','blockquote','li','td','th','dt','dd',
-                                   'header','footer','main']);
-      const SKIP_TAGS  = new Set(['script','style','nav','aside','head']);
-
-      function flushText() {
-        const t = cleanText(textBuffer.join(' '));
-        if (t) blocks.push({ type: 'text', text: t });
-        textBuffer = [];
-      }
-
-      async function loadImg(srcAttr, alt) {
-        if (!srcAttr) return;
-        if (srcAttr.startsWith('data:')) { blocks.push({ type: 'image', dataUrl: srcAttr, alt }); return; }
-        if (srcAttr.startsWith('http://') || srcAttr.startsWith('https://')) return;
-        try {
-          const decoded = decodeURIComponent(srcAttr.split('#')[0].split('?')[0]);
-          const imgPath = _resolveEpubPath(chapterDir, decoded);
-          const b64 = await zip.file(imgPath)?.async('base64')
-                   || await zip.file(decodeURIComponent(imgPath))?.async('base64');
-          if (b64) blocks.push({ type: 'image', dataUrl: `data:${_guessEpubMediaType(imgPath)};base64,${b64}`, alt });
-        } catch (_) {}
-      }
-
-      async function walk(node) {
-        if (node.nodeType === 3) { // TEXT_NODE
-          const t = node.textContent && node.textContent.trim();
-          if (t) textBuffer.push(t);
-          return;
-        }
-        if (node.nodeType !== 1) return; // ELEMENT_NODE only
-        const tag = (node.tagName || '').toLowerCase();
-        if (SKIP_TAGS.has(tag)) return;
-        if (tag === 'img') { flushText(); await loadImg(node.getAttribute('src') || '', node.getAttribute('alt') || ''); return; }
-        if (tag === 'image') { flushText(); await loadImg(node.getAttribute('xlink:href') || node.getAttribute('href') || '', node.getAttribute('alt') || ''); return; }
-        const isBlock = BLOCK_TAGS.has(tag);
-        if (isBlock) flushText();
-        for (const child of node.childNodes) await walk(child);
-        if (isBlock) flushText();
-      }
-
-      if (bodyEl) for (const child of bodyEl.childNodes) await walk(child);
-      flushText();
-      return blocks;
+    // 3a. Extract all publisher CSS from the manifest and concatenate
+    let epubStylesheet = '';
+    const cssItems = Object.values(manifest).filter(m => m.type === 'text/css' && m.href);
+    for (const cssItem of cssItems) {
+      const cssPath = cssItem.href.startsWith('/') ? cssItem.href.slice(1) : opfDir + cssItem.href;
+      const cssText = await zip.file(cssPath)?.async('text')
+                   || await zip.file(decodeURIComponent(cssPath))?.async('text');
+      if (cssText) epubStylesheet += cssText + '\n';
     }
+
+    const raw = [];
+    let chapterNum = 0;
 
     for (let i = 0; i < spineIds.length; i++) {
       const id       = spineIds[i];
@@ -370,20 +328,42 @@ const Parser = (() => {
       const heading = doc.querySelector('h1,h2,h3');
       const title   = (heading && heading.textContent && heading.textContent.trim() || 'Chapter ' + (++chapterNum)).slice(0, 50);
 
-      const contentBlocks = await _walkBody(doc.body, chapterDir);
-      const text = cleanText(contentBlocks.filter(b => b.type === 'text').map(b => b.text).join(' '));
-      const hasImages = contentBlocks.some(b => b.type === 'image');
+      // Convert images to data URIs inline
+      const images = doc.querySelectorAll('img, image');
+      let hasImages = images.length > 0;
+      for (const img of images) {
+        const srcAttr = img.getAttribute('src') || img.getAttribute('xlink:href') || img.getAttribute('href');
+        if (srcAttr && !srcAttr.startsWith('http') && !srcAttr.startsWith('data:')) {
+          try {
+            const decoded = decodeURIComponent(srcAttr.split('#')[0].split('?')[0]);
+            const imgPath = _resolveEpubPath(chapterDir, decoded);
+            const b64 = await zip.file(imgPath)?.async('base64') || await zip.file(decodeURIComponent(imgPath))?.async('base64');
+            if (b64) {
+              const dataUrl = `data:${_guessEpubMediaType(imgPath)};base64,${b64}`;
+              if (img.tagName.toLowerCase() === 'image') {
+                img.setAttribute('xlink:href', dataUrl);
+                img.setAttribute('href', dataUrl);
+              } else {
+                img.setAttribute('src', dataUrl);
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Preserve full semantic HTML
+      const htmlContent = doc.body.innerHTML;
+      const text = cleanText(doc.body.textContent || '');
 
       if (text.length > 50 || hasImages) {
-        const chunk = { title, text, page: raw.length + 1, source: 'epub' };
-        if (hasImages) chunk.contentBlocks = contentBlocks;
+        const chunk = { title, text, page: raw.length + 1, source: 'epub', htmlContent };
         raw.push(chunk);
       }
       onProgress && onProgress(Math.round(((i + 1) / spineIds.length) * 100));
     }
 
     if (!raw.length) throw new Error('No readable text found. EPUB may be image-based.');
-    return raw;
+    return { chunks: raw, epubStylesheet };
   }
 
   // ── COVER EXTRACTION ────────────────────────────────────

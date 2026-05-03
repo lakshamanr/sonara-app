@@ -1125,8 +1125,11 @@ const App = (() => {
 
       // 2. Parse
       let chunks;
+      let epubStylesheet = '';
       if (fileInfo.format === 'epub') {
-        chunks = await Parser.parseEPUB(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting chapters…', p + '%'));
+        const epubResult = await Parser.parseEPUB(base64, p => _setGenProgress(20 + p * 0.3, 'Extracting chapters…', p + '%'));
+        chunks = epubResult.chunks;
+        epubStylesheet = epubResult.epubStylesheet || '';
       } else if (fileInfo.format === 'mobi' || fileInfo.format === 'azw3') {
         // MOBI/AZW3 parsing happens in the main process (needs Node.js Buffer)
         chunks = await Parser.parseMOBI(fileInfo.path, p => _setGenProgress(20 + p * 0.3, 'Extracting Kindle content…', p + '%'));
@@ -1222,7 +1225,7 @@ const App = (() => {
       if (!silent) {
         // 7. Load into reader
         currentBookId = id;
-        Reader.loadBook(chunks, id, resumeData);
+        Reader.loadBook(chunks, id, resumeData, epubStylesheet);
         const _book = await window.sonara.library.getBook(id);
         const _coverPath = _book?.cover_path || '';
         Reader.setBookCoverPath(_coverPath);

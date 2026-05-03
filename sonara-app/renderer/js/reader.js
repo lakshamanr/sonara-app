@@ -999,10 +999,92 @@ const Reader = (() => {
     return parts;
   }
 
+  // ── EPUB PUBLISHER STYLESHEET INJECTION ────────────────
+  // Extracts the publisher's CSS from the EPUB, sanitizes it (strips
+  // position:fixed/absolute, url() references, and @import rules that
+  // could escape the reader container), then scopes every rule to the
+  // #readerText element so it cannot interfere with the rest of the app.
+  function _injectEpubStyles(rawCss) {
+    // Remove any previously injected EPUB style element
+    const existing = document.getElementById('epubPublisherStyle');
+    if (existing) existing.remove();
+
+    if (!rawCss || !rawCss.trim()) return;
+
+    try {
+      // 1. Strip dangerous constructs before touching the DOM
+      let css = rawCss
+        // Remove @import — would make external requests
+        .replace(/@import\s[^;]+;/gi, '')
+        // Strip url() references (fonts, images) from the raw text —
+        // we only want typographic rules, not asset loading
+        .replace(/url\([^)]*\)/gi, 'none')
+        // Kill position:fixed / position:absolute so nothing escapes the reader
+        .replace(/position\s*:\s*(fixed|absolute)\s*;?/gi, '');
+
+      // 2. Scope every rule to #readerText so styles don't bleed globally.
+      //    We parse the raw text with a temporary style-in-shadow approach
+      //    to iterate real CSSRules, then re-prefix each selector.
+      const scopeSelector = '#readerText';
+      const BLOCK_SELECTORS = /^(html|body|:root|\*)\s*$/i;
+      const ALLOW_ATRULES  = new Set(['@media', '@supports', '@font-face']);
+
+      let scoped = '';
+      // Insert into a disposable document to parse the rules
+      const tempDoc = document.implementation.createHTMLDocument('');
+      const tempStyle = tempDoc.createElement('style');
+      tempStyle.textContent = css;
+      tempDoc.head.appendChild(tempStyle);
+      const sheet = tempStyle.sheet;
+      if (!sheet) throw new Error('Could not parse EPUB stylesheet');
+
+      function _prefixRule(rule) {
+        if (rule instanceof CSSStyleRule) {
+          // Skip or replace global selectors
+          const sel = rule.selectorText || '';
+          const prefixed = sel.split(',').map(s => {
+            const t = s.trim();
+            if (BLOCK_SELECTORS.test(t)) return scopeSelector; // remap body/html → container
+            return scopeSelector + ' ' + t;
+          }).join(', ');
+          return `${prefixed} { ${rule.style.cssText} }\n`;
+        }
+        if (rule instanceof CSSMediaRule || rule instanceof CSSSupportsRule) {
+          const inner = [...rule.cssRules].map(_prefixRule).join('');
+          const cond = rule instanceof CSSMediaRule
+            ? `@media ${rule.conditionText}`
+            : `@supports ${rule.conditionText}`;
+          return `${cond} {\n${inner}}\n`;
+        }
+        if (rule instanceof CSSFontFaceRule) {
+          // Font faces are global; skip to avoid cross-origin issues
+          return '';
+        }
+        return '';
+      }
+
+      for (const rule of sheet.cssRules) {
+        scoped += _prefixRule(rule);
+      }
+
+      // 3. Inject the scoped sheet into the live document
+      const styleEl = document.createElement('style');
+      styleEl.id = 'epubPublisherStyle';
+      styleEl.textContent = scoped;
+      document.head.appendChild(styleEl);
+
+    } catch (err) {
+      console.warn('[reader] EPUB stylesheet injection failed:', err.message);
+    }
+  }
+
   // ── LOAD BOOK ────────────────────────────────────────────
-  async function loadBook(newChunks, newBookId, resumeData) {
+  async function loadBook(newChunks, newBookId, resumeData, epubStylesheet) {
     // Stop any current playback
     stop();
+
+    // Inject publisher EPUB stylesheet (scoped and sanitized)
+    _injectEpubStyles(epubStylesheet || '');
 
     // Split very long EPUB/text chunks so Edge TTS never times out.
     // PDF chunks are left as-is (already page-sized).
@@ -1016,7 +1098,8 @@ const Reader = (() => {
           splitChunks.push({
             ...chunk,
             text: part,
-            // Image blocks only belong to the first part; subsequent parts are pure text
+            // Only first part keeps original HTML layout; subsequent parts are plain text
+            htmlContent:   i === 0 ? chunk.htmlContent : undefined,
             contentBlocks: i === 0 ? chunk.contentBlocks : undefined,
             title: parts.length > 1 && i > 0 ? chunk.title + ' (cont. ' + (i + 1) + ')' : chunk.title
           });
@@ -1092,30 +1175,51 @@ const Reader = (() => {
     sentenceMap = [];
     let wordGlobalIdx = 0;
 
-    // ── EPUB with content blocks: render text + images in document order ──
-    if (chunk.source === 'epub' && Array.isArray(chunk.contentBlocks) && chunk.contentBlocks.length) {
-      let html = '';
-      for (const block of chunk.contentBlocks) {
-        if (block.type === 'image') {
-          html += `<figure class="epub-figure"><img class="epub-image" src="${block.dataUrl}" alt="${_escHtml(block.alt || '')}" loading="lazy" /></figure>`;
-        } else if (block.type === 'text' && block.text) {
-          const sentences = block.text.match(/[^.!?]+[.!?]*/g) || [block.text];
-          html += '<p class="epub-para">';
-          for (const sentence of sentences) {
-            const si = sentenceMap.length;
-            const sentStartIdx = wordGlobalIdx;
-            const wordHtml = sentence.split(/(\s+)/).map(tok => {
-              if (!tok || /^\s+$/.test(tok)) return tok;
-              const wi = wordGlobalIdx++;
-              return `<span class="word word-unspoken" data-wi="${wi}">${_escHtml(tok)}</span>`;
-            }).join('');
-            sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
-            html += `<span class="sentence" data-si="${si}">${wordHtml}</span> `;
-          }
-          html += '</p>';
+    // ── EPUB with semantic HTML preservation ──
+    if (chunk.source === 'epub' && chunk.htmlContent) {
+      container.innerHTML = chunk.htmlContent;
+      
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+      const textNodes = [];
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.parentElement && node.parentElement.tagName.match(/^(STYLE|SCRIPT)$/i)) continue;
+        if (node.nodeValue.trim().length > 0) {
+          textNodes.push(node);
         }
       }
-      container.innerHTML = html;
+
+      for (const textNode of textNodes) {
+         const sentenceMatch = textNode.nodeValue.match(/[^.!?]+[.!?]*/g) || [textNode.nodeValue];
+         const fragment = document.createDocumentFragment();
+         
+         for (let i = 0; i < sentenceMatch.length; i++) {
+            const sentence = sentenceMatch[i];
+            const si = sentenceMap.length;
+            const sentStartIdx = wordGlobalIdx;
+            
+            const sentSpan = document.createElement('span');
+            sentSpan.className = 'sentence';
+            sentSpan.dataset.si = si;
+            
+            const words = sentence.split(/(\s+)/);
+            for (const tok of words) {
+               if (!tok || /^\s+$/.test(tok)) {
+                  sentSpan.appendChild(document.createTextNode(tok));
+               } else {
+                  const wi = wordGlobalIdx++;
+                  const wordSpan = document.createElement('span');
+                  wordSpan.className = 'word word-unspoken';
+                  wordSpan.dataset.wi = wi;
+                  wordSpan.textContent = tok;
+                  sentSpan.appendChild(wordSpan);
+               }
+            }
+            sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
+            fragment.appendChild(sentSpan);
+         }
+         textNode.parentNode.replaceChild(fragment, textNode);
+      }
     } else {
       // ── Plain text mode (PDF, MOBI, epub without images) ──
       const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];

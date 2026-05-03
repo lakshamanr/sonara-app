@@ -270,24 +270,27 @@ function escapeXml(text) {
 }
 
 /**
- * Inject SSML break tags to enhance human-like prosody and rhythm
+ * Inject SSML break tags into PLAIN (unescaped) text.
+ * Uses placeholders so XML escaping never corrupts break tag syntax.
+ * Punctuation regexes run before escaping so they never match XML entities.
+ * Returns XML-safe content for embedding inside an SSML element.
  */
-function injectProsody(escapedText) {
-  let res = escapedText;
-  res = res.replace(/\n\s*\n/g, '<break time="800ms"/>\n\n');
-  res = res.replace(/\.\.\./g, '<break time="600ms"/>');
-  res = res.replace(/…/g, '<break time="600ms"/>');
-  res = res.replace(/--|—/g, '<break time="300ms"/>');
-  const sentenceRegex = /(?<!\bMr|\bMrs|\bMs|\bDr|\bProf|\bSr|\bJr|\bvs|\betc)([.!?]+)(\s+)(?=["'“A-Z])/g;
-  res = res.replace(sentenceRegex, (match, punc, space) => punc + '<break time="500ms"/>' + space);
-  const commaRegex = /([,:;])(\s+)/g;
-  res = res.replace(commaRegex, (match, punc, space) => {
-    const pause = punc === ',' ? '200ms' : '400ms';
-    return punc + `<break time="${pause}"/>` + space;
-  });
-  return res;
+function injectProsody(plainText) {
+  const breaks = [];
+  const PH = '\x00B\x00';
+  function ph(ms) { breaks.push(ms); return PH + (breaks.length - 1) + PH; }
+  let res = plainText;
+  res = res.replace(/\n\s*\n/g, () => ph('800ms') + '\n\n');
+  res = res.replace(/\.\.\./g, () => ph('600ms'));
+  res = res.replace(/\u2026/g, () => ph('600ms'));
+  res = res.replace(/--|—/g, () => ph('300ms'));
+  const sentenceRe = /(?<!\bMr|\bMrs|\bMs|\bDr|\bProf|\bSr|\bJr|\bvs|\betc)([.!?]+)(\s+)(?=["\u201cA-Z])/g;
+  res = res.replace(sentenceRe, (m, punc, sp) => punc + ph('500ms') + sp);
+  const commaRe = /([,:;])( )/g;
+  res = res.replace(commaRe, (m, punc, sp) => punc + ph(punc === ',' ? '200ms' : '400ms') + sp);
+  const safe = escapeXml(res);
+  return safe.replace(/\x00B\x00(\d+)\x00B\x00/g, (_, i) => '<break time="' + breaks[+i] + '"/>');
 }
-
 /**
  * Generate date string for X-Timestamp header
  */
@@ -363,8 +366,8 @@ async function synthesize(text, voice = 'en-US-AriaNeural', options = {}) {
         });
       ws.send(configMsg);
 
-      // 2. Send SSML
-      const prosodyText = injectProsody(escapeXml(text));
+      // 2. Send SSML (injectProsody works on raw text, returns XML-safe content)
+      const prosodyText = injectProsody(text);
 
       const ssml =
         `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +

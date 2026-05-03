@@ -156,7 +156,8 @@ const BulkExport = (() => {
     if (fmt === 'pdf') {
       chunks = await Parser.parsePDF(base64, () => {});
     } else if (fmt === 'epub') {
-      chunks = await Parser.parseEPUB(base64, () => {});
+      const epubResult = await Parser.parseEPUB(base64, () => {});
+      chunks = epubResult.chunks || [];
     } else if (fmt === 'mobi' || fmt === 'azw3') {
       const result = await window.sonara.books.parseMOBI(book.file_path);
       chunks = result?.chunks || [];
