@@ -412,10 +412,16 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    // ponytail: open DevTools on launch so users can see TTS logs; close anytime with F12.
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') {
+    if (input.type !== 'keyDown') return;
+    const isF12       = input.key === 'F12' || input.code === 'F12';
+    const isCtrlShfI  = (input.control || input.meta) && input.shift && (input.key === 'I' || input.key === 'i');
+    const isCtrlShfJ  = (input.control || input.meta) && input.shift && (input.key === 'J' || input.key === 'j');
+    if (isF12 || isCtrlShfI || isCtrlShfJ) {
       mainWindow.webContents.toggleDevTools();
       event.preventDefault();
     }
