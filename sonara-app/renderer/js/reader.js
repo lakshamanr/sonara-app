@@ -337,15 +337,17 @@ const Reader = (() => {
   function _renderVoiceItem(v) {
     const voiceId = _getVoiceId(v) || v.name;
     const sel = chosenVoice && chosenVoice.name === v.name;
+    const isSupertonic = !!v._supertonic;
     const isNatural = !!v._edgeVoice;
     const isCloud = !v.localService;
-    const serviceType = isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD');
-    const serviceBadge = isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote');
-    const tooltip = isNatural ? 'Microsoft Neural voice - high quality, natural sounding'
+    const serviceType = isSupertonic ? 'SUPERTONIC' : (isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD'));
+    const serviceBadge = isSupertonic ? 'badge-supertonic' : (isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote'));
+    const tooltip = isSupertonic ? 'Supertonic on-device neural TTS — fully offline, downloads ~400 MB on first use'
+      : isNatural ? 'Microsoft Neural voice - high quality, natural sounding'
       : (v.localService ? 'Offline voice - works without internet' : 'Online voice - requires internet');
     const favorite = _isFavoriteVoice(v);
 
-    return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-id="${_escHtml(voiceId)}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isNatural ? 'natural' : (isCloud ? 'cloud' : 'local')}">
+    return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-id="${_escHtml(voiceId)}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isSupertonic ? 'supertonic' : (isNatural ? 'natural' : (isCloud ? 'cloud' : 'local'))}">
       <div class="vi-radio"></div>
       <div class="vi-info">
         <div class="vi-name">${_escHtml(v.name)}</div>
@@ -434,7 +436,9 @@ const Reader = (() => {
     }
 
     const favorites = filtered.filter(_isFavoriteVoice);
-    const others = filtered.filter(v => !_isFavoriteVoice(v));
+    const nonFav    = filtered.filter(v => !_isFavoriteVoice(v));
+    const supertonic = nonFav.filter(v => v._supertonic);
+    const others     = nonFav.filter(v => !v._supertonic);
 
     const sections = [];
     if (favorites.length) {
@@ -442,6 +446,14 @@ const Reader = (() => {
         `<div class="voice-group">` +
           `<div class="voice-group-label">Favorites (${favorites.length})</div>` +
           favorites.map(_renderVoiceItem).join('') +
+        `</div>`
+      );
+    }
+    if (supertonic.length) {
+      sections.push(
+        `<div class="voice-group">` +
+          `<div class="voice-group-label">Supertonic — On-Device AI (${supertonic.length})</div>` +
+          supertonic.map(_renderVoiceItem).join('') +
         `</div>`
       );
     }

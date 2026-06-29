@@ -1326,6 +1326,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .badge-local   { background: var(--accent-select); color: var(--accent); border: 1px solid var(--accent-border); }
 .badge-remote  { background: rgba(168,125,224,.08); color: var(--purple); border: 1px solid rgba(168,125,224,.2); }
 .badge-natural { background: rgba(82,200,122,.12); color: #6ee09a; border: 1px solid rgba(82,200,122,.3); font-weight: 500; letter-spacing: .3px; }
+.badge-supertonic { background: rgba(255,170,60,.14); color: #ffb84d; border: 1px solid rgba(255,170,60,.35); font-weight: 600; letter-spacing: .3px; }
 .vi-fbtn {
   width: 22px; height: 22px; border-radius: 50%;
   background: transparent; border: 1px solid var(--border);
