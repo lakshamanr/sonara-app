@@ -96,10 +96,14 @@ const ExportMP3 = (() => {
     const chunks = Reader.getChunks();
     const format = _options.format;
 
-    const edgeVoice = state.chosenVoice?._edgeVoice || 'en-US-AriaNeural';
-    const isCloud   = state.chosenVoice?._cloudVoice;
+    const voice = state.chosenVoice;
+    const isCloud = !!voice?._cloudVoice;
+    const isLocal = !!voice?._supertonic;
+    const voiceLabel = isLocal ? `Supertonic ${voice._supertonicId}`
+                     : voice?._edgeVoice || 'en-US-AriaNeural';
     if (!isCloud) {
-      UI.toast('Note: System voices can\'t export. Using Microsoft Aria Neural.', 'info', 4000);
+      UI.toast('Note: System voices can\'t export. Pick an Edge or Supertonic voice first.', 'error', 4000);
+      return;
     }
 
     // Book metadata
@@ -136,11 +140,12 @@ const ExportMP3 = (() => {
       return;
     }
 
-    _showModal(bookTitle, segments.length, edgeVoice, format);
+    _showModal(bookTitle, segments.length, voiceLabel, format);
     _cancelled  = false;
     _inProgress = true;
 
     const audioBase64Chunks = [];
+    let   audioMime  = null;          // 'audio/mpeg' or 'audio/wav' — set by first chunk
     const chapters = [];              // {title, startMs, endMs}
     let   cursorMs = 0;
     let   curChapter = null;
@@ -152,14 +157,12 @@ const ExportMP3 = (() => {
       _updateProgress(i, segments.length, seg.chunkTitle || `Part ${i + 1}`);
 
       try {
-        const result = await window.sonara.tts.synthesize({
-          text:  seg.text,
-          voice: edgeVoice,
-          speed: state.speed || 1.0,
-          pitch: state.pitch || 1.0
-        });
-        if (!result?.audio) { failCount++; continue; }
-        audioBase64Chunks.push(result.audio);
+        const result = await CloudTTS.synthOnly(
+          seg.text, voice, state.speed || 1.0, state.pitch || 1.0
+        );
+        if (!result?.audioBase64) { failCount++; continue; }
+        if (!audioMime) audioMime = result.mimeType;
+        audioBase64Chunks.push(result.audioBase64);
 
         // Open/continue chapter
         if (!curChapter || curChapter.chunkIndex !== seg.chunkIndex) {
@@ -190,9 +193,9 @@ const ExportMP3 = (() => {
 
     try {
       if (format === 'm4b') {
-        await _finalizeM4B({ savePath, audioBase64Chunks, chapters, bookTitle, bookAuthor, edgeVoice, bookCoverPath });
+        await _finalizeM4B({ savePath, audioBase64Chunks, audioMime, chapters, bookTitle, bookAuthor, voiceLabel, bookCoverPath });
       } else {
-        await _finalizeMP3({ savePath, audioBase64Chunks, chapters });
+        await _finalizeMP3({ savePath, audioBase64Chunks, audioMime, chapters });
       }
       _hideModal();
       const fname = savePath.split(/[\\/]/).pop();
@@ -204,26 +207,41 @@ const ExportMP3 = (() => {
     }
   }
 
-  // ── FINALIZE: MP3 + chapter sidecar ───────────────────────
-  async function _finalizeMP3({ savePath, audioBase64Chunks, chapters }) {
-    _updateProgress(null, null, 'Writing MP3 file…');
-    await window.sonara.export.writeFile({ path: savePath, chunks: audioBase64Chunks });
+  // ── FINALIZE: MP3 (or WAV for Supertonic) + chapter sidecar ─
+  async function _finalizeMP3({ savePath, audioBase64Chunks, audioMime, chapters }) {
+    const isWav = audioMime === 'audio/wav';
+    // If the user picked .mp3 but voice is Supertonic, switch the extension
+    // — we can't pretend a WAV is an MP3.
+    let finalPath = savePath;
+    if (isWav && /\.mp3$/i.test(savePath)) {
+      finalPath = savePath.replace(/\.mp3$/i, '.wav');
+      UI.toast('Supertonic outputs WAV; saving as .wav instead of .mp3', 'info', 4000);
+    }
+
+    _updateProgress(null, null, isWav ? 'Writing WAV file…' : 'Writing MP3 file…');
+    await window.sonara.export.writeAudioChunks({
+      path: finalPath, chunks: audioBase64Chunks, mimeType: audioMime || 'audio/mpeg'
+    });
 
     if (chapters.length) {
-      const sidecarPath = savePath.replace(/\.mp3$/i, '') + '.chapters.txt';
+      const sidecarPath = finalPath.replace(/\.(mp3|wav)$/i, '') + '.chapters.txt';
       const content = _buildChapterListText(chapters);
       try { await window.sonara.export.writeSidecar({ path: sidecarPath, content }); }
       catch (e) { console.warn('[Export] Failed to write chapter sidecar:', e.message); }
     }
   }
 
-  // ── FINALIZE: M4B (temp mp3 → ffmpeg mux) ─────────────────
-  async function _finalizeM4B({ savePath, audioBase64Chunks, chapters, bookTitle, bookAuthor, edgeVoice, bookCoverPath }) {
-    const mp3Temp    = savePath.replace(/\.m4b$/i, '') + '.tmp.mp3';
+  // ── FINALIZE: M4B (temp audio → ffmpeg mux) ───────────────
+  async function _finalizeM4B({ savePath, audioBase64Chunks, audioMime, chapters, bookTitle, bookAuthor, voiceLabel, bookCoverPath }) {
+    const isWav     = audioMime === 'audio/wav';
+    const tmpExt    = isWav ? '.tmp.wav' : '.tmp.mp3';
+    const audioTemp = savePath.replace(/\.m4b$/i, '') + tmpExt;
     const ffmetaTemp = savePath.replace(/\.m4b$/i, '') + '.ffmeta.txt';
 
     _updateProgress(null, null, 'Writing temporary audio…');
-    await window.sonara.export.writeFile({ path: mp3Temp, chunks: audioBase64Chunks });
+    await window.sonara.export.writeAudioChunks({
+      path: audioTemp, chunks: audioBase64Chunks, mimeType: audioMime || 'audio/mpeg'
+    });
 
     _updateProgress(null, null, 'Writing chapter metadata…');
     const ffmeta = _buildFfmeta(chapters, { title: bookTitle, author: bookAuthor });
@@ -239,20 +257,19 @@ const ExportMP3 = (() => {
     _updateProgress(null, null, 'Packaging audiobook (ffmpeg)…');
     try {
       await window.sonara.export.packageM4B({
-        mp3Path:    mp3Temp,
+        mp3Path:    audioTemp,   // ffmpeg detects format by header — WAV or MP3 both work
         ffmetaPath: ffmetaTemp,
         coverPath,
         outPath:    savePath,
         metadata: {
           title:    bookTitle,
           author:   bookAuthor,
-          narrator: _friendlyVoice(edgeVoice),
+          narrator: _friendlyVoice(voiceLabel),
           year:     new Date().getFullYear(),
         },
       });
     } finally {
-      // Cleanup temp files regardless of outcome
-      try { await window.sonara.export.deleteTemp(mp3Temp); } catch (_) {}
+      try { await window.sonara.export.deleteTemp(audioTemp); } catch (_) {}
       try { await window.sonara.export.deleteTemp(ffmetaTemp); } catch (_) {}
     }
   }

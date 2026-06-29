@@ -201,6 +201,26 @@ contextBridge.exposeInMainWorld('sonara', {
     synthesize: (opts) => ipcRenderer.invoke('tts:synthesize', opts),
   },
 
+  // ── SUPERTONIC (Local on-device neural TTS, ~400MB on first use) ──
+  supertonic: {
+    /** @returns {Promise<{id,name,gender,lang}[]>} */
+    getVoices:  ()     => ipcRenderer.invoke('supertonic:getVoices'),
+    /** @returns {Promise<{rootDir,missing,ready}>} */
+    status:     ()     => ipcRenderer.invoke('supertonic:status'),
+    /** Pre-download all model + voice files (no synthesis). */
+    download:   ()     => ipcRenderer.invoke('supertonic:download'),
+    /** Kill the worker — cancels in-flight inference; respawns on next synth. */
+    abort:      ()     => ipcRenderer.invoke('supertonic:abort'),
+    /**
+     * @param {{ text:string, voice?:string, lang?:string, speed?:number, totalStep?:number }} opts
+     * @returns {Promise<{ audio:string, sampleRate:number, durationMs:number }>} base64 WAV
+     */
+    synthesize: (opts) => ipcRenderer.invoke('supertonic:synthesize', opts),
+    /** Listen for first-use download/load progress. */
+    onProgress: (cb)   => ipcRenderer.on('supertonic:progress', (_, p) => cb(p)),
+    offProgress:(cb)   => ipcRenderer.removeListener('supertonic:progress', cb),
+  },
+
   // ── EXPORT ───────────────────────────────────────────────
   export: {
     /**
@@ -214,6 +234,8 @@ contextBridge.exposeInMainWorld('sonara', {
      * @returns {Promise<{success:true}>}
      */
     writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
+    /** Concatenate audio chunks, smart-merging WAVs (strip per-chunk headers). */
+    writeAudioChunks: (data) => ipcRenderer.invoke('export:writeAudioChunks', data),
     /** Write a plain text sidecar (chapter list / ffmeta). */
     writeSidecar: (data) => ipcRenderer.invoke('export:writeSidecar', data),
     /** Package an MP3 into an M4B via bundled ffmpeg. */

@@ -10,6 +10,7 @@
 const CloudTTS = (() => {
 
   let edgeVoices    = [];      // Full list from Edge TTS service
+  let localVoices   = [];      // Supertonic on-device voices
   let isLoaded      = false;
   let isLoading     = false;
   let currentAudio  = null;    // HTMLAudioElement for current playback
@@ -21,30 +22,46 @@ const CloudTTS = (() => {
 
   // ── LOAD VOICES FROM EDGE TTS SERVICE ──────────────────
   async function loadVoices() {
-    if (isLoaded || isLoading) return edgeVoices;
+    if (isLoaded || isLoading) return [...edgeVoices, ...localVoices];
     if (!window.sonara?.tts) {
       return [];
     }
 
     isLoading = true;
     try {
+      // Edge cloud voices
       const raw = await window.sonara.tts.getVoices();
-
       edgeVoices = raw.map(v => ({
-        // Display name: "en-US-AriaNeural" -> "Microsoft Aria (Natural)"
         name:         _friendlyName(v.friendlyName || v.name),
-        shortName:    v.name,        // e.g. 'en-US-AriaNeural'
+        shortName:    v.name,
         lang:         v.locale || v.lang,
         gender:       v.gender,
         localService: false,
         voiceURI:     v.name,
         default:      false,
         _cloudVoice:  true,
-        _edgeVoice:   v.name         // The actual voice ID for synthesis
+        _edgeVoice:   v.name
       }));
 
+      // Supertonic on-device voices (best-effort — failure leaves list unchanged)
+      try {
+        const local = await window.sonara.supertonic?.getVoices() || [];
+        localVoices = local.map(v => ({
+          name:         `${v.name} [Local]`,
+          shortName:    v.id,
+          lang:         v.lang || 'en',
+          gender:       v.gender,
+          localService: true,
+          voiceURI:     `supertonic:${v.id}`,
+          default:      false,
+          _cloudVoice:  true,     // routes through CloudTTS.speak (not SpeechSynthesis)
+          _supertonic:  true,
+          _supertonicId:v.id,
+        }));
+      } catch (_) { /* Supertonic unavailable — keep edge-only */ }
+
       isLoaded = true;
-      return edgeVoices;
+      return [...edgeVoices, ...localVoices];
 
     } catch (err) {
       return [];
@@ -53,13 +70,106 @@ const CloudTTS = (() => {
     }
   }
 
+  // Synthesize word boundaries for engines (like Supertonic) that only give total duration.
+  // Linear estimate by character position — good enough for highlight tracking.
+  function _synthBoundaries(text, durationMs) {
+    const totalChars = text.length || 1;
+    const durationSec = (durationMs || 0) / 1000;
+    if (durationSec <= 0) return [];
+    const out = [];
+    const wordRe = /\S+/g;
+    let m;
+    while ((m = wordRe.exec(text)) !== null) {
+      out.push({
+        audioOffset: (m.index / totalChars) * durationSec,
+        textOffset:  m.index,
+        textLength:  m[0].length,
+        text:        m[0],
+      });
+    }
+    return out;
+  }
+
+  // ── PREFETCH CACHE (Edge TTS + Supertonic) ─────────────
+  // ponytail: bounded LRU (last 3 chunks) — each WAV is ~1MB/10s, so a few MB max.
+  const _audioCache = new Map(); // key -> Promise<{audioBytes,mimeType,boundaries,durationMs}>
+  const _AUDIO_CACHE_MAX = 3;
+
+  function _cacheKey(text, voice, rate, pitch) {
+    const id = voice._supertonicId || voice._edgeVoice || voice.shortName || voice.voiceURI || voice.name;
+    return `${id}|${rate}|${pitch}|${text}`;
+  }
+
+  function _fetchAudio(text, voice, rate, pitch) {
+    if (voice._supertonic) {
+      return window.sonara.supertonic.synthesize({
+        text,
+        voice: voice._supertonicId,
+        lang:  voice.lang || 'en',
+        speed: rate,
+      }).then(result => {
+        if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
+        return {
+          audioBytes: result.audio,
+          mimeType:   'audio/wav',
+          boundaries: _synthBoundaries(text, result.durationMs || 0),
+          durationMs: result.durationMs,
+        };
+      });
+    }
+    // Edge TTS
+    const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
+    return window.sonara.tts.synthesize({ text, voice: voiceId, speed: rate, pitch })
+      .then(result => {
+        if (!result || !result.audio) throw new Error('No audio returned from Edge TTS');
+        return {
+          audioBytes: result.audio,
+          mimeType:   'audio/mpeg',
+          boundaries: result.wordBoundaries || [],
+          durationMs: result.durationMs,
+        };
+      });
+  }
+
+  function _getAudio(text, voice, rate, pitch) {
+    const key = _cacheKey(text, voice, rate, pitch);
+    let p = _audioCache.get(key);
+    if (p) {
+      _audioCache.delete(key);  // LRU touch
+      _audioCache.set(key, p);
+      return p;
+    }
+    p = _fetchAudio(text, voice, rate, pitch)
+      .catch(err => { _audioCache.delete(key); throw err; });
+    _audioCache.set(key, p);
+    while (_audioCache.size > _AUDIO_CACHE_MAX) {
+      _audioCache.delete(_audioCache.keys().next().value);
+    }
+    return p;
+  }
+
+  // Public: warm the cache for upcoming text without playing it.
+  function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
+    if (!text || !voice) return;
+    if (!voice._cloudVoice) return;     // system voices are instant — no prefetch needed
+    try { _getAudio(text, voice, rate, pitch); } catch (_) {}
+  }
+
+  // Public: synthesize-and-return without playing. Used by the export pipeline.
+  // Returns {audioBase64, mimeType, durationMs} from the unified cache.
+  async function synthOnly(text, voice, rate = 1.0, pitch = 1.0) {
+    if (!voice || !voice._cloudVoice) throw new Error('synthOnly: voice must be Edge or Supertonic');
+    const r = await _getAudio(text, voice, rate, pitch);
+    return { audioBase64: r.audioBytes, mimeType: r.mimeType, durationMs: r.durationMs };
+  }
+
+
   function _friendlyName(raw) {
     // "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)"
     // -> "Microsoft Aria (Natural)"
     // Or "en-US-AriaNeural" -> "Aria (Natural) en-US"
     if (raw.includes('(') && raw.includes(',')) {
-      const match = raw.match(/\(([^,]+),\s*(\w+?)(?:Neural)?\)/);
-      if (match) return match[2] + ' (Natural) - ' + match[1];
+      const match = raw.match(/\(([^,]+),\s*(\w+?)(?:Neural)?\)/);      if (match) return match[2] + ' (Natural) - ' + match[1];
     }
     // Already friendly: "Microsoft Aria Online (Natural) - English (United States)"
     if (raw.includes('(Natural)')) return raw;
@@ -76,11 +186,15 @@ const CloudTTS = (() => {
 
   // Get voices formatted for the voice list
   function getVoices() {
-    return edgeVoices;
+    return [...edgeVoices, ...localVoices];
   }
 
   function isCloudVoice(voice) {
-    return voice && voice._cloudVoice === true;
+    return voice && (voice._cloudVoice === true || voice._supertonic === true);
+  }
+
+  function isLocalVoice(voice) {
+    return !!(voice && voice._supertonic === true);
   }
 
   // ── SYNTHESIZE & PLAY ──────────────────────────────────
@@ -98,41 +212,30 @@ const CloudTTS = (() => {
     const myRequestId = ++requestId;
 
     try {
-
-      const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
-
-      const result = await window.sonara.tts.synthesize({
-        text,
-        voice: voiceId,
-        speed: rate,
-        pitch
-      });
+      const result = await _getAudio(text, voice, rate, pitch);
 
       // Another speak() or stop() was called while we were waiting — discard
-      if (myRequestId !== requestId) {
-        return;
-      }
+      if (myRequestId !== requestId) return;
 
-      if (!result || !result.audio) {
-        throw new Error('No audio returned from Edge TTS');
-      }
+      const audioBytes = result.audioBytes;
+      const mimeType   = result.mimeType;
+      const boundaries = result.boundaries;
 
       // Convert base64 to blob URL and play
-      const binary = atob(result.audio);
+      const binary = atob(audioBytes);
       const bytes  = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
       }
-      const blob = new Blob([bytes], { type: 'audio/mpeg' });
+      const blob = new Blob([bytes], { type: mimeType });
       const url  = URL.createObjectURL(blob);
 
       currentAudio = new Audio(url);
-      currentAudio.playbackRate = 1.0; // Rate already applied in SSML
+      currentAudio.playbackRate = 1.0; // Rate already applied in synth
       currentAudio.volume = volume;
       onEndCb = onEnd;
 
       // Word boundary highlighting — poll at ~60fps for smooth tracking
-      const boundaries = result.wordBoundaries || [];
       let lastBoundaryIdx = -1;
 
       if (boundaries.length > 0 && onBoundaryCb) {
@@ -231,6 +334,8 @@ const CloudTTS = (() => {
     _stopAudio();
     // Invalidate any in-flight synthesis requests
     requestId++;
+    // Drop cached/prefetched audio so a later play() can't replay stale chunks.
+    _audioCache.clear();
   }
 
   function pause() {
@@ -270,7 +375,10 @@ const CloudTTS = (() => {
     shouldEnable,
     getVoices,
     isCloudVoice,
+    isLocalVoice,
     speak,
+    prefetch,
+    synthOnly,
     onBoundary,
     preview,
     stop,

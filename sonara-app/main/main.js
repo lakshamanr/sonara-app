@@ -28,6 +28,13 @@ function getEdgeTTS() {
   return edgeTTS;
 }
 
+// Lazy-load local Supertonic TTS — heavy ONNX deps don't load until first use
+let supertonicTTS = null;
+function getSupertonic() {
+  if (!supertonicTTS) supertonicTTS = require('./supertonic-tts');
+  return supertonicTTS;
+}
+
 let mainWindow;
 let booksDir;       // where we copy user files
 let coversDir;      // where we save extracted cover images
@@ -408,7 +415,11 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12') {
+    if (input.type !== 'keyDown') return;
+    const isF12       = input.key === 'F12' || input.code === 'F12';
+    const isCtrlShfI  = (input.control || input.meta) && input.shift && (input.key === 'I' || input.key === 'i');
+    const isCtrlShfJ  = (input.control || input.meta) && input.shift && (input.key === 'J' || input.key === 'j');
+    if (isF12 || isCtrlShfI || isCtrlShfJ) {
       mainWindow.webContents.toggleDevTools();
       event.preventDefault();
     }
@@ -861,6 +872,25 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────
+//  IPC — SUPERTONIC LOCAL TTS (on-device ONNX)
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('supertonic:getVoices', () => getSupertonic().getVoices());
+ipcMain.handle('supertonic:status',    () => getSupertonic().status());
+ipcMain.handle('supertonic:abort',     () => { getSupertonic().abort(); return { success: true }; });
+ipcMain.handle('supertonic:download', async (event) => {
+  const sender = event.sender;
+  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  await getSupertonic().ensureModels(progressCb);
+  return getSupertonic().status();
+});
+ipcMain.handle('supertonic:synthesize', async (event, opts) => {
+  const sender = event.sender;
+  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  const { wav, sampleRate, durationMs } = await getSupertonic().synthesize(opts, progressCb);
+  return { audio: wav.toString('base64'), sampleRate, durationMs };
+});
+
 // ────────────────────────────────────────────────────────────
 //  IPC — EXPORT TO MP3
 // ────────────────────────────────────────────────────────────
@@ -888,6 +918,35 @@ ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
   } catch (err) {
     throw err;
   }
+});
+
+// Concatenate a list of base64-encoded audio chunks into one file.
+// MP3 streams concat naturally. WAV chunks each carry a 44-byte header — we
+// strip headers from chunks 2..N and rebuild a single header at the front.
+ipcMain.handle('export:writeAudioChunks', (_, { path: filePath, chunks, mimeType }) => {
+  const buffers = chunks.map(b64 => Buffer.from(b64, 'base64'));
+  if (mimeType !== 'audio/wav') {
+    fs.writeFileSync(filePath, Buffer.concat(buffers));
+    return { success: true };
+  }
+  // WAV merge: assume canonical 44-byte PCM header on every chunk and a
+  // common sample-rate/channels/bit-depth (we control the producer).
+  const first  = buffers[0];
+  if (first.length < 44 || first.toString('ascii', 0, 4) !== 'RIFF') {
+    throw new Error('First chunk is not a valid WAV');
+  }
+  const pcmParts = [first.slice(44)];
+  for (let i = 1; i < buffers.length; i++) {
+    const b = buffers[i];
+    if (b.length < 44 || b.toString('ascii', 0, 4) !== 'RIFF') continue;
+    pcmParts.push(b.slice(44));
+  }
+  const pcm = Buffer.concat(pcmParts);
+  const header = Buffer.from(first.slice(0, 44));   // copy
+  header.writeUInt32LE(36 + pcm.length, 4);          // RIFF size
+  header.writeUInt32LE(pcm.length, 40);              // data size
+  fs.writeFileSync(filePath, Buffer.concat([header, pcm]));
+  return { success: true };
 });
 
 // Write a plain-text sidecar (chapter list, ffmeta, etc.)

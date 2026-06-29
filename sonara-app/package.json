@@ -26,7 +26,8 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
-      "node_modules/ffmpeg-static/**/*"
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/onnxruntime-node/**/*"
     ],
     "directories": {
       "output": "dist",
@@ -194,6 +195,7 @@
     "better-sqlite3": "^9.6.0",
     "ffmpeg-static": "^5.3.0",
     "jszip": "^3.10.1",
+    "onnxruntime-node": "^1.27.0",
     "ws": "^8.19.0"
   }
 }

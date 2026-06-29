@@ -337,15 +337,17 @@ const Reader = (() => {
   function _renderVoiceItem(v) {
     const voiceId = _getVoiceId(v) || v.name;
     const sel = chosenVoice && chosenVoice.name === v.name;
+    const isSupertonic = !!v._supertonic;
     const isNatural = !!v._edgeVoice;
     const isCloud = !v.localService;
-    const serviceType = isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD');
-    const serviceBadge = isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote');
-    const tooltip = isNatural ? 'Microsoft Neural voice - high quality, natural sounding'
+    const serviceType = isSupertonic ? 'SUPERTONIC' : (isNatural ? 'NATURAL' : (v.localService ? 'LOCAL' : 'CLOUD'));
+    const serviceBadge = isSupertonic ? 'badge-supertonic' : (isNatural ? 'badge-natural' : (v.localService ? 'badge-local' : 'badge-remote'));
+    const tooltip = isSupertonic ? 'Supertonic on-device neural TTS — fully offline, downloads ~400 MB on first use'
+      : isNatural ? 'Microsoft Neural voice - high quality, natural sounding'
       : (v.localService ? 'Offline voice - works without internet' : 'Online voice - requires internet');
     const favorite = _isFavoriteVoice(v);
 
-    return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-id="${_escHtml(voiceId)}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isNatural ? 'natural' : (isCloud ? 'cloud' : 'local')}">
+    return `<div class="voice-item${sel ? ' selected' : ''}" data-voice-id="${_escHtml(voiceId)}" data-voice-name="${_escHtml(v.name)}" data-voice-type="${isSupertonic ? 'supertonic' : (isNatural ? 'natural' : (isCloud ? 'cloud' : 'local'))}">
       <div class="vi-radio"></div>
       <div class="vi-info">
         <div class="vi-name">${_escHtml(v.name)}</div>
@@ -434,7 +436,9 @@ const Reader = (() => {
     }
 
     const favorites = filtered.filter(_isFavoriteVoice);
-    const others = filtered.filter(v => !_isFavoriteVoice(v));
+    const nonFav    = filtered.filter(v => !_isFavoriteVoice(v));
+    const supertonic = nonFav.filter(v => v._supertonic);
+    const others     = nonFav.filter(v => !v._supertonic);
 
     const sections = [];
     if (favorites.length) {
@@ -442,6 +446,15 @@ const Reader = (() => {
         `<div class="voice-group">` +
           `<div class="voice-group-label">Favorites (${favorites.length})</div>` +
           favorites.map(_renderVoiceItem).join('') +
+        `</div>`
+      );
+    }
+    if (supertonic.length) {
+      sections.push(
+        `<div class="voice-group" data-supertonic-section="1">` +
+          `<div class="voice-group-label">Supertonic — On-Device AI (${supertonic.length})</div>` +
+          `<div class="supertonic-status" id="supertonicStatus">Checking model…</div>` +
+          supertonic.map(_renderVoiceItem).join('') +
         `</div>`
       );
     }
@@ -455,9 +468,122 @@ const Reader = (() => {
     }
 
     el.innerHTML = sections.join('');
-    
+
     // Attach event listeners using event delegation
     _attachVoiceListeners();
+
+    // Refresh Supertonic status pill (fire and forget)
+    _refreshSupertonicStatus();
+  }
+
+  // ── SUPERTONIC STATUS PANEL ─────────────────────────────
+  let _supertonicState = 'unknown'; // unknown | missing | downloading | loading | ready
+  let _supertonicProgress = null;   // { fileIndex, fileCount, received, total, file }
+
+  function _renderSupertonicStatus() {
+    const el = document.getElementById('supertonicStatus');
+    if (!el) return;
+    const s = _supertonicState;
+    const p = _supertonicProgress;
+    let html = '';
+    if (s === 'ready') {
+      html = `<span class="st-pill st-ready">● Model Ready</span>
+              <button class="st-btn" data-supertonic-act="test">Test Voice</button>
+              <button class="st-btn" data-supertonic-act="stop">Stop</button>`;
+    } else if (s === 'downloading' && p) {
+      const pct = p.total ? Math.floor((p.received / p.total) * 100) : 0;
+      const filePct = `${p.fileIndex + 1}/${p.fileCount}`;
+      const mb = (p.received / 1048576).toFixed(1);
+      const totalMb = p.total ? (p.total / 1048576).toFixed(1) : '?';
+      const fname = (p.file || '').split('/').pop();
+      html = `<span class="st-pill st-progress">⬇ Downloading ${filePct}: ${fname} — ${mb} / ${totalMb} MB (${pct}%)</span>`;
+    } else if (s === 'loading') {
+      html = `<span class="st-pill st-progress">⏳ Loading model into memory…</span>`;
+    } else if (s === 'missing') {
+      html = `<span class="st-pill st-missing">⚠ Model not downloaded (~400 MB, one-time)</span>
+              <button class="st-btn st-btn-primary" data-supertonic-act="download">Download Model</button>`;
+    } else {
+      html = `<span class="st-pill">Checking…</span>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('[data-supertonic-act]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const act = btn.getAttribute('data-supertonic-act');
+        if (act === 'download') _supertonicDownload();
+        else if (act === 'test') _supertonicTest();
+        else if (act === 'stop') _supertonicStop();
+      });
+    });
+  }
+
+  async function _refreshSupertonicStatus() {
+    if (!window.sonara?.supertonic) return;
+    // Don't clobber an active download/load
+    if (_supertonicState === 'downloading' || _supertonicState === 'loading') {
+      _renderSupertonicStatus();
+      return;
+    }
+    try {
+      const st = await window.sonara.supertonic.status();
+      _supertonicState = st.ready ? 'ready' : (st.missing.length === 0 ? 'loading' : 'missing');
+    } catch (_) {
+      _supertonicState = 'unknown';
+    }
+    _renderSupertonicStatus();
+  }
+
+  async function _supertonicDownload() {
+    if (!window.sonara?.supertonic) return;
+    _supertonicState = 'downloading';
+    _renderSupertonicStatus();
+    try {
+      await window.sonara.supertonic.download();
+      _supertonicState = 'ready';
+    } catch (err) {
+      UI.toast('Supertonic download failed: ' + (err?.message || err), 'error');
+      _supertonicState = 'missing';
+    }
+    _supertonicProgress = null;
+    _renderSupertonicStatus();
+  }
+
+  function _supertonicTest() {
+    let v = chosenVoice && chosenVoice._supertonic ? chosenVoice
+          : voiceList.find(x => x._supertonic);
+    if (!v) { UI.toast('No Supertonic voice available', 'error'); return; }
+    previewVoice(_getVoiceId(v) || v.name);
+  }
+
+  function _supertonicStop() {
+    // Reader.stop() sets isPlaying=false, calls CloudTTS.stop() (which clears
+    // the audio cache + bumps requestId), and cancels speechSynthesis.
+    if (typeof Reader !== 'undefined' && Reader.stop) {
+      Reader.stop();
+    } else {
+      CloudTTS.stop();
+      speechSynthesis.cancel();
+    }
+    // Hard-kill the worker so any in-flight ONNX inference stops eating CPU.
+    // It will respawn automatically on the next synthesize() call.
+    try { window.sonara?.supertonic?.abort(); } catch (_) {}
+  }
+
+  // Hook progress events once at module load
+  if (window.sonara?.supertonic?.onProgress) {
+    window.sonara.supertonic.onProgress((p) => {
+      if (p.phase === 'download') {
+        _supertonicState = 'downloading';
+        _supertonicProgress = p;
+      } else if (p.phase === 'loading') {
+        _supertonicState = 'loading';
+        _supertonicProgress = null;
+      } else if (p.phase === 'ready') {
+        _supertonicState = 'ready';
+        _supertonicProgress = null;
+      }
+      _renderSupertonicStatus();
+    });
   }
   
   function _attachVoiceListeners() {
@@ -573,9 +699,10 @@ const Reader = (() => {
     CloudTTS.stop();
 
     setTimeout(() => {
-      // Use real Edge TTS for neural voices
-      if (v._cloudVoice && v._edgeVoice) {
-        UI.toast('Generating natural voice preview...', '', 2000);
+      // Route through CloudTTS for Edge or Supertonic; system voices use SpeechSynthesis
+      if (v._cloudVoice) {
+        const msg = v._supertonic ? 'Generating local Supertonic preview…' : 'Generating natural voice preview...';
+        UI.toast(msg, '', 2000);
         CloudTTS.preview(v, speed, pitch).then(() => {
         }).catch(err => {
           UI.toast('Preview failed: ' + err.message, 'error');
@@ -1477,8 +1604,8 @@ const Reader = (() => {
       return;
     }
 
-    // ── EDGE TTS (Neural voice) ──
-    if (chosenVoice && chosenVoice._cloudVoice && chosenVoice._edgeVoice) {
+    // ── EDGE TTS / SUPERTONIC (managed by CloudTTS) ──
+    if (chosenVoice && chosenVoice._cloudVoice) {
       CloudTTS.speak(
         chunkText,
         chosenVoice,
@@ -1494,6 +1621,13 @@ const Reader = (() => {
           _speakChunkWithSystem(idx);
         }
       );
+      // Prefetch next chunk in the background so playback is gapless.
+      if (CloudTTS.prefetch && idx + 1 < chunks.length) {
+        const nextText = _cleanTextForTTS(chunks[idx + 1].text);
+        if (nextText && nextText.length >= 2) {
+          CloudTTS.prefetch(nextText, chosenVoice, speed, pitch);
+        }
+      }
       return;
     }
 
