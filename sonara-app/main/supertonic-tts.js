@@ -14,6 +14,7 @@
 const fs    = require('fs');
 const path  = require('path');
 const https = require('https');
+const { Worker } = require('worker_threads');
 const { app } = require('electron');
 
 // ── REMOTE LAYOUT ────────────────────────────────────────
@@ -45,12 +46,13 @@ function onnxDir()  { return path.join(rootDir(), 'onnx'); }
 function stylesDir(){ return path.join(rootDir(), 'voice_styles'); }
 
 // ── STATE ────────────────────────────────────────────────
-let helperMod   = null;   // lazy dynamic ESM import
-let tts         = null;   // loaded TextToSpeech instance
-let loadingTts  = null;   // in-flight Promise to dedupe concurrent calls
+let helperMod   = null;   // lazy dynamic ESM import (main process; only used by encodeWav)
 let downloading = null;   // in-flight download Promise to dedupe concurrent calls
-let synthChain  = Promise.resolve();  // ponytail: serialise synth so ORT isn't trampled by parallel calls
-const styleCache = new Map(); // voiceId -> parsed Style (avoid 292KB JSON re-parse per chunk)
+let worker      = null;   // Node worker_thread running ONNX inference
+let workerReady = null;   // Promise that resolves when worker posts 'ready'
+let workerLoadingProgressCb = null;
+const pending   = new Map(); // id -> {resolve, reject}
+let nextId      = 1;
 
 // ── DOWNLOAD ─────────────────────────────────────────────
 function downloadOne(url, destPath, onProgress) {
@@ -124,19 +126,55 @@ async function ensureHelper() {
   return helperMod;
 }
 
-async function ensureTTS(progressCb) {
-  if (tts) return tts;
-  if (loadingTts) return loadingTts;
-  loadingTts = (async () => {
-    await ensureModels(progressCb);
-    if (progressCb) progressCb({ phase: 'loading' });
-    const h = await ensureHelper();
-    tts = await h.loadTextToSpeech(onnxDir());
-    if (progressCb) progressCb({ phase: 'ready' });
-    return tts;
-  })();
-  try { return await loadingTts; }
-  finally { loadingTts = null; }
+async function ensureWorker(progressCb) {
+  if (worker && workerReady) return workerReady;
+
+  // Make sure models are on disk before the worker tries to load them.
+  await ensureModels(progressCb);
+  if (progressCb) progressCb({ phase: 'loading' });
+  workerLoadingProgressCb = progressCb;
+
+  worker = new Worker(path.join(__dirname, 'supertonic-worker.mjs'), {
+    workerData: {
+      onnxDir:    onnxDir(),
+      stylesDir:  stylesDir(),
+      workerDir:  __dirname,
+    },
+  });
+
+  workerReady = new Promise((resolve, reject) => {
+    const onReady = (msg) => {
+      if (msg.type === 'ready') {
+        if (workerLoadingProgressCb) workerLoadingProgressCb({ phase: 'ready' });
+        workerLoadingProgressCb = null;
+        resolve();
+      } else if (msg.type === 'result') {
+        const slot = pending.get(msg.id);
+        if (!slot) return;
+        pending.delete(msg.id);
+        if (msg.ok) slot.resolve(msg);
+        else slot.reject(new Error(msg.error || 'worker synth failed'));
+      }
+    };
+    worker.on('message', onReady);
+    worker.on('error', (err) => {
+      reject(err);
+      // Fail all pending and reset so next call can respawn the worker.
+      for (const slot of pending.values()) slot.reject(err);
+      pending.clear();
+      worker = null;
+      workerReady = null;
+    });
+    worker.on('exit', (code) => {
+      const err = new Error(`Supertonic worker exited (code ${code})`);
+      for (const slot of pending.values()) slot.reject(err);
+      pending.clear();
+      worker = null;
+      workerReady = null;
+    });
+  });
+
+  return workerReady;
 }
 
 // ── PUBLIC API ───────────────────────────────────────────
@@ -153,7 +191,7 @@ function status() {
   return {
     rootDir: rootDir(),
     missing: missingFiles(),
-    ready: missingFiles().length === 0 && tts !== null,
+    ready: missingFiles().length === 0 && worker !== null && workerReady !== null,
   };
 }
 
@@ -163,31 +201,21 @@ function status() {
  * @returns {{wav: Buffer, sampleRate: number, durationMs: number}}
  */
 async function synthesize(opts, progressCb) {
-  // Serialise calls: ORT inference is heavy and parallel runs in-process
-  // make the main thread unresponsive (UI hang, RAM spike).
-  const job = synthChain.then(() => _doSynthesize(opts, progressCb), () => _doSynthesize(opts, progressCb));
-  synthChain = job.catch(() => {});
-  return job;
-}
-
-async function _doSynthesize(opts, progressCb) {
   const { text, voice = 'M1', lang = 'en', speed = 1.05, totalStep = 8 } = opts || {};
   if (!text || !text.trim()) throw new Error('synthesize: text is empty');
   if (!VOICE_IDS.includes(voice)) throw new Error(`Unknown voice: ${voice}`);
 
-  const t = await ensureTTS(progressCb);
+  await ensureWorker(progressCb);
   const h = await ensureHelper();
 
-  let style = styleCache.get(voice);
-  if (!style) {
-    style = h.loadVoiceStyle([path.join(stylesDir(), `${voice}.json`)]);
-    styleCache.set(voice, style);
-  }
+  const id = nextId++;
+  const result = await new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ type: 'synth', id, text, voice, lang, speed, totalStep });
+  });
 
-  const { wav, duration } = await t.call(text, lang, style, totalStep, speed);
-  const samples = Math.floor(t.sampleRate * duration[0]);
-  const buf = h.encodeWav(wav, t.sampleRate, samples);
-  return { wav: buf, sampleRate: t.sampleRate, durationMs: Math.round(duration[0] * 1000) };
+  const buf = h.encodeWav(result.wav, result.sampleRate, result.wav.length);
+  return { wav: buf, sampleRate: result.sampleRate, durationMs: result.durationMs };
 }
 
 module.exports = { getVoices, status, synthesize, ensureModels };

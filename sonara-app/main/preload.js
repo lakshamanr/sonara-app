@@ -232,6 +232,8 @@ contextBridge.exposeInMainWorld('sonara', {
      * @returns {Promise<{success:true}>}
      */
     writeFile:  (data)  => ipcRenderer.invoke('export:writeFile',  data),
+    /** Concatenate audio chunks, smart-merging WAVs (strip per-chunk headers). */
+    writeAudioChunks: (data) => ipcRenderer.invoke('export:writeAudioChunks', data),
     /** Write a plain text sidecar (chapter list / ffmeta). */
     writeSidecar: (data) => ipcRenderer.invoke('export:writeSidecar', data),
     /** Package an MP3 into an M4B via bundled ffmpeg. */

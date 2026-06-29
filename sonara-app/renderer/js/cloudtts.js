@@ -152,8 +152,15 @@ const CloudTTS = (() => {
   function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
     if (!text || !voice) return;
     if (!voice._cloudVoice) return;     // system voices are instant — no prefetch needed
-    if (voice._supertonic)  return;     // ponytail: local synth is CPU-heavy; overlapping inference hangs the UI
     try { _getAudio(text, voice, rate, pitch); } catch (_) {}
+  }
+
+  // Public: synthesize-and-return without playing. Used by the export pipeline.
+  // Returns {audioBase64, mimeType, durationMs} from the unified cache.
+  async function synthOnly(text, voice, rate = 1.0, pitch = 1.0) {
+    if (!voice || !voice._cloudVoice) throw new Error('synthOnly: voice must be Edge or Supertonic');
+    const r = await _getAudio(text, voice, rate, pitch);
+    return { audioBase64: r.audioBytes, mimeType: r.mimeType, durationMs: r.durationMs };
   }
 
 
@@ -369,6 +376,7 @@ const CloudTTS = (() => {
     isLocalVoice,
     speak,
     prefetch,
+    synthOnly,
     onBoundary,
     preview,
     stop,

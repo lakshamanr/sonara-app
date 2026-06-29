@@ -919,6 +919,35 @@ ipcMain.handle('export:writeFile', (_, { path: filePath, chunks }) => {
   }
 });
 
+// Concatenate a list of base64-encoded audio chunks into one file.
+// MP3 streams concat naturally. WAV chunks each carry a 44-byte header — we
+// strip headers from chunks 2..N and rebuild a single header at the front.
+ipcMain.handle('export:writeAudioChunks', (_, { path: filePath, chunks, mimeType }) => {
+  const buffers = chunks.map(b64 => Buffer.from(b64, 'base64'));
+  if (mimeType !== 'audio/wav') {
+    fs.writeFileSync(filePath, Buffer.concat(buffers));
+    return { success: true };
+  }
+  // WAV merge: assume canonical 44-byte PCM header on every chunk and a
+  // common sample-rate/channels/bit-depth (we control the producer).
+  const first  = buffers[0];
+  if (first.length < 44 || first.toString('ascii', 0, 4) !== 'RIFF') {
+    throw new Error('First chunk is not a valid WAV');
+  }
+  const pcmParts = [first.slice(44)];
+  for (let i = 1; i < buffers.length; i++) {
+    const b = buffers[i];
+    if (b.length < 44 || b.toString('ascii', 0, 4) !== 'RIFF') continue;
+    pcmParts.push(b.slice(44));
+  }
+  const pcm = Buffer.concat(pcmParts);
+  const header = Buffer.from(first.slice(0, 44));   // copy
+  header.writeUInt32LE(36 + pcm.length, 4);          // RIFF size
+  header.writeUInt32LE(pcm.length, 40);              // data size
+  fs.writeFileSync(filePath, Buffer.concat([header, pcm]));
+  return { success: true };
+});
+
 // Write a plain-text sidecar (chapter list, ffmeta, etc.)
 ipcMain.handle('export:writeSidecar', (_, { path: filePath, content }) => {
   fs.writeFileSync(filePath, content, 'utf8');
