@@ -59,11 +59,16 @@ function downloadOne(url, destPath, onProgress) {
     let received = 0, total = 0;
 
     const get = (u, redirects = 0) => {
-      https.get(u, (res) => {
+      let parsed;
+      try { parsed = new URL(u); }
+      catch { return reject(new Error(`Invalid redirect URL: ${u}`)); }
+      https.get(parsed, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (redirects > 5) return reject(new Error('Too many redirects'));
           res.resume();
-          return get(res.headers.location, redirects + 1);
+          // Resolve relative redirects against the current URL (HF LFS sometimes returns them)
+          const next = new URL(res.headers.location, parsed).toString();
+          return get(next, redirects + 1);
         }
         if (res.statusCode !== 200) {
           res.resume();
