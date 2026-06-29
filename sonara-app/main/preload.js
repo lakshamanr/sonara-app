@@ -207,6 +207,8 @@ contextBridge.exposeInMainWorld('sonara', {
     getVoices:  ()     => ipcRenderer.invoke('supertonic:getVoices'),
     /** @returns {Promise<{rootDir,missing,ready}>} */
     status:     ()     => ipcRenderer.invoke('supertonic:status'),
+    /** Pre-download all model + voice files (no synthesis). */
+    download:   ()     => ipcRenderer.invoke('supertonic:download'),
     /**
      * @param {{ text:string, voice?:string, lang?:string, speed?:number, totalStep?:number }} opts
      * @returns {Promise<{ audio:string, sampleRate:number, durationMs:number }>} base64 WAV

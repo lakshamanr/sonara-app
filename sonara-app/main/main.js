@@ -873,6 +873,12 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
 // ─────────────────────────────────────────────────────────────
 ipcMain.handle('supertonic:getVoices', () => getSupertonic().getVoices());
 ipcMain.handle('supertonic:status',    () => getSupertonic().status());
+ipcMain.handle('supertonic:download', async (event) => {
+  const sender = event.sender;
+  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  await getSupertonic().ensureModels(progressCb);
+  return getSupertonic().status();
+});
 ipcMain.handle('supertonic:synthesize', async (event, opts) => {
   const sender = event.sender;
   const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };

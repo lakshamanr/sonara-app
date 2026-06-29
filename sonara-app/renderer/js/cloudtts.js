@@ -54,6 +54,7 @@ const CloudTTS = (() => {
           localService: true,
           voiceURI:     `supertonic:${v.id}`,
           default:      false,
+          _cloudVoice:  true,     // routes through CloudTTS.speak (not SpeechSynthesis)
           _supertonic:  true,
           _supertonicId:v.id,
         }));
