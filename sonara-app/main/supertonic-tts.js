@@ -195,6 +195,18 @@ function status() {
   };
 }
 
+// Kill the worker (cancels any in-flight inference). Worker respawns on the
+// next synthesize() call. Cheap hammer for stop/cancel from the UI.
+function abort() {
+  if (!worker) return;
+  try { worker.terminate(); } catch (_) {}
+  const err = new Error('aborted');
+  for (const slot of pending.values()) slot.reject(err);
+  pending.clear();
+  worker = null;
+  workerReady = null;
+}
+
 /**
  * @param {{ text, voice, lang, speed, totalStep }} opts
  * @param {(p:object)=>void} [progressCb]
@@ -218,4 +230,4 @@ async function synthesize(opts, progressCb) {
   return { wav: buf, sampleRate: result.sampleRate, durationMs: result.durationMs };
 }
 
-module.exports = { getVoices, status, synthesize, ensureModels };
+module.exports = { getVoices, status, synthesize, ensureModels, abort };

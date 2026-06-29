@@ -334,6 +334,8 @@ const CloudTTS = (() => {
     _stopAudio();
     // Invalidate any in-flight synthesis requests
     requestId++;
+    // Drop cached/prefetched audio so a later play() can't replay stale chunks.
+    _audioCache.clear();
   }
 
   function pause() {

@@ -556,8 +556,17 @@ const Reader = (() => {
   }
 
   function _supertonicStop() {
-    CloudTTS.stop();
-    speechSynthesis.cancel();
+    // Reader.stop() sets isPlaying=false, calls CloudTTS.stop() (which clears
+    // the audio cache + bumps requestId), and cancels speechSynthesis.
+    if (typeof Reader !== 'undefined' && Reader.stop) {
+      Reader.stop();
+    } else {
+      CloudTTS.stop();
+      speechSynthesis.cancel();
+    }
+    // Hard-kill the worker so any in-flight ONNX inference stops eating CPU.
+    // It will respawn automatically on the next synthesize() call.
+    try { window.sonara?.supertonic?.abort(); } catch (_) {}
   }
 
   // Hook progress events once at module load
