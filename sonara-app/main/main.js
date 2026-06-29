@@ -412,8 +412,6 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // ponytail: open DevTools on launch so users can see TTS logs; close anytime with F12.
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {

@@ -151,7 +151,8 @@ const CloudTTS = (() => {
   // Public: warm the cache for upcoming text without playing it.
   function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
     if (!text || !voice) return;
-    if (!voice._cloudVoice) return;   // only Edge + Supertonic — system voices are instant
+    if (!voice._cloudVoice) return;     // system voices are instant — no prefetch needed
+    if (voice._supertonic)  return;     // ponytail: local synth is CPU-heavy; overlapping inference hangs the UI
     try { _getAudio(text, voice, rate, pitch); } catch (_) {}
   }
 

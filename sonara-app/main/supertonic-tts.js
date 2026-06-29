@@ -49,6 +49,8 @@ let helperMod   = null;   // lazy dynamic ESM import
 let tts         = null;   // loaded TextToSpeech instance
 let loadingTts  = null;   // in-flight Promise to dedupe concurrent calls
 let downloading = null;   // in-flight download Promise to dedupe concurrent calls
+let synthChain  = Promise.resolve();  // ponytail: serialise synth so ORT isn't trampled by parallel calls
+const styleCache = new Map(); // voiceId -> parsed Style (avoid 292KB JSON re-parse per chunk)
 
 // ── DOWNLOAD ─────────────────────────────────────────────
 function downloadOne(url, destPath, onProgress) {
@@ -161,14 +163,26 @@ function status() {
  * @returns {{wav: Buffer, sampleRate: number, durationMs: number}}
  */
 async function synthesize(opts, progressCb) {
+  // Serialise calls: ORT inference is heavy and parallel runs in-process
+  // make the main thread unresponsive (UI hang, RAM spike).
+  const job = synthChain.then(() => _doSynthesize(opts, progressCb), () => _doSynthesize(opts, progressCb));
+  synthChain = job.catch(() => {});
+  return job;
+}
+
+async function _doSynthesize(opts, progressCb) {
   const { text, voice = 'M1', lang = 'en', speed = 1.05, totalStep = 8 } = opts || {};
   if (!text || !text.trim()) throw new Error('synthesize: text is empty');
   if (!VOICE_IDS.includes(voice)) throw new Error(`Unknown voice: ${voice}`);
 
   const t = await ensureTTS(progressCb);
   const h = await ensureHelper();
-  const stylePath = path.join(stylesDir(), `${voice}.json`);
-  const style = h.loadVoiceStyle([stylePath]);
+
+  let style = styleCache.get(voice);
+  if (!style) {
+    style = h.loadVoiceStyle([path.join(stylesDir(), `${voice}.json`)]);
+    styleCache.set(voice, style);
+  }
 
   const { wav, duration } = await t.call(text, lang, style, totalStep, speed);
   const samples = Math.floor(t.sampleRate * duration[0]);
