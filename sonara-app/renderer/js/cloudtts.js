@@ -10,6 +10,7 @@
 const CloudTTS = (() => {
 
   let edgeVoices    = [];      // Full list from Edge TTS service
+  let localVoices   = [];      // Supertonic on-device voices
   let isLoaded      = false;
   let isLoading     = false;
   let currentAudio  = null;    // HTMLAudioElement for current playback
@@ -21,30 +22,45 @@ const CloudTTS = (() => {
 
   // ── LOAD VOICES FROM EDGE TTS SERVICE ──────────────────
   async function loadVoices() {
-    if (isLoaded || isLoading) return edgeVoices;
+    if (isLoaded || isLoading) return [...edgeVoices, ...localVoices];
     if (!window.sonara?.tts) {
       return [];
     }
 
     isLoading = true;
     try {
+      // Edge cloud voices
       const raw = await window.sonara.tts.getVoices();
-
       edgeVoices = raw.map(v => ({
-        // Display name: "en-US-AriaNeural" -> "Microsoft Aria (Natural)"
         name:         _friendlyName(v.friendlyName || v.name),
-        shortName:    v.name,        // e.g. 'en-US-AriaNeural'
+        shortName:    v.name,
         lang:         v.locale || v.lang,
         gender:       v.gender,
         localService: false,
         voiceURI:     v.name,
         default:      false,
         _cloudVoice:  true,
-        _edgeVoice:   v.name         // The actual voice ID for synthesis
+        _edgeVoice:   v.name
       }));
 
+      // Supertonic on-device voices (best-effort — failure leaves list unchanged)
+      try {
+        const local = await window.sonara.supertonic?.getVoices() || [];
+        localVoices = local.map(v => ({
+          name:         `${v.name} [Local]`,
+          shortName:    v.id,
+          lang:         v.lang || 'en',
+          gender:       v.gender,
+          localService: true,
+          voiceURI:     `supertonic:${v.id}`,
+          default:      false,
+          _supertonic:  true,
+          _supertonicId:v.id,
+        }));
+      } catch (_) { /* Supertonic unavailable — keep edge-only */ }
+
       isLoaded = true;
-      return edgeVoices;
+      return [...edgeVoices, ...localVoices];
 
     } catch (err) {
       return [];
@@ -76,11 +92,15 @@ const CloudTTS = (() => {
 
   // Get voices formatted for the voice list
   function getVoices() {
-    return edgeVoices;
+    return [...edgeVoices, ...localVoices];
   }
 
   function isCloudVoice(voice) {
-    return voice && voice._cloudVoice === true;
+    return voice && (voice._cloudVoice === true || voice._supertonic === true);
+  }
+
+  function isLocalVoice(voice) {
+    return !!(voice && voice._supertonic === true);
   }
 
   // ── SYNTHESIZE & PLAY ──────────────────────────────────
@@ -99,40 +119,52 @@ const CloudTTS = (() => {
 
     try {
 
-      const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
+      const useLocal = isLocalVoice(voice);
+      let audioBytes, mimeType, boundaries;
 
-      const result = await window.sonara.tts.synthesize({
-        text,
-        voice: voiceId,
-        speed: rate,
-        pitch
-      });
-
-      // Another speak() or stop() was called while we were waiting — discard
-      if (myRequestId !== requestId) {
-        return;
-      }
-
-      if (!result || !result.audio) {
-        throw new Error('No audio returned from Edge TTS');
+      if (useLocal) {
+        // ponytail: local Supertonic — no word boundaries from the model, skip highlighting.
+        const result = await window.sonara.supertonic.synthesize({
+          text,
+          voice: voice._supertonicId,
+          lang:  voice.lang || 'en',
+          speed: rate,
+        });
+        if (myRequestId !== requestId) return;
+        if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
+        audioBytes = result.audio;
+        mimeType   = 'audio/wav';
+        boundaries = [];
+      } else {
+        const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
+        const result = await window.sonara.tts.synthesize({
+          text,
+          voice: voiceId,
+          speed: rate,
+          pitch
+        });
+        if (myRequestId !== requestId) return;
+        if (!result || !result.audio) throw new Error('No audio returned from Edge TTS');
+        audioBytes = result.audio;
+        mimeType   = 'audio/mpeg';
+        boundaries = result.wordBoundaries || [];
       }
 
       // Convert base64 to blob URL and play
-      const binary = atob(result.audio);
+      const binary = atob(audioBytes);
       const bytes  = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
       }
-      const blob = new Blob([bytes], { type: 'audio/mpeg' });
+      const blob = new Blob([bytes], { type: mimeType });
       const url  = URL.createObjectURL(blob);
 
       currentAudio = new Audio(url);
-      currentAudio.playbackRate = 1.0; // Rate already applied in SSML
+      currentAudio.playbackRate = 1.0; // Rate already applied in synth
       currentAudio.volume = volume;
       onEndCb = onEnd;
 
       // Word boundary highlighting — poll at ~60fps for smooth tracking
-      const boundaries = result.wordBoundaries || [];
       let lastBoundaryIdx = -1;
 
       if (boundaries.length > 0 && onBoundaryCb) {
@@ -270,6 +302,7 @@ const CloudTTS = (() => {
     shouldEnable,
     getVoices,
     isCloudVoice,
+    isLocalVoice,
     speak,
     onBoundary,
     preview,

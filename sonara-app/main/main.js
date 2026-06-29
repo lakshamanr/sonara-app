@@ -28,6 +28,13 @@ function getEdgeTTS() {
   return edgeTTS;
 }
 
+// Lazy-load local Supertonic TTS — heavy ONNX deps don't load until first use
+let supertonicTTS = null;
+function getSupertonic() {
+  if (!supertonicTTS) supertonicTTS = require('./supertonic-tts');
+  return supertonicTTS;
+}
+
 let mainWindow;
 let booksDir;       // where we copy user files
 let coversDir;      // where we save extracted cover images
@@ -859,6 +866,18 @@ ipcMain.handle('tts:synthesize', async (_, { text, voice, speed, pitch }) => {
   } catch (err) {
     throw err;
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+//  IPC — SUPERTONIC LOCAL TTS (on-device ONNX)
+// ─────────────────────────────────────────────────────────────
+ipcMain.handle('supertonic:getVoices', () => getSupertonic().getVoices());
+ipcMain.handle('supertonic:status',    () => getSupertonic().status());
+ipcMain.handle('supertonic:synthesize', async (event, opts) => {
+  const sender = event.sender;
+  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  const { wav, sampleRate, durationMs } = await getSupertonic().synthesize(opts, progressCb);
+  return { audio: wav.toString('base64'), sampleRate, durationMs };
 });
 
 // ────────────────────────────────────────────────────────────

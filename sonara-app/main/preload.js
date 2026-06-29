@@ -201,6 +201,22 @@ contextBridge.exposeInMainWorld('sonara', {
     synthesize: (opts) => ipcRenderer.invoke('tts:synthesize', opts),
   },
 
+  // ── SUPERTONIC (Local on-device neural TTS, ~400MB on first use) ──
+  supertonic: {
+    /** @returns {Promise<{id,name,gender,lang}[]>} */
+    getVoices:  ()     => ipcRenderer.invoke('supertonic:getVoices'),
+    /** @returns {Promise<{rootDir,missing,ready}>} */
+    status:     ()     => ipcRenderer.invoke('supertonic:status'),
+    /**
+     * @param {{ text:string, voice?:string, lang?:string, speed?:number, totalStep?:number }} opts
+     * @returns {Promise<{ audio:string, sampleRate:number, durationMs:number }>} base64 WAV
+     */
+    synthesize: (opts) => ipcRenderer.invoke('supertonic:synthesize', opts),
+    /** Listen for first-use download/load progress. */
+    onProgress: (cb)   => ipcRenderer.on('supertonic:progress', (_, p) => cb(p)),
+    offProgress:(cb)   => ipcRenderer.removeListener('supertonic:progress', cb),
+  },
+
   // ── EXPORT ───────────────────────────────────────────────
   export: {
     /**
