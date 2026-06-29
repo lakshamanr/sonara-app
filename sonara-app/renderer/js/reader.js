@@ -1612,6 +1612,13 @@ const Reader = (() => {
           _speakChunkWithSystem(idx);
         }
       );
+      // Prefetch next chunk in the background so playback is gapless.
+      if (CloudTTS.prefetch && idx + 1 < chunks.length) {
+        const nextText = _cleanTextForTTS(chunks[idx + 1].text);
+        if (nextText && nextText.length >= 2) {
+          CloudTTS.prefetch(nextText, chosenVoice, speed, pitch);
+        }
+      }
       return;
     }
 

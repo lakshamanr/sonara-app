@@ -90,6 +90,72 @@ const CloudTTS = (() => {
     return out;
   }
 
+  // ── PREFETCH CACHE (Edge TTS + Supertonic) ─────────────
+  // ponytail: bounded LRU (last 3 chunks) — each WAV is ~1MB/10s, so a few MB max.
+  const _audioCache = new Map(); // key -> Promise<{audioBytes,mimeType,boundaries,durationMs}>
+  const _AUDIO_CACHE_MAX = 3;
+
+  function _cacheKey(text, voice, rate, pitch) {
+    const id = voice._supertonicId || voice._edgeVoice || voice.shortName || voice.voiceURI || voice.name;
+    return `${id}|${rate}|${pitch}|${text}`;
+  }
+
+  function _fetchAudio(text, voice, rate, pitch) {
+    if (voice._supertonic) {
+      return window.sonara.supertonic.synthesize({
+        text,
+        voice: voice._supertonicId,
+        lang:  voice.lang || 'en',
+        speed: rate,
+      }).then(result => {
+        if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
+        return {
+          audioBytes: result.audio,
+          mimeType:   'audio/wav',
+          boundaries: _synthBoundaries(text, result.durationMs || 0),
+          durationMs: result.durationMs,
+        };
+      });
+    }
+    // Edge TTS
+    const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
+    return window.sonara.tts.synthesize({ text, voice: voiceId, speed: rate, pitch })
+      .then(result => {
+        if (!result || !result.audio) throw new Error('No audio returned from Edge TTS');
+        return {
+          audioBytes: result.audio,
+          mimeType:   'audio/mpeg',
+          boundaries: result.wordBoundaries || [],
+          durationMs: result.durationMs,
+        };
+      });
+  }
+
+  function _getAudio(text, voice, rate, pitch) {
+    const key = _cacheKey(text, voice, rate, pitch);
+    let p = _audioCache.get(key);
+    if (p) {
+      _audioCache.delete(key);  // LRU touch
+      _audioCache.set(key, p);
+      return p;
+    }
+    p = _fetchAudio(text, voice, rate, pitch)
+      .catch(err => { _audioCache.delete(key); throw err; });
+    _audioCache.set(key, p);
+    while (_audioCache.size > _AUDIO_CACHE_MAX) {
+      _audioCache.delete(_audioCache.keys().next().value);
+    }
+    return p;
+  }
+
+  // Public: warm the cache for upcoming text without playing it.
+  function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
+    if (!text || !voice) return;
+    if (!voice._cloudVoice) return;   // only Edge + Supertonic — system voices are instant
+    try { _getAudio(text, voice, rate, pitch); } catch (_) {}
+  }
+
+
   function _friendlyName(raw) {
     // "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)"
     // -> "Microsoft Aria (Natural)"
@@ -138,37 +204,14 @@ const CloudTTS = (() => {
     const myRequestId = ++requestId;
 
     try {
+      const result = await _getAudio(text, voice, rate, pitch);
 
-      const useLocal = isLocalVoice(voice);
-      let audioBytes, mimeType, boundaries;
+      // Another speak() or stop() was called while we were waiting — discard
+      if (myRequestId !== requestId) return;
 
-      if (useLocal) {
-        const result = await window.sonara.supertonic.synthesize({
-          text,
-          voice: voice._supertonicId,
-          lang:  voice.lang || 'en',
-          speed: rate,
-        });
-        if (myRequestId !== requestId) return;
-        if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
-        audioBytes = result.audio;
-        mimeType   = 'audio/wav';
-        // ponytail: model gives no per-word timing — estimate linearly from char position.
-        boundaries = _synthBoundaries(text, result.durationMs || 0);
-      } else {
-        const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
-        const result = await window.sonara.tts.synthesize({
-          text,
-          voice: voiceId,
-          speed: rate,
-          pitch
-        });
-        if (myRequestId !== requestId) return;
-        if (!result || !result.audio) throw new Error('No audio returned from Edge TTS');
-        audioBytes = result.audio;
-        mimeType   = 'audio/mpeg';
-        boundaries = result.wordBoundaries || [];
-      }
+      const audioBytes = result.audioBytes;
+      const mimeType   = result.mimeType;
+      const boundaries = result.boundaries;
 
       // Convert base64 to blob URL and play
       const binary = atob(audioBytes);
@@ -324,6 +367,7 @@ const CloudTTS = (() => {
     isCloudVoice,
     isLocalVoice,
     speak,
+    prefetch,
     onBoundary,
     preview,
     stop,
