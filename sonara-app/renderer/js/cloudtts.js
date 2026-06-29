@@ -70,13 +70,32 @@ const CloudTTS = (() => {
     }
   }
 
+  // Synthesize word boundaries for engines (like Supertonic) that only give total duration.
+  // Linear estimate by character position — good enough for highlight tracking.
+  function _synthBoundaries(text, durationMs) {
+    const totalChars = text.length || 1;
+    const durationSec = (durationMs || 0) / 1000;
+    if (durationSec <= 0) return [];
+    const out = [];
+    const wordRe = /\S+/g;
+    let m;
+    while ((m = wordRe.exec(text)) !== null) {
+      out.push({
+        audioOffset: (m.index / totalChars) * durationSec,
+        textOffset:  m.index,
+        textLength:  m[0].length,
+        text:        m[0],
+      });
+    }
+    return out;
+  }
+
   function _friendlyName(raw) {
     // "Microsoft Server Speech Text to Speech Voice (en-US, AriaNeural)"
     // -> "Microsoft Aria (Natural)"
     // Or "en-US-AriaNeural" -> "Aria (Natural) en-US"
     if (raw.includes('(') && raw.includes(',')) {
-      const match = raw.match(/\(([^,]+),\s*(\w+?)(?:Neural)?\)/);
-      if (match) return match[2] + ' (Natural) - ' + match[1];
+      const match = raw.match(/\(([^,]+),\s*(\w+?)(?:Neural)?\)/);      if (match) return match[2] + ' (Natural) - ' + match[1];
     }
     // Already friendly: "Microsoft Aria Online (Natural) - English (United States)"
     if (raw.includes('(Natural)')) return raw;
@@ -124,7 +143,6 @@ const CloudTTS = (() => {
       let audioBytes, mimeType, boundaries;
 
       if (useLocal) {
-        // ponytail: local Supertonic — no word boundaries from the model, skip highlighting.
         const result = await window.sonara.supertonic.synthesize({
           text,
           voice: voice._supertonicId,
@@ -135,7 +153,8 @@ const CloudTTS = (() => {
         if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
         audioBytes = result.audio;
         mimeType   = 'audio/wav';
-        boundaries = [];
+        // ponytail: model gives no per-word timing — estimate linearly from char position.
+        boundaries = _synthBoundaries(text, result.durationMs || 0);
       } else {
         const voiceId = voice._edgeVoice || voice.shortName || voice.voiceURI;
         const result = await window.sonara.tts.synthesize({
