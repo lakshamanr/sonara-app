@@ -107,6 +107,7 @@ const CloudTTS = (() => {
         voice: voice._supertonicId,
         lang:  voice.lang || 'en',
         speed: rate,
+        totalStep: 4,
       }).then(result => {
         if (!result || !result.audio) throw new Error('No audio returned from Supertonic');
         return {
@@ -152,6 +153,7 @@ const CloudTTS = (() => {
   function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
     if (!text || !voice) return;
     if (!voice._cloudVoice) return;     // system voices are instant — no prefetch needed
+    if (voice._supertonic) return;      // local inference must stay single-flight
     try { _getAudio(text, voice, rate, pitch); } catch (_) {}
   }
 

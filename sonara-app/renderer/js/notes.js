@@ -33,6 +33,7 @@ const Notes = (() => {
     }
     _render();
     _updateBadge();
+    Review.load(_bookId, _notes);
   }
 
   function clear() { load(null); }
@@ -77,6 +78,7 @@ const Notes = (() => {
       textarea.style.height = '';
       _render();
       _updateBadge();
+      Review.load(_bookId, _notes);
       _updatePositionLabel();
       UI.toast('Note saved', 'success', 1800);
     } catch (err) {
@@ -92,6 +94,7 @@ const Notes = (() => {
       _notes = _notes.filter(n => n.id !== id);
       _render();
       _updateBadge();
+      Review.load(_bookId, _notes);
     } catch (err) {
       UI.toast('Could not delete note', 'error');
     }
@@ -132,6 +135,7 @@ const Notes = (() => {
       const note = _notes.find(n => n.id === id);
       if (note) { note.content = content; note.tag = tag; }
       _render();
+      Review.load(_bookId, _notes);
     } catch (err) {
       UI.toast('Could not update note', 'error');
     }
@@ -321,18 +325,24 @@ const Notes = (() => {
   function switchTab(tab) {
     const ctrlPane = document.getElementById('paneControls');
     const ntWrap   = document.getElementById('rpNotesWrap');
+    const rvWrap   = document.getElementById('rpReviewWrap');
     const ctrlTab  = document.getElementById('rpTabControls');
     const ntTab    = document.getElementById('rpTabNotes');
+    const rvTab    = document.getElementById('rpTabReview');
 
     // Hide all panes, deactivate all tabs
     if (ctrlPane) ctrlPane.style.display = 'none';
     if (ntWrap)   ntWrap.style.display   = 'none';
-    [ctrlTab, ntTab].forEach(t => t && t.classList.remove('rp-tab-active'));
+    if (rvWrap)   rvWrap.style.display   = 'none';
+    [ctrlTab, ntTab, rvTab].forEach(t => t && t.classList.remove('rp-tab-active'));
 
     if (tab === 'notes') {
       if (ntWrap)  ntWrap.style.display = '';
       if (ntTab)   ntTab.classList.add('rp-tab-active');
       _updatePositionLabel();
+    } else if (tab === 'review') {
+      if (rvWrap) rvWrap.style.display = '';
+      if (rvTab) rvTab.classList.add('rp-tab-active');
     } else {
       if (ctrlPane) ctrlPane.style.display = '';
       if (ctrlTab)  ctrlTab.classList.add('rp-tab-active');

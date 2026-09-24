@@ -148,12 +148,20 @@ async function ensureWorker(progressCb) {
         if (workerLoadingProgressCb) workerLoadingProgressCb({ phase: 'ready' });
         workerLoadingProgressCb = null;
         resolve();
+      } else if (msg.type === 'worker-error') {
+        const err = new Error(msg.error || 'Supertonic worker failed to load');
+        reject(err);
+        worker = null;
+        workerReady = null;
       } else if (msg.type === 'result') {
         const slot = pending.get(msg.id);
         if (!slot) return;
         pending.delete(msg.id);
         if (msg.ok) slot.resolve(msg);
         else slot.reject(new Error(msg.error || 'worker synth failed'));
+      } else if (msg.type === 'progress') {
+        const slot = pending.get(msg.id);
+        if (slot?.progress) slot.progress(msg);
       }
     };
     worker.on('message', onReady);
@@ -222,7 +230,7 @@ async function synthesize(opts, progressCb) {
 
   const id = nextId++;
   const result = await new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve, reject, progress: progressCb });
     worker.postMessage({ type: 'synth', id, text, voice, lang, speed, totalStep });
   });
 

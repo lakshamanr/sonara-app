@@ -17,6 +17,7 @@ let helper     = null;
 let onnxDir    = workerData?.onnxDir;
 let stylesDir  = workerData?.stylesDir;
 const styles   = new Map();
+let synthQueue = Promise.resolve();
 
 async function loadHelper() {
   if (helper) return helper;
@@ -27,8 +28,8 @@ async function loadHelper() {
 
 async function ensureTts() {
   if (tts) return tts;
-  const h = await loadHelper();
-  tts = await h.loadTextToSpeech(onnxDir);
+  helper = await loadHelper();
+  tts = await helper.loadTextToSpeech(onnxDir);
   return tts;
 }
 
@@ -42,6 +43,7 @@ function getStyle(voiceId) {
 
 async function handleSynth(msg) {
   const { id, text, voice, lang, speed, totalStep } = msg;
+  parentPort.postMessage({ type: 'progress', id, phase: 'generating', textLength: text.length });
   try {
     const t = await ensureTts();
     const style = getStyle(voice);
@@ -54,13 +56,24 @@ async function handleSynth(msg) {
       sampleRate: t.sampleRate,
       durationMs: Math.round(duration[0] * 1000),
     });
+    parentPort.postMessage({ type: 'progress', id, phase: 'complete' });
   } catch (err) {
+    parentPort.postMessage({ type: 'progress', id, phase: 'error', error: err.message || String(err) });
     parentPort.postMessage({ type: 'result', id, ok: false, error: err.message || String(err) });
   }
 }
 
 parentPort.on('message', (msg) => {
-  if (msg.type === 'synth') handleSynth(msg);
+  if (msg.type === 'synth') {
+    // ONNX sessions are not cheap to run concurrently. Queue requests so
+    // prefetch or export cannot multiply peak memory usage.
+    parentPort.postMessage({ type: 'progress', id: msg.id, phase: 'queued' });
+    synthQueue = synthQueue.then(() => handleSynth(msg), () => handleSynth(msg));
+  }
 });
 
-parentPort.postMessage({ type: 'ready' });
+// Do not report ready until ONNX sessions are loaded. Otherwise the first
+// playback request appears hung while it performs the expensive initialization.
+ensureTts()
+  .then(() => parentPort.postMessage({ type: 'ready' }))
+  .catch((err) => parentPort.postMessage({ type: 'worker-error', error: err.message || String(err) }));

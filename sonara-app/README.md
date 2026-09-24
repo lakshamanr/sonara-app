@@ -34,6 +34,7 @@ Sonara is a professional-grade desktop reading + listening app that puts your en
 - Colour-coded collections; auto-classify populates them instantly
 - Per-book reading progress + chapter position saved automatically
 - Notes panel tied to each book; exportable as text
+- Offline review mode for recalling saved notes with simple spaced intervals
 
 ### ☁️ Sync & Backup
 - **One-folder backup** — everything lives in `Sonara-Data/`; copy it anywhere

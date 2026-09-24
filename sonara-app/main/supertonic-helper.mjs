@@ -242,7 +242,14 @@ export function loadVoiceStyle(voiceStylePaths) {
 
 export async function loadTextToSpeech(onnxDir) {
     const cfgs = loadCfgs(onnxDir);
-    const { dpOrt, textEncOrt, vectorEstOrt, vocoderOrt } = await loadOnnxAll(onnxDir, {});
+    // Keep one inference thread per session. Supertonic is already memory-heavy;
+    // parallel ONNX pools can starve Electron and make the UI appear hung.
+    const sessionOptions = {
+        executionMode: 'sequential',
+        intraOpNumThreads: 1,
+        interOpNumThreads: 1,
+    };
+    const { dpOrt, textEncOrt, vectorEstOrt, vocoderOrt } = await loadOnnxAll(onnxDir, sessionOptions);
     return new TextToSpeech(cfgs, loadTextProcessor(onnxDir), dpOrt, textEncOrt, vectorEstOrt, vocoderOrt);
 }
 
