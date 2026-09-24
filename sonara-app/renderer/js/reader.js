@@ -1259,6 +1259,22 @@ const Reader = (() => {
       container.innerHTML = html;
     }
 
+    // Some EPUBs expose image blocks but their text blocks are not renderable
+    // after sanitisation. Keep the readable chapter text visible in that case.
+    if (!container.textContent.trim() && text.trim()) {
+      const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+      container.innerHTML = sentences.map((sentence, si) => {
+        const sentStartIdx = wordGlobalIdx;
+        const wordHtml = sentence.split(/(\s+)/).map(tok => {
+          if (!tok || /^\s+$/.test(tok)) return tok;
+          const wi = wordGlobalIdx++;
+          return `<span class="word word-unspoken" data-wi="${wi}">${_escHtml(tok)}</span>`;
+        }).join('');
+        sentenceMap.push({ start: sentStartIdx, end: wordGlobalIdx - 1 });
+        return `<span class="sentence" data-si="${si}">${wordHtml}</span>`;
+      }).join(' ');
+    }
+
     // Cache span references
     wordSpans = [...container.querySelectorAll('.word')];
 

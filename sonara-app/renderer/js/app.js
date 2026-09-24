@@ -749,6 +749,9 @@ const App = (() => {
 
     // Load library
     await Library.load();
+    // The loading screen is separate from the generating overlay.
+    // Keep startup failures from leaving the app permanently covered.
+    document.getElementById('appLoadingOverlay')?.classList.add('hidden');
 
     // Background: extract covers for any EPUB/PDF books that still lack one
     // (runs async, does not block startup)
@@ -1859,5 +1862,9 @@ const App = (() => {
 
 // ── BOOT ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  App.init().catch(() => {});
+  App.init().catch(err => {
+    console.error('[App] startup failed:', err);
+    document.getElementById('appLoadingOverlay')?.classList.add('hidden');
+    UI.toast('Sonara could not finish loading: ' + (err.message || err), 'error', 6000);
+  });
 });

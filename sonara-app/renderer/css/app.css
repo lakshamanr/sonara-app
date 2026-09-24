@@ -841,6 +841,63 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   border-radius: 6px;
 }
 
+/* Kindle-like reading layout: quiet page, readable measure, book typography. */
+.reader-text-wrap {
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.025), transparent 18%, transparent 82%, rgba(0,0,0,.04)),
+    var(--bg);
+  padding: 48px clamp(24px, 5vw, 84px) 72px;
+  scrollbar-gutter: stable;
+}
+
+.reader-text {
+  max-width: min(100%, 720px);
+  padding: 8px 0 48px;
+  font-size: clamp(17px, 1.05vw, 20px);
+  line-height: 1.8;
+  letter-spacing: .01em;
+  color: var(--text-dim);
+  text-align: justify;
+  text-wrap: pretty;
+  hyphens: auto;
+}
+
+.reader-text::before {
+  content: '';
+  display: block;
+  width: 42px;
+  height: 1px;
+  margin: 0 auto 38px;
+  background: var(--accent);
+  opacity: .65;
+}
+
+.epub-para {
+  margin: 0;
+  text-indent: 1.5em;
+}
+
+.epub-para:first-of-type {
+  text-indent: 0;
+}
+
+.epub-para + .epub-para {
+  margin-top: .35em;
+}
+
+.epub-figure + .epub-para,
+.epub-para + .epub-figure {
+  margin-top: 2em;
+}
+
+.epub-image {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+}
+
+.reader-text .sentence {
+  text-align: inherit;
+}
+
 /* ── PDF VISUAL VIEWER ── */
 .reader-pdf-wrap {
   flex: 1;
@@ -1139,7 +1196,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 /* Unspoken */
 .word.word-unspoken {
-  color: var(--unspoken-color);
+  color: var(--unspoken-color) !important;
 }
 
 /* Generating overlay */
@@ -5178,4 +5235,3 @@ body.mode-reader  .layout { display: grid; }
 /* Font button group row */
 .font-row { margin-bottom: 10px; align-items: flex-start; }
 .font-label { padding-top: 4px; }
-
