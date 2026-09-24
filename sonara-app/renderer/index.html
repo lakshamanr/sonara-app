@@ -14,6 +14,16 @@
 <body>
 
 <!-- ══════════════════════════════════════════════════════════
+     APP LOADING OVERLAY
+══════════════════════════════════════════════════════════ -->
+<div class="app-loading-overlay" id="appLoadingOverlay">
+  <div class="app-loading-spinner"></div>
+  <div class="app-loading-text">Sonara</div>
+  <div class="app-loading-sub">Loading your library…</div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
      TOP BAR
 ══════════════════════════════════════════════════════════ -->
 <div class="topbar" id="topbar">
@@ -50,18 +60,18 @@
       <div class="cp-dot" id="cpDot"></div>
       <span class="cp-label" id="cpLabel">Claude AI</span>
     </div>
-    <button class="tb-icon-btn" id="btnBackup" title="Backup &amp; Restore">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <button class="tb-icon-btn" id="btnBackup" title="Backup &amp; Restore" aria-label="Backup and Restore">
+      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </button>
-    <button class="tb-icon-btn" id="btnShortcuts" title="Keyboard Shortcuts">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+    <button class="tb-icon-btn" id="btnShortcuts" title="Keyboard Shortcuts" aria-label="Keyboard Shortcuts">
+      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <rect x="3" y="6" width="18" height="12" rx="2"/>
         <path d="M7 10h.01M10 10h.01M13 10h.01M16 10h.01"/>
         <path d="M7 14h10"/>
       </svg>
     </button>
-    <button class="tb-icon-btn" id="btnFullscreen" title="Toggle Full Screen (F11)">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+    <button class="tb-icon-btn" id="btnFullscreen" title="Toggle Full Screen (F11)" aria-label="Toggle Full Screen">
+      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <polyline points="8 3 3 3 3 8"/>
         <line x1="3" y1="3" x2="9" y2="9"/>
         <polyline points="16 3 21 3 21 8"/>
@@ -72,11 +82,11 @@
         <line x1="21" y1="21" x2="15" y2="15"/>
       </svg>
     </button>
-    <button class="tb-icon-btn" id="btnSettings" title="Settings">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    <button class="tb-icon-btn" id="btnSettings" title="Settings" aria-label="Settings">
+      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     </button>
-    <button class="rp-toggle-btn" id="btnToggleRight" title="Toggle controls panel">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="rp-toggle-btn" id="btnToggleRight" title="Toggle controls panel" aria-label="Toggle Controls Panel" aria-expanded="true">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
         <line x1="16" y1="3" x2="16" y2="21"/>
       </svg>
@@ -105,7 +115,7 @@
   <aside class="lib-sidebar" id="libSidebar">
     <div class="lib-sidebar-header">
       <span class="lib-sidebar-title">Collections</span>
-      <button class="lib-sidebar-add" id="btnNewCollection" title="New Collection">
+      <button class="lib-sidebar-add" id="btnNewCollection" title="New Collection" aria-label="Create New Collection">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
@@ -147,7 +157,7 @@
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input type="text" class="lib-search" id="libSearch" placeholder="Search your library..." />
-        <button class="lib-search-clear" id="libSearchClear" style="display:none">
+        <button class="lib-search-clear hidden" id="libSearchClear" aria-label="Clear Search">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
@@ -188,7 +198,7 @@
     </div>
 
     <!-- Bulk action bar (visible only in bulk-select mode) -->
-    <div class="bulk-action-bar" id="bulkActionBar" style="display:none">
+    <div class="bulk-action-bar hidden" id="bulkActionBar">
       <span class="bulk-sel-count" id="bulkSelCount">0 books selected</span>
       <button class="bulk-bar-btn" id="btnSelectCollection" onclick="Library.selectCurrentCollection()" title="Select all books in current view">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -216,7 +226,7 @@
       <div class="lib-grid" id="libGrid"></div>
 
       <!-- Empty state -->
-      <div class="lib-empty-hero" id="libEmptyHero" style="display:none">
+      <div class="lib-empty-hero hidden" id="libEmptyHero">
         <div class="leh-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
             <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
@@ -244,13 +254,13 @@
   <aside class="panel-left" id="panelLeft">
 
     <!-- Legacy DOM nodes required by library.js (hidden from view) -->
-    <div id="libStatsMini" style="display:none">
+    <div id="libStatsMini" class="hidden">
       <span class="lsm-item" id="lsmTotal"></span>
       <span class="lsm-sep">·</span>
       <span class="lsm-item reading" id="lsmReading"></span>
     </div>
-    <div class="lib-empty-state" id="libEmpty" style="display:none"></div>
-    <div id="bookList" style="display:none"></div>
+    <div class="lib-empty-state hidden" id="libEmpty"></div>
+    <div id="bookList" class="hidden"></div>
 
     <!-- No-book state -->
     <div class="nav-empty" id="navEmpty">
@@ -265,7 +275,7 @@
     </div>
 
     <!-- Book open state -->
-    <div class="nav-book" id="navBook" style="display:none">
+    <div class="nav-book hidden" id="navBook">
 
       <!-- Cover art -->
       <div class="nav-cover-wrap">
@@ -276,7 +286,7 @@
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
             </svg>
           </div>
-          <img class="nav-cover-img" id="navCoverImg" alt="" style="display:none"/>
+          <img class="nav-cover-img hidden" id="navCoverImg" alt=""/>
         </div>
         <div class="nav-cover-info">
           <div class="nav-book-title" id="navBookTitle">—</div>
@@ -324,14 +334,14 @@
     </div>
 
     <!-- Reading text area (EPUB / fallback) -->
-    <div class="reader-text-wrap" id="readerTextWrap" style="display:none">
+    <div class="reader-text-wrap hidden" id="readerTextWrap">
       <div class="reader-text" id="readerText">
         <!-- Word spans injected by JS -->
       </div>
     </div>
 
     <!-- PDF Visual Viewer -->
-    <div class="reader-pdf-wrap" id="readerPdfWrap" style="display:none">
+    <div class="reader-pdf-wrap hidden" id="readerPdfWrap">
       <div class="pdf-viewer" id="pdfViewer">
         <div class="pdf-page-container" id="pdfPageContainer">
           <canvas id="pdfCanvas"></canvas>
@@ -371,13 +381,13 @@
         <div class="pdf-nav-sep"></div>
         <button class="pdf-nav-btn" id="pdfFullscreen" title="Toggle fullscreen">
           <svg class="pdf-fs-expand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 3 3 3 8"/><line x1="3" y1="3" x2="9" y2="9"/><polyline points="16 3 21 3 21 8"/><line x1="21" y1="3" x2="15" y2="9"/><polyline points="8 21 3 21 3 16"/><line x1="3" y1="21" x2="9" y2="15"/><polyline points="16 21 21 21 21 16"/><line x1="21" y1="21" x2="15" y2="15"/></svg>
-          <svg class="pdf-fs-compress" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><polyline points="4 14 10 14 10 20"/><line x1="10" y1="14" x2="4" y2="20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="20" y2="4"/></svg>
+          <svg class="pdf-fs-compress hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><line x1="10" y1="14" x2="4" y2="20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="20" y2="4"/></svg>
         </button>
       </div>
     </div>
 
     <!-- Audio player mode (shown for audiobooks) -->
-    <div class="reader-audio" id="readerAudio" style="display:none">
+    <div class="reader-audio hidden" id="readerAudio">
       <div class="ra-cover-wrap">
         <div class="ra-cover" id="rasCover"></div>
       </div>
@@ -390,7 +400,7 @@
     </div>
 
     <!-- Generating overlay -->
-    <div class="generating-overlay" id="generatingOverlay" style="display:none">
+    <div class="generating-overlay hidden" id="generatingOverlay">
       <div class="gen-spinner"></div>
       <div class="gen-label" id="genLabel">Processing…</div>
       <div class="gen-sub" id="genSub">Please wait</div>
@@ -437,7 +447,7 @@
         <div class="rp-section" id="rpVoiceSection">
           <div class="rp-section-header">
             <span class="rp-section-label">Voice</span>
-            <div style="display:flex;gap:6px;">
+            <div class="flex gap-6">
               <button class="prev-sel-btn" id="refreshVoicesBtn" onclick="Reader.refreshVoices()" title="Refresh voice list">
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 Refresh
@@ -505,8 +515,8 @@
             <span class="rp-section-label">Display</span>
           </div>
           <!-- Font family -->
-          <div class="ctrl-row" style="margin-bottom:10px;align-items:flex-start;">
-            <label class="ctrl-label" style="padding-top:4px">Font</label>
+          <div class="ctrl-row font-row">
+            <label class="ctrl-label font-label">Font</label>
             <div class="font-btn-group" id="fontBtnGroup">
               <button class="font-btn active" data-font="serif"   onclick="Reader.onFontChange('serif')">Serif</button>
               <button class="font-btn"        data-font="sans"    onclick="Reader.onFontChange('sans')">Sans</button>
@@ -542,24 +552,24 @@
           <div class="rp-section-header">
             <span class="rp-section-label">Export</span>
           </div>
-          <div class="export-format-row" style="display:flex;gap:6px;margin-bottom:8px;">
-            <label class="export-fmt-opt" style="flex:1;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border-muted,#3a3a3a);border-radius:6px;cursor:pointer;font-size:12px;">
+          <div class="export-fmt-row">
+            <label class="export-fmt-opt">
               <input type="radio" name="exportFormat" value="mp3" checked onchange="ExportMP3.onFormatChange()"/>
               <span>MP3 + Chapters</span>
             </label>
-            <label class="export-fmt-opt" style="flex:1;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--border-muted,#3a3a3a);border-radius:6px;cursor:pointer;font-size:12px;">
+            <label class="export-fmt-opt">
               <input type="radio" name="exportFormat" value="m4b" onchange="ExportMP3.onFormatChange()"/>
               <span>M4B Audiobook</span>
             </label>
           </div>
-          <div id="exportCoverRow" style="display:none;margin-bottom:8px;font-size:12px;">
-            <label style="display:flex;align-items:center;gap:6px;">
+          <div id="exportCoverRow" class="hidden export-cover-row">
+            <label class="flex items-center gap-6">
               <input type="checkbox" id="exportUseCover" checked/>
               <span>Embed book cover</span>
             </label>
-            <div style="margin-top:4px;display:flex;align-items:center;gap:6px;">
-              <button type="button" class="export-mp3-btn" style="flex:0 0 auto;padding:3px 8px;font-size:11px;" onclick="ExportMP3.pickCover()">Choose image…</button>
-              <span id="exportCoverName" style="font-size:11px;opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <div class="export-cover-picker">
+              <button type="button" class="export-mp3-btn" onclick="ExportMP3.pickCover()">Choose image…</button>
+              <span id="exportCoverName" class="export-cover-name"></span>
             </div>
           </div>
           <button class="export-mp3-btn" id="exportBtn" onclick="ExportMP3.start()">
@@ -576,7 +586,7 @@
       </div>
 
       <!-- ── Notes pane ── -->
-      <div id="rpNotesWrap" class="notes-pane" style="display:none">
+      <div id="rpNotesWrap" class="notes-pane hidden">
 
         <!-- Tag + position row -->
         <div class="note-meta-row">
@@ -599,7 +609,7 @@
         <button class="note-add-btn" onclick="Notes.save()">Add Note</button>
 
         <!-- Export row -->
-        <div class="notes-export-row" id="notesExportRow" style="display:none">
+        <div class="notes-export-row hidden" id="notesExportRow">
           <span class="notes-export-label">Export notes:</span>
           <button class="notes-export-btn" onclick="Notes.exportNotes('txt')" title="Export as plain text">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
@@ -641,22 +651,22 @@
 
   <!-- Controls -->
   <div class="pb-controls">
-    <button class="pb-btn" onclick="Reader.skipChunk(-1)" title="Previous section">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+    <button class="pb-btn" onclick="Reader.skipChunk(-1)" title="Previous section" aria-label="Previous Section">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
     </button>
-    <button class="pb-btn" onclick="Reader.seekBy(-10)" title="Rewind 10s">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
+    <button class="pb-btn" onclick="Reader.seekBy(-10)" title="Rewind 10s" aria-label="Rewind 10 Seconds">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
     </button>
-    <button class="pb-play-btn" id="pbPlayBtn" onclick="Reader.togglePlay()">
-      <svg id="pbPlayIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <button class="pb-play-btn" id="pbPlayBtn" onclick="Reader.togglePlay()" aria-label="Play or Pause" aria-pressed="false">
+      <svg id="pbPlayIcon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <polygon points="5 3 19 12 5 21 5 3"/>
       </svg>
     </button>
-    <button class="pb-btn" onclick="Reader.seekBy(10)" title="Forward 10s">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
+    <button class="pb-btn" onclick="Reader.seekBy(10)" title="Forward 10s" aria-label="Forward 10 Seconds">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/><text x="9" y="15" font-size="5" fill="currentColor" stroke="none">10</text></svg>
     </button>
-    <button class="pb-btn" onclick="Reader.skipChunk(1)" title="Next section">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+    <button class="pb-btn" onclick="Reader.skipChunk(1)" title="Next section" aria-label="Next Section">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
     </button>
   </div>
 
@@ -670,28 +680,28 @@
 
   <!-- Right info -->
   <div class="pb-right">
-    <button class="pb-bookmark-btn" id="pbBookmarkBtn" onclick="Reader.saveBookmark()" title="Save progress & bookmark">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="pb-bookmark-btn" id="pbBookmarkBtn" onclick="Reader.saveBookmark()" title="Save progress & bookmark" aria-label="Save Progress and Bookmark">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
       </svg>
       <span>Save</span>
     </button>
     <span class="pb-chapter-label" id="pbChapterLabel">—</span>
-    <button class="pb-clean-btn" id="pbCleanTextBtn" onclick="Reader.toggleSkipChars()" title="Character filter">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+    <button class="pb-clean-btn" id="pbCleanTextBtn" onclick="Reader.toggleSkipChars()" title="Character filter" aria-label="Toggle Character Filter" aria-pressed="false">
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
         <polyline points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
       </svg>
     </button>
     <!-- Mini player toggle -->
-    <button class="pb-icon-btn" id="pbMiniBtn" onclick="window.sonara?.miniPlayer?.toggle()" title="Mini Player">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <button class="pb-icon-btn" id="pbMiniBtn" onclick="window.sonara?.miniPlayer?.toggle()" title="Mini Player" aria-label="Toggle Mini Player">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="3" width="20" height="14" rx="2"/>
         <rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor" stroke="none"/>
       </svg>
     </button>
     <!-- Always-on-top pin -->
-    <button class="pb-icon-btn" id="pbPinBtn" onclick="App.togglePin()" title="Pin window on top">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <button class="pb-icon-btn" id="pbPinBtn" onclick="App.togglePin()" title="Pin window on top" aria-label="Pin Window on Top" aria-pressed="false">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="17" x2="12" y2="22"/>
         <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
       </svg>
@@ -701,8 +711,8 @@
         <svg class="pb-volume-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
           <path id="pbVolumeWave" d="M15.5 8.5a5 5 0 0 1 0 7"/>
-          <line id="pbVolumeMute" x1="15" y1="9" x2="21" y2="15" style="display:none"/>
-          <line id="pbVolumeMute2" x1="21" y1="9" x2="15" y2="15" style="display:none"/>
+          <line id="pbVolumeMute" class="hidden" x1="15" y1="9" x2="21" y2="15"/>
+          <line id="pbVolumeMute2" class="hidden" x1="21" y1="9" x2="15" y2="15"/>
         </svg>
       </button>
       <input type="range" class="pb-volume" id="pbVolumeSlider" min="0" max="100" step="1" value="100" oninput="Reader.onVolumeChange(this.value)"/>
@@ -972,12 +982,12 @@
     <div class="col-color-row">
       <span class="col-color-label">Color</span>
       <div class="col-color-swatches" id="colColorSwatches">
-        <div class="col-swatch active" data-color="#c8a96e" style="background:#c8a96e"></div>
-        <div class="col-swatch" data-color="#52c87a" style="background:#52c87a"></div>
-        <div class="col-swatch" data-color="#4a9eff" style="background:#4a9eff"></div>
-        <div class="col-swatch" data-color="#a87de0" style="background:#a87de0"></div>
-        <div class="col-swatch" data-color="#e05252" style="background:#e05252"></div>
-        <div class="col-swatch" data-color="#e0a852" style="background:#e0a852"></div>
+        <div class="col-swatch col-swatch-gold active" data-color="#c8a96e"></div>
+        <div class="col-swatch col-swatch-green" data-color="#52c87a"></div>
+        <div class="col-swatch col-swatch-blue" data-color="#4a9eff"></div>
+        <div class="col-swatch col-swatch-purple" data-color="#a87de0"></div>
+        <div class="col-swatch col-swatch-red" data-color="#e05252"></div>
+        <div class="col-swatch col-swatch-orange" data-color="#e0a852"></div>
       </div>
     </div>
     <div class="modal-actions">
@@ -1033,7 +1043,7 @@
     <p class="modal-sub" id="setCoverSub">Choose a cover for this book</p>
 
     <div class="sc-drop-zone" id="scDropZone">
-      <div class="sc-preview-wrap" id="scPreviewWrap" style="display:none">
+      <div class="sc-preview-wrap hidden" id="scPreviewWrap">
         <img class="sc-preview-img" id="scPreviewImg" src="" alt="Cover preview"/>
         <button class="sc-clear-btn" id="scClearBtn" title="Remove">&#x2715;</button>
       </div>
@@ -1171,7 +1181,7 @@
 </div>
 
 <!-- Export Progress Badge (✔ non-blocking — floats above player bar) -->
-<div class="export-badge" id="exportBadge" style="display:none">
+<div class="export-badge hidden" id="exportBadge">
   <div class="eb-head">
     <div class="eb-head-left">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
