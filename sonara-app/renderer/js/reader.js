@@ -25,7 +25,7 @@ const Reader = (() => {
   let readerFont      = 'serif';
   let readerFontSize  = 17;     // px
   let readerLineH     = 2.0;
-  let readerMaxWidth  = 680;    // px
+  let readerMaxWidth  = 900;    // px
   let chosenVoice          = null;
   let pendingRestoreVoice  = null;  // voice name/ID to restore once cloud voices load
   let _playPendingRetries  = 0;     // guard: max retries waiting for saved voice in _play()
@@ -2102,7 +2102,7 @@ const Reader = (() => {
     readerFont     = (await window.sonara.settings.get('readerFont',     'serif'))  || 'serif';
     readerFontSize =  parseInt(await window.sonara.settings.get('readerFontSize', 17),  10) || 17;
     readerLineH    =  parseFloat(await window.sonara.settings.get('readerLineH',  2.0)) || 2.0;
-    readerMaxWidth =  parseInt(await window.sonara.settings.get('readerMaxWidth', 680), 10) || 680;
+    readerMaxWidth =  parseInt(await window.sonara.settings.get('readerMaxWidth', 900), 10) || 900;
     _applyReadingStyle();
     _syncFontUI();
     

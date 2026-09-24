@@ -812,7 +812,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-family: var(--font-serif);
   font-size: var(--font-reader);
   line-height: 2;
-  color: var(--text-dim);
+  color: var(--text);
   user-select: text;
 }
 
