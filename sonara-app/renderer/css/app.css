@@ -4974,7 +4974,7 @@ body.mode-reader  .layout { display: grid; }
 /* ══════════════════════════════════════════════════════════
    UTILITY CLASSES — for replacing inline styles
 ══════════════════════════════════════════════════════════ */
-.hidden { display: none !important; }
+.hidden { display: none; }
 .visible { display: flex !important; }
 .visible-block { display: block !important; }
 .visible-grid { display: grid !important; }
@@ -5178,4 +5178,3 @@ body.mode-reader  .layout { display: grid; }
 /* Font button group row */
 .font-row { margin-bottom: 10px; align-items: flex-start; }
 .font-label { padding-top: 4px; }
-
