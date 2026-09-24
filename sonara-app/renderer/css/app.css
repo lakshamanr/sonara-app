@@ -833,10 +833,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .epub-image {
   display: block;
   margin: 0 auto;
-  max-width: 100%;
-  max-height: 520px;
-  width: auto;
-  height: auto;
+  max-width: 100% !important;
+  max-height: 520px !important;
+  width: auto !important;
+  height: auto !important;
   object-fit: contain;
   border-radius: 6px;
 }
