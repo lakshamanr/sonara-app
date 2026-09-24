@@ -886,7 +886,12 @@ ipcMain.handle('supertonic:download', async (event) => {
 });
 ipcMain.handle('supertonic:synthesize', async (event, opts) => {
   const sender = event.sender;
-  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  const progressCb = (p) => {
+    try {
+      console.log(`[Supertonic] ${p.phase || 'progress'}${p.id ? ` #${p.id}` : ''}`);
+      sender.send('supertonic:progress', p);
+    } catch {}
+  };
   const { wav, sampleRate, durationMs } = await getSupertonic().synthesize(opts, progressCb);
   return { audio: wav.toString('base64'), sampleRate, durationMs };
 });

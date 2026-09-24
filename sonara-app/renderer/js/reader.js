@@ -477,7 +477,7 @@ const Reader = (() => {
   }
 
   // ── SUPERTONIC STATUS PANEL ─────────────────────────────
-  let _supertonicState = 'unknown'; // unknown | missing | downloading | loading | ready
+  let _supertonicState = 'unknown'; // unknown | missing | downloading | loading | generating | ready
   let _supertonicProgress = null;   // { fileIndex, fileCount, received, total, file }
 
   function _renderSupertonicStatus() {
@@ -499,6 +499,9 @@ const Reader = (() => {
       html = `<span class="st-pill st-progress">⬇ Downloading ${filePct}: ${fname} — ${mb} / ${totalMb} MB (${pct}%)</span>`;
     } else if (s === 'loading') {
       html = `<span class="st-pill st-progress">⏳ Loading model into memory…</span>`;
+    } else if (s === 'generating') {
+      html = `<span class="st-pill st-progress">🔊 Generating speech…</span>
+              <button class="st-btn" data-supertonic-act="stop">Stop</button>`;
     } else if (s === 'missing') {
       html = `<span class="st-pill st-missing">⚠ Model not downloaded (~400 MB, one-time)</span>
               <button class="st-btn st-btn-primary" data-supertonic-act="download">Download Model</button>`;
@@ -578,8 +581,14 @@ const Reader = (() => {
       } else if (p.phase === 'loading') {
         _supertonicState = 'loading';
         _supertonicProgress = null;
+      } else if (p.phase === 'queued' || p.phase === 'generating') {
+        _supertonicState = 'generating';
+        _supertonicProgress = p;
       } else if (p.phase === 'ready') {
         _supertonicState = 'ready';
+        _supertonicProgress = null;
+      } else if (p.phase === 'complete' || p.phase === 'error') {
+        _supertonicState = p.phase === 'error' ? 'unknown' : 'ready';
         _supertonicProgress = null;
       }
       _renderSupertonicStatus();
@@ -1105,7 +1114,9 @@ const Reader = (() => {
   // ── LONG TEXT SPLITTER ────────────────────────────────────
   // Edge TTS can time out on very long chapters (novels, textbooks).
   // Split at sentence boundaries to stay within a safe synthesis size.
-  const MAX_TTS_CHUNK_CHARS = 4000;
+  // Smaller requests let local Supertonic start playback sooner instead of
+  // waiting for a long chapter to finish synthesizing.
+  const MAX_TTS_CHUNK_CHARS = 1200;
 
   function _splitTextToChunks(text, maxChars) {
     if (text.length <= maxChars) return [text];

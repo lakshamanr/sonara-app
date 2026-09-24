@@ -4445,6 +4445,22 @@ body.mode-reader  .layout { display: grid; }
 }
 .rp-tab-badge:empty { display: none; }
 
+/* ── Review pane ── */
+.review-pane { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.review-head { display: flex; justify-content: space-between; gap: 8px; }
+.review-hint { color: var(--text-dim); font-size: 11px; margin-top: 5px; line-height: 1.4; }
+.review-count { color: var(--accent); font: 10px var(--font-mono); white-space: nowrap; }
+.review-source { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); padding: 7px 8px; font-size: 11px; }
+.review-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 12px; min-height: 140px; }
+.review-card-label { color: var(--text-muted); font: 10px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.review-location { color: var(--accent); font-size: 11px; margin: 10px 0 16px; }
+.review-reveal { background: transparent; border: 1px solid var(--accent-border); border-radius: var(--radius-sm); color: var(--accent); cursor: pointer; padding: 8px 12px; }
+.review-answer { color: var(--text); font-size: 13px; line-height: 1.55; }
+.review-actions { display: flex; gap: 6px; }
+.review-btn { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface2); color: var(--text); cursor: pointer; padding: 8px 4px; font-size: 11px; }
+.review-btn:hover { border-color: var(--accent); color: var(--accent); }
+.review-again { color: var(--red); }
+
 /* ══════════════════════════════════════════════════════════
    NOTES PANEL
 ══════════════════════════════════════════════════════════ */

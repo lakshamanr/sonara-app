@@ -435,6 +435,10 @@
         Notes
         <span class="rp-tab-badge" id="notesTabCount"></span>
       </button>
+      <button class="rp-tab" id="rpTabReview" onclick="Notes.switchTab('review')">
+        Review
+        <span class="rp-tab-badge" id="reviewTabCount"></span>
+      </button>
     </div>
 
     <!-- Scrollable pane body -->
@@ -626,6 +630,27 @@
           <div class="notes-empty">Open a book to start taking notes</div>
         </div>
 
+      </div>
+
+      <div id="rpReviewWrap" class="review-pane hidden">
+        <div class="review-head">
+          <div>
+            <div class="rp-section-label">Recall practice</div>
+            <p class="review-hint">Review your notes without leaving the book.</p>
+          </div>
+          <span class="review-count" id="reviewCount">0 due</span>
+        </div>
+        <select class="review-source" id="reviewSource" onchange="Review.selectSource(this.value)" aria-label="Review source">
+          <option value="">Current book</option>
+        </select>
+        <div id="reviewCard" class="review-card">
+          <div class="notes-empty">Add notes to start reviewing</div>
+        </div>
+        <div class="review-actions hidden" id="reviewActions">
+          <button class="review-btn review-again" onclick="Review.rate('again')">Again</button>
+          <button class="review-btn review-good" onclick="Review.rate('good')">Good</button>
+          <button class="review-btn review-remembered" onclick="Review.rate('remembered')">Remembered</button>
+        </div>
       </div>
 
     </div><!-- /.rp-body -->
@@ -1313,6 +1338,7 @@
 <script src="js/export.js"></script>
 <script src="js/bulk-export.js"></script>
 <script src="js/notes.js"></script>
+<script src="js/review.js"></script>
 <script src="js/quicktext.js"></script>
 <script src="js/app.js"></script>
 
