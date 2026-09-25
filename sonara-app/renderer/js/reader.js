@@ -45,6 +45,16 @@ const Reader = (() => {
   let autoSaveEvery  = 10;      // save every N chunks
   let saveTimer      = null;
 
+  // Reading mode: 'page' = speak one chunk/page per TTS pass (legacy behavior);
+  // 'chapter' = merge all split-parts of the current chapter into one TTS pass;
+  // 'continuous' = keep merging chapters/pages (up to a size cap) so playback
+  // never has to restart the TTS engine at every page/chapter boundary.
+  let readMode       = 'page';
+  let chunkOriginId  = [];      // parallel to chunks[]: index of the source chapter/page each chunk came from
+  let ttsRangeStart  = 0;       // first chunk index in the range currently being spoken
+  let ttsRangeEnd    = 0;       // last chunk index in the range currently being spoken
+  let _activeRange   = null;    // { start, end, boundaries } while a merged range is playing; null in 'page' mode
+
   // Audiobook mode state
   let audioMode      = false;
   let audioElement   = null;
@@ -118,7 +128,7 @@ const Reader = (() => {
           if (isPlaying) {
             speechSynthesis.cancel();
             CloudTTS.stop();
-            _speakChunk(currentChunk);
+            _speakFromCurrent();
           }
           return;
         }
@@ -665,7 +675,7 @@ const Reader = (() => {
     if (isPlaying) {
       speechSynthesis.cancel();
       CloudTTS.stop();
-      _speakChunk(currentChunk);
+      _speakFromCurrent();
     }
     
     // Show success toast with save confirmation
@@ -1236,9 +1246,11 @@ const Reader = (() => {
     // Split very long EPUB/text chunks so Edge TTS never times out.
     // PDF chunks are left as-is (already page-sized).
     const splitChunks = [];
-    for (const chunk of newChunks) {
+    const originIds    = []; // parallel: which original (pre-split) chunk each split part came from
+    newChunks.forEach((chunk, origIdx) => {
       if (!chunk.text || chunk.text.length <= MAX_TTS_CHUNK_CHARS || chunk.source === 'pdf') {
         splitChunks.push(chunk);
+        originIds.push(origIdx);
       } else {
         const parts = _splitTextToChunks(chunk.text, MAX_TTS_CHUNK_CHARS);
         parts.forEach((part, i) => {
@@ -1250,10 +1262,12 @@ const Reader = (() => {
             contentBlocks: i === 0 ? chunk.contentBlocks : undefined,
             title: parts.length > 1 && i > 0 ? chunk.title + ' (cont. ' + (i + 1) + ')' : chunk.title
           });
+          originIds.push(origIdx);
         });
       }
-    }
+    });
     chunks = splitChunks;
+    chunkOriginId = originIds;
     bookId       = newBookId;
     currentChunk = resumeData?.chunk_index || 0;
     elapsedTime  = resumeData?.elapsed_seconds || 0;
@@ -1420,6 +1434,12 @@ const Reader = (() => {
 
   // ── WORD HIGHLIGHT (onboundary) ───────────────────────────
   function _highlightWord(charIndex) {
+    // When a merged range (chapter/continuous mode) is being spoken, charIndex
+    // is an offset into the *combined* text of several chunks. Resolve it to the
+    // sub-chunk it falls in, flipping the rendered chunk/page as playback crosses
+    // a boundary, and rewrite charIndex as a *local* offset within that sub-chunk.
+    if (_activeRange) charIndex = _resolveRangeOffset(charIndex);
+
     // In PDF mode, highlight directly on the PDF text layer
     if (pdfMode) {
       _highlightPdfWord(charIndex);
@@ -1482,6 +1502,33 @@ const Reader = (() => {
     currentWordIdx = 0;
     // Also clear PDF text layer highlights
     _clearPdfHighlights();
+  }
+
+  // Maps a char offset in a merged range's combined text back to the sub-chunk
+  // it belongs to. Switches the rendered chunk/page and currentChunk as soon as
+  // playback crosses into a new sub-chunk, then returns the *local* offset
+  // (relative to that sub-chunk's own cleaned text) for word highlighting.
+  function _resolveRangeOffset(globalCharIndex) {
+    const r = _activeRange;
+    if (!r || !r.boundaries.length) return globalCharIndex;
+
+    let entry = r.boundaries[0];
+    for (const b of r.boundaries) {
+      if (b.offset > globalCharIndex) break;
+      entry = b;
+    }
+
+    if (entry.idx !== currentChunk) {
+      currentChunk = entry.idx;
+      if (pdfMode) _syncPageToChunk(entry.idx); else _renderChunkText(entry.idx);
+      _updateChapterTitleBar(entry.idx);
+      _highlightChapterItem(entry.idx);
+      document.getElementById('pbChapterLabel').textContent =
+        chunks[entry.idx].title || ('Section ' + (entry.idx + 1));
+      if (entry.idx % autoSaveEvery === 0) _saveProgress();
+    }
+
+    return Math.max(0, globalCharIndex - entry.offset);
   }
 
   // ── PLAYBACK ─────────────────────────────────────────────
@@ -1586,7 +1633,7 @@ const Reader = (() => {
     } else {
       // Fresh start (or stuck speechSynthesis.paused with no real utterance)
       if (speechSynthesis.paused) speechSynthesis.cancel(); // clear stale paused state
-      _speakChunk(currentChunk);
+      _speakFromCurrent();
     }
     _startTimer();
     _pushPlayerState();
@@ -1619,6 +1666,7 @@ const Reader = (() => {
     }
     pdfMode = false;
     pdfTextLayerData = null;
+    _activeRange = null;
     speechSynthesis.cancel();
     CloudTTS.stop();
     _stopTimer();
@@ -1672,7 +1720,7 @@ const Reader = (() => {
     if (isPlaying) {
       CloudTTS.stop();
       speechSynthesis.cancel();
-      _speakChunk(currentChunk);
+      _speakFromCurrent();
     }
   }
 
@@ -1692,6 +1740,7 @@ const Reader = (() => {
     // Reset stale utterance reference so _play()'s resume guard doesn't
     // mistake a completed utterance for a genuinely paused mid-sentence one.
     utterance = null;
+    _activeRange = null; // this is the plain single-chunk ('page' mode) path
     currentChunk = idx;
 
     // In PDF mode, sync visual page (text layer highlights directly on PDF)
@@ -1723,7 +1772,7 @@ const Reader = (() => {
     if (!chunkText || chunkText.length < 2) {
       if (isPlaying) {
         _saveProgress();
-        _speakChunk(idx + 1);
+        _speakFromIdx(idx + 1);
       }
       return;
     }
@@ -1738,7 +1787,7 @@ const Reader = (() => {
         () => {
           // onEnd
           _saveProgress();
-          if (isPlaying) _speakChunk(idx + 1);
+          if (isPlaying) _speakFromIdx(idx + 1);
         },
         (err) => {
           // onError — fall back to system voice
@@ -1762,7 +1811,7 @@ const Reader = (() => {
   function _speakChunkWithSystem(idx) {
     const chunkText = _cleanTextForTTS(chunks[idx].text);
     if (!chunkText || chunkText.length < 2) {
-      if (isPlaying) _speakChunk(idx + 1);
+      if (isPlaying) _speakFromIdx(idx + 1);
       return;
     }
     const u = new SpeechSynthesisUtterance(chunkText);
@@ -1784,7 +1833,7 @@ const Reader = (() => {
 
     u.onend = () => {
       _saveProgress();
-      if (isPlaying) _speakChunk(idx + 1);
+      if (isPlaying) _speakFromIdx(idx + 1);
     };
 
     u.onerror = (e) => {
@@ -1793,7 +1842,7 @@ const Reader = (() => {
         // Log the error but keep playback going.
         console.warn('[TTS] System voice error:', e.error, 'chunk', idx);
         if (isPlaying) {
-          setTimeout(() => _speakChunk(idx + 1), 300);
+          setTimeout(() => _speakFromIdx(idx + 1), 300);
         }
       }
     };
@@ -1802,16 +1851,231 @@ const Reader = (() => {
     speechSynthesis.speak(u);
   }
 
+  // ── CHAPTER / CONTINUOUS RANGE PLAYBACK ───────────────────
+  // Reads a range of chunks[start..end] as a single TTS pass (one CloudTTS
+  // call / one SpeechSynthesisUtterance) instead of one call per chunk, so
+  // playback doesn't audibly restart at every page or chapter boundary.
+  const MAX_CONTINUOUS_CHARS = 6000; // cap so a single utterance can't grow unbounded
+
+  // Last chunk index (inclusive) sharing the same source chapter/page as idx.
+  function _groupEndIdx(idx) {
+    const gid = chunkOriginId[idx];
+    let end = idx;
+    while (end + 1 < chunks.length && chunkOriginId[end + 1] === gid) end++;
+    return end;
+  }
+
+  // First chunk index sharing the same source chapter/page as idx.
+  function _groupStartIdx(idx) {
+    const gid = chunkOriginId[idx];
+    let start = idx;
+    while (start > 0 && chunkOriginId[start - 1] === gid) start--;
+    return start;
+  }
+
+  // Farthest chunk index reachable from idx while staying under the
+  // continuous-mode char cap — merges across chapter/page boundaries too.
+  function _continuousEndIdx(idx) {
+    let end = idx;
+    let total = (chunks[idx]?.text || '').length;
+    while (end + 1 < chunks.length && total < MAX_CONTINUOUS_CHARS) {
+      end++;
+      total += (chunks[end]?.text || '').length;
+    }
+    return end;
+  }
+
+  // Mode-aware dispatcher: starts playback at idx using whatever range the
+  // current readMode implies. Every "start/resume/skip/jump" path should call
+  // this (or _speakFromCurrent) instead of _speakChunk/speakRange directly so
+  // switching modes mid-book takes effect immediately.
+  function _speakFromIdx(idx) {
+    if (idx >= chunks.length) {
+      isPlaying = false;
+      _updatePlayIcon(false);
+      _stopTimer();
+      _saveProgress(true);
+      UI.toast('Book complete!', 'success');
+      return;
+    }
+    if (readMode === 'continuous') {
+      speakRange(idx, _continuousEndIdx(idx));
+    } else if (readMode === 'chapter') {
+      speakRange(idx, _groupEndIdx(idx));
+    } else {
+      _speakChunk(idx);
+    }
+  }
+
+  function _speakFromCurrent() {
+    _speakFromIdx(currentChunk);
+  }
+
+  // Speaks chunks[start..end] as one merged TTS pass. Word/page highlighting
+  // still tracks the correct sub-chunk via _resolveRangeOffset as playback
+  // crosses each sub-chunk's boundary inside the combined text.
+  function speakRange(start, end) {
+    if (start >= chunks.length) {
+      isPlaying = false;
+      _updatePlayIcon(false);
+      _stopTimer();
+      _saveProgress(true);
+      UI.toast('Book complete!', 'success');
+      return;
+    }
+    end = Math.max(start, Math.min(end, chunks.length - 1));
+
+    speechSynthesis.cancel();
+    CloudTTS.stop();
+    utterance = null;
+    currentChunk  = start;
+    ttsRangeStart = start;
+    ttsRangeEnd   = end;
+
+    if (pdfMode) _syncPageToChunk(start); else _renderChunkText(start);
+    _updateChapterTitleBar(start);
+    _highlightChapterItem(start);
+    _clearWordHighlight();
+    document.getElementById('pbChapterLabel').textContent =
+      chunks[start].title || ('Section ' + (start + 1));
+
+    if (start % autoSaveEvery === 0) _saveProgress();
+
+    if (!chosenVoice && voiceList.length > 0) _pickDefaultVoice();
+
+    // Build the combined text plus a map of where each sub-chunk begins in it.
+    const boundaries = [];
+    let combined = '';
+    for (let i = start; i <= end; i++) {
+      const t = _cleanTextForTTS(chunks[i].text);
+      boundaries.push({ idx: i, offset: combined.length });
+      if (t) combined += (combined ? ' ' : '') + t;
+    }
+    _activeRange = { start, end, boundaries };
+
+    if (!combined || combined.length < 2) {
+      _activeRange = null;
+      if (isPlaying) _speakFromIdx(end + 1);
+      return;
+    }
+
+    if (chosenVoice && chosenVoice._cloudVoice) {
+      CloudTTS.speak(
+        combined,
+        chosenVoice,
+        speed,
+        pitch,
+        () => {
+          // onEnd
+          _activeRange = null;
+          _saveProgress();
+          if (isPlaying) _speakFromIdx(end + 1);
+        },
+        (err) => {
+          // onError — fall back to system voice for this range
+          _speakRangeWithSystem(combined, end);
+        }
+      );
+      return;
+    }
+
+    // ── SYSTEM VOICE (SpeechSynthesis) ──
+    _speakRangeWithSystem(combined, end);
+  }
+
+  function _speakRangeWithSystem(combinedText, end) {
+    if (!combinedText || combinedText.length < 2) {
+      _activeRange = null;
+      if (isPlaying) _speakFromIdx(end + 1);
+      return;
+    }
+    const u = new SpeechSynthesisUtterance(combinedText);
+    u.rate   = speed;
+    u.pitch  = pitch;
+    u.volume = volume;
+
+    if (chosenVoice && !chosenVoice._cloudVoice) {
+      u.voice = chosenVoice;
+    } else {
+      const fallback = _findFallbackVoice(chosenVoice?.lang || 'en-US');
+      if (fallback) u.voice = fallback;
+    }
+
+    u.onboundary = (e) => {
+      if (e.name === 'word') _highlightWord(e.charIndex);
+    };
+
+    u.onend = () => {
+      _activeRange = null;
+      _saveProgress();
+      if (isPlaying) _speakFromIdx(end + 1);
+    };
+
+    u.onerror = (e) => {
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.warn('[TTS] System voice error (range):', e.error);
+        _activeRange = null;
+        if (isPlaying) setTimeout(() => _speakFromIdx(end + 1), 300);
+      }
+    };
+
+    utterance = u;
+    speechSynthesis.speak(u);
+  }
+
+  // Cycles Page → Chapter → Continuous, restarting playback in the new mode.
+  function cycleReadMode() {
+    const modes = ['page', 'chapter', 'continuous'];
+    setReadMode(modes[(modes.indexOf(readMode) + 1) % modes.length]);
+  }
+
+  function setReadMode(mode) {
+    if (!['page', 'chapter', 'continuous'].includes(mode)) return;
+    readMode = mode;
+    _updateReadModeUI();
+    window.sonara?.settings.set('readMode', readMode);
+    // Restart from the current position under the new mode so the change
+    // (and its effect on Next/Previous) takes effect immediately.
+    if (isPlaying) {
+      speechSynthesis.cancel();
+      CloudTTS.stop();
+      _speakFromCurrent();
+    }
+  }
+
+  function _updateReadModeUI() {
+    const label = document.getElementById('pbReadModeLabel');
+    const pill  = document.getElementById('pbReadModePill');
+    if (!label) return;
+    const NAMES = { page: 'Page', chapter: 'Chapter', continuous: 'Continuous' };
+    label.textContent = NAMES[readMode] || 'Page';
+    if (pill) pill.title = 'Reading mode: ' + (NAMES[readMode] || 'Page') +
+      ' — click to cycle Page / Chapter / Continuous';
+  }
+
   function skipChunk(dir) {
     if (audioMode && audioElement) {
       audioElement.currentTime = Math.max(0, Math.min(audioElement.duration || 0, audioElement.currentTime + (dir * 30)));
       return;
     }
-    const next = Math.max(0, Math.min(chunks.length - 1, currentChunk + dir));
+
+    let next;
+    if (readMode === 'page') {
+      next = Math.max(0, Math.min(chunks.length - 1, currentChunk + dir));
+    } else if (dir > 0) {
+      // Next: jump to the start of the next chapter/page group.
+      next = Math.min(chunks.length - 1, _groupEndIdx(currentChunk) + 1);
+    } else {
+      // Previous: jump to the start of the current group, or — if already
+      // there — the start of the previous group (standard player behavior).
+      const gStart = _groupStartIdx(currentChunk);
+      next = (gStart === currentChunk && gStart > 0) ? _groupStartIdx(gStart - 1) : gStart;
+    }
+
     currentChunk = next;
     elapsedTime  = Math.round((next / chunks.length) * totalDuration);
     _updateSeekBar();
-    if (isPlaying) _speakChunk(next);
+    if (isPlaying) _speakFromIdx(next);
     else {
       if (pdfMode) {
         _syncPageToChunk(next);
@@ -1837,7 +2101,7 @@ const Reader = (() => {
 
     _updateChapterTitleBar(idx);
     _highlightChapterItem(idx);
-    if (isPlaying) _speakChunk(idx);
+    if (isPlaying) _speakFromIdx(idx);
   }
 
   function seekAudio(val) {
@@ -1872,7 +2136,7 @@ const Reader = (() => {
     document.getElementById('speedSlider').value = speed;
     document.getElementById('speedVal').textContent = speed + '×';
     window.sonara?.settings.set('speed', speed);
-    if (isPlaying) { speechSynthesis.cancel(); CloudTTS.stop(); _speakChunk(currentChunk); }
+    if (isPlaying) { speechSynthesis.cancel(); CloudTTS.stop(); _speakFromCurrent(); }
   }
 
   function onSpeedChange(val) {
@@ -1934,7 +2198,7 @@ const Reader = (() => {
         const stillReadingSystemVoice = isPlaying && !audioMode && (!chosenVoice || !chosenVoice._cloudVoice);
         if (stillReadingSystemVoice) {
           speechSynthesis.cancel();
-          _speakChunk(currentChunk);
+          _speakFromCurrent();
         }
       }, 180);
     }
@@ -2202,11 +2466,14 @@ const Reader = (() => {
     const savedSkipChars    = await window.sonara.settings.get('ttsSkipChars', '*_~#');
     const savedSkipEnabled  = await window.sonara.settings.get('ttsSkipEnabled', true);
     const savedSkipWords    = await window.sonara.settings.get('ttsSkipWords', '');
+    const savedReadMode     = await window.sonara.settings.get('readMode', 'page');
     ttsSkipChars   = savedSkipChars || '';
     ttsSkipEnabled = savedSkipEnabled !== false; // default true
     ttsSkipWords   = savedSkipWords  || '';
+    readMode = ['page', 'chapter', 'continuous'].includes(savedReadMode) ? savedReadMode : 'page';
     favoriteVoiceIds = new Set(Array.isArray(savedFavorites) ? savedFavorites.filter(x => typeof x === 'string' && x) : []);
     _updateSkipBtn();
+    _updateReadModeUI();
 
     speed = parseFloat(savedSpeed) || 1.0;
     pitch = parseFloat(savedPitch) || 1.0;
@@ -2480,6 +2747,7 @@ const Reader = (() => {
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
     cycleSpeed, onSpeedChange, onPitchChange, onVolumeChange, toggleMute,
     onFontChange, onFontSizeChange, onLineHeightChange, onReaderWidthChange,
+    cycleReadMode, setReadMode,
     applySettings,
     /** Update the skip chars at runtime (called from settings save) */
     setSkipChars:   (val)  => { ttsSkipChars   = val || ''; },
@@ -2489,7 +2757,7 @@ const Reader = (() => {
     toggleSkipChars,
     saveProgress: _saveProgress,
     saveBookmark,
-    getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, volume, chosenVoice }),
+    getState:  () => ({ isPlaying, currentChunk, elapsedTime, speed, pitch, volume, chosenVoice, readMode }),
     getChunks: () => chunks
   };
 })();

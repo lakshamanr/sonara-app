@@ -763,6 +763,9 @@
       <input type="range" class="pb-volume" id="pbVolumeSlider" min="0" max="100" step="1" value="100" oninput="Reader.onVolumeChange(this.value)"/>
       <span class="pb-volume-val" id="pbVolumeVal">100%</span>
     </div>
+    <span class="pb-speed-pill" id="pbReadModePill" onclick="Reader.cycleReadMode()" title="Reading mode: Page — click to cycle Page / Chapter / Continuous">
+      <span id="pbReadModeLabel">Page</span>
+    </span>
     <span class="pb-speed-pill" onclick="Reader.cycleSpeed()">
       <span id="pbSpeedLabel">1.0×</span>
     </span>
