@@ -14,6 +14,8 @@ const Notes = (() => {
 
   let _bookId = null;
   let _notes  = [];
+  let _focus  = [];
+  let _highlights = [];
 
   const TAG_DEFS = [
     { value: 'note',     emoji: '📝', label: 'Note'      },
@@ -28,15 +30,133 @@ const Notes = (() => {
   async function load(bookId) {
     _bookId = bookId || null;
     _notes  = [];
+    _focus  = [];
+    _highlights = [];
     if (_bookId) {
       try { _notes = await window.sonara.notes.getAll(_bookId); } catch (_) {}
+      try { _focus = await _loadFocusList(); } catch (_) {}
+      try { _highlights = await _loadHighlights(); } catch (_) {}
     }
     _render();
+    _renderFocusList();
+    _renderHighlightsList();
     _updateBadge();
     Review.load(_bookId, _notes);
   }
 
   function clear() { load(null); }
+
+  async function addFocus() {
+    const input = document.getElementById('focusInput');
+    const text = (input ? input.value : '').trim();
+    if (!text) return;
+    _focus.unshift({ id: Date.now() + Math.random(), text, done: false });
+    if (input) input.value = '';
+    await _saveFocusList();
+    _renderFocusList();
+  }
+
+  async function toggleFocusDone(id) {
+    const item = _focus.find(entry => String(entry.id) === String(id));
+    if (!item) return;
+    item.done = !item.done;
+    await _saveFocusList();
+    _renderFocusList();
+  }
+
+  async function removeFocusItem(id) {
+    _focus = _focus.filter(entry => String(entry.id) !== String(id));
+    await _saveFocusList();
+    _renderFocusList();
+  }
+
+  async function refreshHighlights() {
+    _highlights = await _loadHighlights();
+    _renderHighlightsList();
+  }
+
+  async function _loadFocusList() {
+    const key = _bookId ? 'focus_' + _bookId : 'focus_global';
+    try {
+      const raw = await window.sonara.settings.get(key, '[]');
+      const parsed = JSON.parse(raw || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      const fallback = localStorage.getItem(key);
+      if (!fallback) return [];
+      try { return JSON.parse(fallback); } catch { return []; }
+    }
+  }
+
+  async function _saveFocusList() {
+    const key = _bookId ? 'focus_' + _bookId : 'focus_global';
+    const payload = JSON.stringify(_focus);
+    try {
+      await window.sonara.settings.set(key, payload);
+    } catch (err) {
+      localStorage.setItem(key, payload);
+    }
+  }
+
+  async function _loadHighlights() {
+    if (!_bookId) return [];
+    try {
+      const raw = await window.sonara.settings.get('highlights_' + _bookId, '[]');
+      const arr = JSON.parse(raw || '[]');
+      return Array.isArray(arr) ? arr.slice().reverse() : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function _renderFocusList() {
+    const list = document.getElementById('focusList');
+    const countEl = document.getElementById('focusCount');
+    if (countEl) countEl.textContent = _focus.length ? String(_focus.length) : '';
+    if (!list) return;
+
+    if (!_focus.length) {
+      list.innerHTML = '<div class="notes-empty">Set a short learning focus for this book.</div>';
+      return;
+    }
+
+    list.innerHTML = _focus.map(item => `
+      <div class="focus-item ${item.done ? 'done' : ''}">
+        <label class="focus-toggle">
+      <input type="checkbox" ${item.done ? 'checked' : ''} onchange="Notes.toggleFocusDone(${item.id})"/>
+          <span>${_esc(item.text)}</span>
+        </label>
+    <button class="focus-delete-btn" onclick="Notes.removeFocusItem(${item.id})" title="Remove focus item">×</button>
+      </div>
+    `).join('');
+  }
+
+  function _renderHighlightsList() {
+    const list = document.getElementById('highlightsList');
+    const countEl = document.getElementById('highlightCount');
+    if (countEl) countEl.textContent = _highlights.length ? String(_highlights.length) : '';
+    if (!list) return;
+
+    if (!_highlights.length) {
+      list.innerHTML = '<div class="notes-empty">Highlight a key sentence in a PDF to track it here.</div>';
+      return;
+    }
+
+    list.innerHTML = _highlights.map(item => {
+      const preview = (item.text || 'Highlighted text').replace(/\s+/g, ' ').trim();
+      const safeText = preview.length > 120 ? preview.slice(0, 117) + '…' : preview;
+      const color = item.color || 'yellow';
+      return `
+        <div class="highlight-item">
+          <span class="highlight-dot highlight-${color}"></span>
+          <div class="highlight-content">
+            <div class="highlight-meta">Page ${item.page || 1}</div>
+            <div class="highlight-text">${_esc(safeText)}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
 
   // ── SAVE NEW NOTE ─────────────────────────────────────────
   async function save() {
@@ -358,5 +478,19 @@ const Notes = (() => {
       .replace(/\n/g, '<br>');
   }
 
-  return { load, clear, save, remove, startEdit, _commitEdit, _cancelEdit, switchTab, exportNotes };
+  return {
+    load,
+    clear,
+    save,
+    remove,
+    startEdit,
+    _commitEdit,
+    _cancelEdit,
+    switchTab,
+    exportNotes,
+    addFocus,
+    toggleFocusDone,
+    removeFocusItem,
+    refreshHighlights,
+  };
 })();

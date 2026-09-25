@@ -1020,6 +1020,8 @@ const Reader = (() => {
 
     if (startIdx === -1 || endIdx === -1) return;
 
+    const text = spans.map(span => span.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+
     // Create highlight record
     const highlight = {
       id: Date.now() + Math.random(),
@@ -1027,12 +1029,16 @@ const Reader = (() => {
       page: pdfCurrentPage,
       startIdx,
       endIdx,
-      color
+      color,
+      text: text.slice(0, 240)
     };
 
     // Save to memory and database
     pdfHighlights.push(highlight);
     _saveHighlights();
+    if (typeof Notes !== 'undefined' && Notes.refreshHighlights) {
+      Notes.refreshHighlights();
+    }
 
     // Apply visual highlight
     spans.forEach(span => {
@@ -1065,6 +1071,9 @@ const Reader = (() => {
 
     // Save to database
     _saveHighlights();
+    if (typeof Notes !== 'undefined' && Notes.refreshHighlights) {
+      Notes.refreshHighlights();
+    }
 
     UI.toast('Highlight removed', '', 1500);
   }

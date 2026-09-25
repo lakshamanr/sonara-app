@@ -1497,6 +1497,145 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .font-btn[data-font="georgia"] { font-family: Georgia, serif; }
 .font-btn[data-font="mono"]    { font-family: 'Courier New', monospace; font-size: 9px; }
 
+.learning-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.learning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.learning-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.learning-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent);
+}
+.focus-input-row {
+  display: flex;
+  gap: 6px;
+}
+.focus-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+}
+.focus-input:focus {
+  border-color: var(--accent-border-hi);
+}
+.focus-add-btn {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.focus-list,
+.highlights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow: auto;
+}
+.focus-item,
+.highlight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--surface2);
+  border: 1px solid transparent;
+}
+.focus-item.done {
+  opacity: .7;
+}
+.focus-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.focus-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.focus-toggle span {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.focus-item.done .focus-toggle span {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.focus-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.highlight-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.highlight-yellow { background: #f2d76b; }
+.highlight-green { background: #72d6a8; }
+.highlight-blue { background: #7ab7ff; }
+.highlight-pink { background: #ec8fe1; }
+.highlight-orange { background: #ffb067; }
+.highlight-content {
+  flex: 1;
+  min-width: 0;
+}
+.highlight-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.highlight-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
 /* Chapters list */
 .chapters-list {
   flex: 1; overflow-y: auto; padding: 4px;

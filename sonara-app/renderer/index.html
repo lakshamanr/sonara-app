@@ -592,6 +592,26 @@
       <!-- ── Notes pane ── -->
       <div id="rpNotesWrap" class="notes-pane hidden">
 
+        <div class="learning-card">
+          <div class="learning-header">
+            <span class="learning-label">Study focus</span>
+            <span class="learning-meta" id="focusCount"></span>
+          </div>
+          <div class="focus-input-row">
+            <input class="focus-input" id="focusInput" type="text" placeholder="What are you learning next?" maxlength="120" onkeydown="if(event.key==='Enter'){Notes.addFocus();}"/>
+            <button class="focus-add-btn" onclick="Notes.addFocus()">Add</button>
+          </div>
+          <div class="focus-list" id="focusList"></div>
+        </div>
+
+        <div class="learning-card">
+          <div class="learning-header">
+            <span class="learning-label">Saved highlights</span>
+            <span class="learning-meta" id="highlightCount"></span>
+          </div>
+          <div class="highlights-list" id="highlightsList"></div>
+        </div>
+
         <!-- Tag + position row -->
         <div class="note-meta-row">
           <select class="note-tag-sel" id="noteTagSel">
