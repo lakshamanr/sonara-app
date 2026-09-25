@@ -2,6 +2,7 @@
 // Source: https://github.com/supertone-inc/supertonic/blob/main/nodejs/helper.js
 // Only loaded dynamically by main/supertonic-tts.js (CJS -> ESM bridge via dynamic import()).
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import * as ort from 'onnxruntime-node';
 
@@ -242,11 +243,13 @@ export function loadVoiceStyle(voiceStylePaths) {
 
 export async function loadTextToSpeech(onnxDir) {
     const cfgs = loadCfgs(onnxDir);
-    // Keep one inference thread per session. Supertonic is already memory-heavy;
-    // parallel ONNX pools can starve Electron and make the UI appear hung.
+    // Sessions run sequentially (one worker, one synth at a time via synthQueue)
+    // and this worker_thread is off the Electron UI/main thread, so a few
+    // intra-op threads speed up each op's matmuls without blocking the UI.
+    // interOpNumThreads stays 1 — the 4-stage pipeline is inherently sequential.
     const sessionOptions = {
         executionMode: 'sequential',
-        intraOpNumThreads: 1,
+        intraOpNumThreads: Math.max(1, Math.min(4, os.cpus().length - 1)),
         interOpNumThreads: 1,
     };
     const { dpOrt, textEncOrt, vectorEstOrt, vocoderOrt } = await loadOnnxAll(onnxDir, sessionOptions);

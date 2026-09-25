@@ -397,6 +397,21 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   min-width: 0;
 }
 
+/* Left panel collapsed */
+.layout.lp-collapsed {
+  grid-template-columns: 0 0 1fr var(--handle-w) var(--right-w);
+}
+.layout.lp-collapsed .panel-left,
+.layout.lp-collapsed #resizeLeft {
+  width: 0;
+  overflow: hidden;
+  border: none;
+  min-width: 0;
+}
+.layout.lp-collapsed.rp-collapsed {
+  grid-template-columns: 0 0 1fr 0 0;
+}
+
 /* ── RESIZE HANDLES ── */
 .resize-handle {
   position: relative;
@@ -4516,6 +4531,55 @@ body.mode-reader  .layout { display: grid; }
   color: var(--text-dim);
   flex-shrink: 0;
 }
+
+/* ── Focus-visible override for scrollable nav rows (the app-wide box-shadow
+   focus ring can clip inside an overflow:auto ancestor — use an inset outline) ── */
+.nav-ch-item:focus-visible,
+.nav-chapter-group-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+/* ── Chapter group (collapsible) ── */
+.nav-chapter-group { margin-bottom: 2px; }
+.nav-chapter-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  margin: 0 4px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background var(--dur-fast) var(--ease);
+}
+.nav-chapter-group-header:hover { background: var(--surface3, var(--surface2)); }
+.nav-cg-chevron {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.nav-chapter-group.expanded .nav-cg-chevron { transform: rotate(90deg); }
+.nav-cg-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-cg-range {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.nav-chapter-group-body {
+  display: none;
+  padding-left: 14px;
+}
+.nav-chapter-group.expanded .nav-chapter-group-body { display: block; }
 
 /* ══════════════════════════════════════════════════════════
    RIGHT PANEL TABS — Chapters / Notes tab switcher

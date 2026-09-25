@@ -1,0 +1,90 @@
+{
+  "name": "sonara",
+  "version": "2.0.0",
+  "description": "Professional Audiobook Player with PDF Highlighting, TTS, and Smart Library Management",
+  "main": "main/main.js",
+  "scripts": {
+    "build:win": "electron-builder --win --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.sonara.audiobook",
+    "productName": "Sonara",
+    "copyright": "Copyright © 2025 Sonara",
+    "compression": "maximum",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/onnxruntime-node/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "database/**/*",
+      "!database/*.db",
+      "!database/*.db-shm",
+      "!database/*.db-wal",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.txt",
+      "!**/LICENSE",
+      "!dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "database/schema.sql",
+        "to": "database/schema.sql"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Sonara",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sonara",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "publish": null
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.6.0",
+    "ffmpeg-static": "^5.3.0",
+    "jszip": "^3.10.1",
+    "onnxruntime-node": "^1.27.0",
+    "ws": "^8.19.0"
+  }
+}

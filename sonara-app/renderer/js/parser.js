@@ -9,6 +9,7 @@ const Parser = (() => {
   // ── STATE ───────────────────────────────────────────────
   let _pdfDoc = null;      // cached pdf.js document for page rendering
   let _pdfPageCount = 0;
+  let _chapterGroups = null;   // null | Array<{ title, startIndex, endIndex }> — 0-based indices into the chunk array returned by parsePDF()
 
   // ── HELPERS ──────────────────────────────────────────────
   function cleanText(raw) {
@@ -32,8 +33,70 @@ const Parser = (() => {
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 
+  // Resolve a pdf.js outline node's `dest` (string | explicit array | null)
+  // to a concrete 1-based page number, or null if it cannot be resolved.
+  async function _resolveDestToPage(pdf, dest) {
+    if (dest == null) return null;
+    try {
+      let explicit = dest;
+      if (typeof dest === 'string') explicit = await pdf.getDestination(dest);
+      if (!Array.isArray(explicit) || !explicit.length) return null;
+      const ref = explicit[0];
+      if (ref == null) return null;
+      if (typeof ref === 'number') return ref + 1;   // already a 0-based page index
+      const pageIndex = await pdf.getPageIndex(ref); // 0-based
+      return (typeof pageIndex === 'number' && pageIndex >= 0) ? pageIndex + 1 : null;
+    } catch (_) {
+      return null; // dangling ref / malformed dest
+    }
+  }
+
+  // Extract the PDF's embedded outline/bookmarks (if any) as a flat list of
+  // top-level chapters with page ranges. Returns null when the PDF has no
+  // usable outline (no bookmarks, or none of them resolve to a real page).
+  async function _extractPDFChapters(pdf, totalPages) {
+    let outline;
+    try { outline = await pdf.getOutline(); } catch (_) { return null; }
+    if (!outline || !outline.length) return null;
+
+    // A "Part"-style wrapper node may have no destination of its own —
+    // fall through via DFS to the first resolvable descendant so its
+    // chapter isn't silently dropped.
+    async function resolveNode(node) {
+      let page = await _resolveDestToPage(pdf, node.dest);
+      if (page == null && Array.isArray(node.items)) {
+        for (const child of node.items) {
+          page = await resolveNode(child);
+          if (page != null) break;
+        }
+      }
+      return page;
+    }
+
+    const candidates = [];
+    for (const node of outline) {
+      let page;
+      try { page = await resolveNode(node); } catch (_) { page = null; }
+      if (page == null || page < 1 || page > totalPages) continue;
+      const title = (node.title || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Untitled';
+      candidates.push({ title, startPage: page });
+    }
+    if (!candidates.length) return null;
+
+    candidates.sort((a, b) => a.startPage - b.startPage);
+    const deduped = candidates.filter((c, i) => i === 0 || c.startPage !== candidates[i - 1].startPage);
+
+    return deduped.map((c, i) => ({
+      title: c.title,
+      startPage: c.startPage,
+      endPage: i < deduped.length - 1 ? deduped[i + 1].startPage - 1 : totalPages
+    }));
+  }
+
   async function parsePDF(base64Data, onProgress) {
     await loadPDFScript();
+
+    _chapterGroups = null;
 
     const binary   = atob(base64Data);
     const bytes    = new Uint8Array(binary.length);
@@ -47,6 +110,12 @@ const Parser = (() => {
 
     const total = pdf.numPages;
     const raw = [];
+
+    // Extract real chapter structure from the PDF's embedded outline/bookmarks,
+    // if any. A handful of async lookups bounded by outline size, not page
+    // count — fast enough it doesn't need its own progress tick.
+    let chaptersByPage = null;
+    try { chaptersByPage = await _extractPDFChapters(pdf, total); } catch (_) { chaptersByPage = null; }
 
     // ── PASS 1: collect all items with positions ────────────
     const allPageItems = [];  // [ [{str, y, pageH}, …], … ]
@@ -83,15 +152,28 @@ const Parser = (() => {
       onProgress && onProgress(50 + Math.round(((i + 1) / allPageItems.length) * 50));  // 50 → 100%
     }
 
-    // Improve chapter titles from first sentence
-    return raw.map(c => {
-      const firstSentence = c.text.split('.')[0].trim();
-      if (firstSentence.length > 3 && firstSentence.length < 60) {
-        return { ...c, title: firstSentence.slice(0, 48) };
+    // Convert the page-number-based chapter ranges into indices into `raw`
+    // (some pages get filtered out above by the text.length > 30 check, so
+    // raw indices aren't always page - 1).
+    if (chaptersByPage) {
+      const groups = [];
+      for (const ch of chaptersByPage) {
+        let start = -1, end = -1;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].page >= ch.startPage && raw[i].page <= ch.endPage) {
+            if (start === -1) start = i;
+            end = i;
+          }
+        }
+        if (start !== -1) groups.push({ title: ch.title, startIndex: start, endIndex: end });
       }
-      return c;
-    });
+      _chapterGroups = groups.length ? groups : null;
+    }
+
+    return raw;
   }
+
+  function getChapterGroups() { return _chapterGroups; }
 
   // ── PDF PAGE RENDERING ─────────────────────────────────
   // Renders a PDF page to a canvas element at the given scale
@@ -480,5 +562,5 @@ const Parser = (() => {
   }
 
   // ── PUBLIC ───────────────────────────────────────────────
-  return { parsePDF, parseEPUB, parseMOBI, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc };
+  return { parsePDF, parseEPUB, parseMOBI, extractEPUBCover, extractPDFCover, renderPDFPage, createPDFTextLayer, getPDFDoc, getPDFPageCount, hasPDFDoc, getChapterGroups };
 })();

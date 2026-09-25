@@ -150,10 +150,12 @@ const CloudTTS = (() => {
   }
 
   // Public: warm the cache for upcoming text without playing it.
+  // Supertonic is included: its worker serializes all synth requests through
+  // its own queue, so this just queues the next chunk right behind the
+  // current one instead of running concurrently.
   function prefetch(text, voice, rate = 1.0, pitch = 1.0) {
     if (!text || !voice) return;
     if (!voice._cloudVoice) return;     // system voices are instant — no prefetch needed
-    if (voice._supertonic) return;      // local inference must stay single-flight
     try { _getAudio(text, voice, rate, pitch); } catch (_) {}
   }
 
@@ -340,6 +342,14 @@ const CloudTTS = (() => {
     _audioCache.clear();
   }
 
+  // Public: stop the current Audio element only — keeps the prefetch cache and
+  // requestId intact. Use this for normal chunk-to-chunk auto-advance (the next
+  // speak() call handles its own requestId bump), so the chunk prefetched during
+  // the outgoing chunk's playback survives to be used immediately.
+  function stopPlayback() {
+    _stopAudio();
+  }
+
   function pause() {
     if (currentAudio && !currentAudio.paused) {
       currentAudio.pause();
@@ -384,6 +394,7 @@ const CloudTTS = (() => {
     onBoundary,
     preview,
     stop,
+    stopPlayback,
     pause,
     resume,
     isPlaying,

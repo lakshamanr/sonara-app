@@ -884,6 +884,12 @@ ipcMain.handle('supertonic:download', async (event) => {
   await getSupertonic().ensureModels(progressCb);
   return getSupertonic().status();
 });
+ipcMain.handle('supertonic:warmup', async (event) => {
+  const sender = event.sender;
+  const progressCb = (p) => { try { sender.send('supertonic:progress', p); } catch {} };
+  await getSupertonic().preload(progressCb);
+  return getSupertonic().status();
+});
 ipcMain.handle('supertonic:synthesize', async (event, opts) => {
   const sender = event.sender;
   const progressCb = (p) => {

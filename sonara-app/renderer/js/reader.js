@@ -8,6 +8,8 @@ const Reader = (() => {
   // ── STATE ─────────────────────────────────────────────────
   let chunks         = [];
   let currentChunk   = 0;
+  let chapterGroups  = null;        // null (flat) | Array<{title,startIndex,endIndex}>
+  let expandedGroups = new Set();   // group indices currently expanded
   let isPlaying      = false;
   let speed          = 1.0;
   let pitch          = 1.0;
@@ -217,6 +219,27 @@ const Reader = (() => {
       x.voiceURI  === id ||
       x.name      === id
     ) || null;
+  }
+
+  // Supertonic voice ids are exactly M1-M5 / F1-F5 (see main/supertonic-tts.js VOICE_IDS).
+  const SUPERTONIC_ID_RE = /^[MF][1-5]$/;
+
+  function _warmSupertonicIfSaved(savedVoiceId) {
+    if (typeof savedVoiceId === 'string' && SUPERTONIC_ID_RE.test(savedVoiceId)) {
+      _warmSupertonicWorker();
+    }
+  }
+
+  // Warm Supertonic's worker/model ahead of Play, but only if it's already
+  // downloaded — never auto-trigger the ~400MB first-use download as a
+  // side effect of opening a book or picking the voice.
+  async function _warmSupertonicWorker() {
+    try {
+      const st = await window.sonara?.supertonic?.status?.();
+      if (st && !st.missing?.length) {
+        await window.sonara.supertonic.warmup();
+      }
+    } catch (_) { /* best-effort */ }
   }
 
   function _pickDefaultVoice() {
@@ -648,6 +671,10 @@ const Reader = (() => {
     }
     
     chosenVoice = v;
+
+    // Warm up Supertonic's worker/model now, ahead of Play, so the first
+    // synthesis after switching voices doesn't pay the model-load stall.
+    if (v._supertonic) _warmSupertonicWorker();
 
     // Update UI immediately
     renderVoiceList();
@@ -1688,7 +1715,9 @@ const Reader = (() => {
     }
 
     speechSynthesis.cancel();
-    CloudTTS.stop();
+    // Stop only the current Audio element — keep the prefetch cache alive so
+    // the chunk warmed during the outgoing chunk's playback plays gaplessly.
+    CloudTTS.stopPlayback();
     // Reset stale utterance reference so _play()'s resume guard doesn't
     // mistake a completed utterance for a genuinely paused mid-sentence one.
     utterance = null;
@@ -2043,31 +2072,115 @@ const Reader = (() => {
 
   // ── CHAPTER LIST ──────────────────────────────────────────
   function _buildChapterList() {
-    const isEpub   = chunks.length > 0 && chunks[0].source === 'epub';
-    const label    = isEpub ? 'Chapters' : 'Sections';
+    const isEpub = chunks.length > 0 && chunks[0].source === 'epub';
+    chapterGroups = isEpub ? null : Parser.getChapterGroups();
+    expandedGroups = new Set();
 
-    // Populate left nav panel
     const navLabel = document.getElementById('navListLabel');
     const navCount = document.getElementById('navListCount');
     const navList  = document.getElementById('navChapterList');
+    const grouped  = chapterGroups && chapterGroups.length;
+    const label    = (isEpub || grouped) ? 'Chapters' : 'Pages';
+
     if (navLabel) navLabel.textContent = label;
-    if (navCount) navCount.textContent = chunks.length;
-    if (navList) {
-      navList.innerHTML = chunks.map((c, i) => `
-        <div class="nav-ch-item${i === 0 ? ' active' : ''}" id="nav-ch-item-${i}" onclick="Reader.jumpToChunk(${i})">
-          <span class="nav-ci-num">${String(i + 1).padStart(2, '0')}</span>
-          <span class="nav-ci-name">${_escHtml(c.title || (label.slice(0,-1) + ' ' + (i+1)))}</span>
-          <span class="nav-ci-dur">${_estimateDur(c.text)}</span>
-        </div>`
-      ).join('');
+    if (navCount) navCount.textContent = grouped
+      ? chapterGroups.length + ' chapters · ' + chunks.length + ' pages'
+      : chunks.length;
+    if (!navList) return;
+
+    if (grouped) {
+      const gi = _groupIndexForChunk(currentChunk);
+      if (gi >= 0) expandedGroups.add(gi);
+      navList.innerHTML = _renderGroupedListHtml();
+    } else {
+      navList.innerHTML = _renderFlatListHtml(label);
     }
+  }
+
+  function _groupIndexForChunk(idx) {
+    if (!chapterGroups) return -1;
+    return chapterGroups.findIndex(g => idx >= g.startIndex && idx <= g.endIndex);
+  }
+
+  function _renderFlatListHtml(label) {
+    return chunks.map((c, i) => `
+      <div class="nav-ch-item${i === currentChunk ? ' active' : ''}" id="nav-ch-item-${i}"
+           role="listitem" tabindex="0" aria-current="${i === currentChunk ? 'true' : 'false'}"
+           onclick="Reader.jumpToChunk(${i})" onkeydown="Reader.handleRowKeydown(event, ${i})">
+        <span class="nav-ci-num">${String(i + 1).padStart(2, '0')}</span>
+        <span class="nav-ci-name">${_escHtml(c.title || (label.slice(0,-1) + ' ' + (i+1)))}</span>
+        <span class="nav-ci-dur">${_estimateDur(c.text)}</span>
+      </div>`
+    ).join('');
+  }
+
+  function _renderGroupedListHtml() {
+    return chapterGroups.map((g, gi) => {
+      const expanded = expandedGroups.has(gi);
+      const rangeText = g.startIndex === g.endIndex
+        ? `p. ${chunks[g.startIndex].page}`
+        : `p. ${chunks[g.startIndex].page}–${chunks[g.endIndex].page}`;
+      let rows = '';
+      for (let i = g.startIndex; i <= g.endIndex; i++) {
+        rows += `
+          <div class="nav-ch-item${i === currentChunk ? ' active' : ''}" id="nav-ch-item-${i}"
+               role="listitem" tabindex="0" aria-current="${i === currentChunk ? 'true' : 'false'}"
+               onclick="Reader.jumpToChunk(${i})" onkeydown="Reader.handleRowKeydown(event, ${i})">
+            <span class="nav-ci-num">${String(i + 1).padStart(2, '0')}</span>
+            <span class="nav-ci-name">${_escHtml(chunks[i].title || ('Page ' + chunks[i].page))}</span>
+            <span class="nav-ci-dur">${_estimateDur(chunks[i].text)}</span>
+          </div>`;
+      }
+      return `
+        <div class="nav-chapter-group${expanded ? ' expanded' : ''}" id="nav-group-${gi}">
+          <div class="nav-chapter-group-header" id="nav-group-header-${gi}" role="button" tabindex="0"
+               aria-expanded="${expanded}" aria-controls="nav-group-body-${gi}"
+               onclick="Reader.toggleChapterGroup(${gi})" onkeydown="Reader.handleGroupKeydown(event, ${gi})">
+            <svg class="nav-cg-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+            <span class="nav-cg-title">${_escHtml(g.title)}</span>
+            <span class="nav-cg-range">${rangeText}</span>
+          </div>
+          <div class="nav-chapter-group-body" id="nav-group-body-${gi}" role="list">${rows}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function toggleChapterGroup(gi) {
+    const groupEl  = document.getElementById('nav-group-' + gi);
+    const headerEl = document.getElementById('nav-group-header-' + gi);
+    if (!groupEl || !headerEl) return;
+    const nowExpanded = !expandedGroups.has(gi);
+    nowExpanded ? expandedGroups.add(gi) : expandedGroups.delete(gi);
+    groupEl.classList.toggle('expanded', nowExpanded);
+    headerEl.setAttribute('aria-expanded', String(nowExpanded));
+  }
+
+  function handleRowKeydown(evt, idx) {
+    if (evt.key === 'Enter' || evt.key === ' ') { evt.preventDefault(); jumpToChunk(idx); }
+  }
+
+  function handleGroupKeydown(evt, gi) {
+    if (evt.key === 'Enter' || evt.key === ' ') { evt.preventDefault(); toggleChapterGroup(gi); }
   }
 
   function _highlightChapterItem(idx) {
     // Left nav panel
-    document.querySelectorAll('.nav-ch-item').forEach((el, i) => {
-      el.classList.toggle('active', i === idx);
+    document.querySelectorAll('.nav-ch-item').forEach((el) => {
+      const isActive = el.id === 'nav-ch-item-' + idx;
+      el.classList.toggle('active', isActive);
+      if (isActive) el.setAttribute('aria-current', 'true');
+      else el.removeAttribute('aria-current');
     });
+
+    if (chapterGroups && chapterGroups.length) {
+      const gi = _groupIndexForChunk(idx);
+      if (gi >= 0 && !expandedGroups.has(gi)) {
+        expandedGroups.add(gi);
+        document.getElementById('nav-group-' + gi)?.classList.add('expanded');
+        document.getElementById('nav-group-header-' + gi)?.setAttribute('aria-expanded', 'true');
+      }
+    }
+
     document.getElementById('nav-ch-item-' + idx)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
@@ -2195,6 +2308,11 @@ const Reader = (() => {
       });
     }
     const savedVoice     = await window.sonara.settings.get('voice');
+    // Warm up Supertonic's worker/model immediately if it's the saved voice,
+    // in parallel with book parsing, so Play doesn't pay the model-load stall.
+    // Only if the model is already on disk — never auto-trigger the first-use
+    // download just from opening a book.
+    _warmSupertonicIfSaved(savedVoice);
     const savedFavorites = await window.sonara.settings.get('favoriteVoices', []);
     const savedSpeed     = await window.sonara.settings.get('speed', 1.0);
     const savedPitch     = await window.sonara.settings.get('pitch', 1.0);
@@ -2478,6 +2596,7 @@ const Reader = (() => {
     selectVoice, previewVoice, previewSelectedVoice, toggleFavoriteVoice,
     loadBook, loadAudioBook,
     togglePlay, stop, skipChunk, jumpToChunk, seekAudio, seekBy,
+    toggleChapterGroup, handleRowKeydown, handleGroupKeydown,
     cycleSpeed, onSpeedChange, onPitchChange, onVolumeChange, toggleMute,
     onFontChange, onFontSizeChange, onLineHeightChange, onReaderWidthChange,
     applySettings,

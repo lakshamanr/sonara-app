@@ -1477,9 +1477,10 @@ const App = (() => {
       }
     }
 
-    // Init panel resize and right-panel toggle
+    // Init panel resize and panel collapse toggles
     _initPanelResize();
     _initRightPanelToggle();
+    _initLeftPanelToggle();
   }
 
   // ── PANEL DRAG-TO-RESIZE ──────────────────────────────────
@@ -1577,7 +1578,35 @@ const App = (() => {
       collapsed = !collapsed;
       layout.classList.toggle('rp-collapsed', collapsed);
       btn.classList.toggle('active', collapsed);
+      btn.setAttribute('aria-expanded', String(!collapsed));
       window.sonara.settings.set('rpCollapsed', collapsed);
+    });
+  }
+
+  // ── LEFT PANEL (CHAPTERS) COLLAPSE TOGGLE ─────────────────
+  function _initLeftPanelToggle() {
+    const btn    = document.getElementById('btnToggleLeft');
+    const layout = document.querySelector('.layout');
+    if (!btn || !layout) return;
+
+    let collapsed = false;
+
+    // Restore saved state
+    window.sonara.settings.get('lpCollapsed', false).then(saved => {
+      if (saved) {
+        collapsed = true;
+        layout.classList.add('lp-collapsed');
+        btn.classList.add('active');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    btn.addEventListener('click', () => {
+      collapsed = !collapsed;
+      layout.classList.toggle('lp-collapsed', collapsed);
+      btn.classList.toggle('active', collapsed);
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      window.sonara.settings.set('lpCollapsed', collapsed);
     });
   }
 

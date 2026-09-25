@@ -209,6 +209,8 @@ contextBridge.exposeInMainWorld('sonara', {
     status:     ()     => ipcRenderer.invoke('supertonic:status'),
     /** Pre-download all model + voice files (no synthesis). */
     download:   ()     => ipcRenderer.invoke('supertonic:download'),
+    /** Warm up: download if needed + spawn worker + load ONNX sessions, ahead of first Play. */
+    warmup:     ()     => ipcRenderer.invoke('supertonic:warmup'),
     /** Kill the worker — cancels in-flight inference; respawns on next synth. */
     abort:      ()     => ipcRenderer.invoke('supertonic:abort'),
     /**

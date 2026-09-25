@@ -203,6 +203,13 @@ function status() {
   };
 }
 
+// Warm up the worker (spawn + load ONNX sessions) ahead of the first
+// synthesize() call, so Play doesn't pay the model-load cost. Idempotent —
+// safe to call repeatedly; returns the existing load promise if in flight.
+function preload(progressCb) {
+  return ensureWorker(progressCb);
+}
+
 // Kill the worker (cancels any in-flight inference). Worker respawns on the
 // next synthesize() call. Cheap hammer for stop/cancel from the UI.
 function abort() {
@@ -238,4 +245,4 @@ async function synthesize(opts, progressCb) {
   return { wav: buf, sampleRate: result.sampleRate, durationMs: result.durationMs };
 }
 
-module.exports = { getVoices, status, synthesize, ensureModels, abort };
+module.exports = { getVoices, status, synthesize, ensureModels, preload, abort };
